@@ -16,8 +16,8 @@ CFLAGS += -Wstrict-prototypes
 
 .PHONY: clean librocksdb
 
-main: librocksdb main.cc tokenizer.cc parser.cc db.cc
-	$(CXX) $(CXXFLAGS) main.cc tokenizer.cc parser.cc db.cc -o main ../rocksdb/librocksdb.a -I../rocksdb/include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
+main: librocksdb main.cc tokenizer.cc parser.cc db.cc token.cc
+	$(CXX) $(CXXFLAGS) main.cc tokenizer.cc parser.cc db.cc token.cc -o main ../rocksdb/librocksdb.a -I../rocksdb/include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
 
 clean:
 	rm -rf ./main

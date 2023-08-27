@@ -31,62 +31,13 @@ Token Tokenizer::NextToken() {
 void Tokenizer::DebugPrintTokens(const std::vector<Token>& tokens) {
     for (const Token& t: tokens) {
         switch (t.type) {
-            case TokenType::Create:
-                std::cout << "Create" <<std::endl;
-                break;
-            case TokenType::Table:
-                std::cout << "Table" <<std::endl;
-                break;
-            case TokenType::Text:
-                std::cout << "Text" <<std::endl;
-                break;
-            case TokenType::Int:
-                std::cout << "Int" <<std::endl;
-                break;
-            case TokenType::Primary:
-                std::cout << "Primary" <<std::endl;
-                break;
-            case TokenType::Key:
-                std::cout << "Key" <<std::endl;
-                break;
-            case TokenType::Insert:
-                std::cout << "Insert" <<std::endl;
-                break;
-            case TokenType::Into:
-                std::cout << "Into" <<std::endl;
-                break;
-            case TokenType::Values:
-                std::cout << "Values" <<std::endl;
-                break;
             case TokenType::Identifier:
-                std::cout << "Identifier: " << t.lexeme << std::endl;
-                break;
-            case TokenType::Eof:
-                std::cout << "Eof" <<std::endl;
-                break;
             case TokenType::IntLiteral:
-                std::cout << "IntLiteral: " << t.lexeme << std::endl;
-                break;
             case TokenType::StringLiteral:
-                std::cout << "StringLiteral: " << t.lexeme << std::endl;
-                break;
-            case TokenType::LParen:
-                std::cout << "LParen" <<std::endl;
-                break;
-            case TokenType::RParen:
-                std::cout << "RParen" <<std::endl;
-                break;
-            case TokenType::Comma:
-                std::cout << "Comma" <<std::endl;
-                break;
-            case TokenType::SemiColon:
-                std::cout << "SemiColon" <<std::endl;
-                break;
-            case TokenType::Error:
-                std::cout << "Error" << std::endl;
+                std::cout << TokenTypeToString(t.type) << " " << t.lexeme << std::endl;
                 break;
             default:
-                std::cout << "Invalid token" << std::endl;
+                std::cout << TokenTypeToString(t.type) << std::endl;
                 break;
         }
     }

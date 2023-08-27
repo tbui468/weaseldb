@@ -5,51 +5,32 @@
 #include "db.h"
 
 /*
-enum class ValueType {
-    String,
-    Integer
-    //Null
-};
 
-class Value {
+class Datum {
 public:
-    Value(Token t) {
-        switch (t.type) {
-            case TokenType::IntLiteral:
-                type_ = ValueType::Integer;
-                //TODO:
-                break;
-            case TokenType::StringLiteral:
-                type_ = ValueType::String;
-                //TODO:
-                break;
-            default:
-                std::cout << "token type not supported as possible value" << std::endl;
-                break;
-        }
-    }
-
-    std::string AsString() {
-        return as_.string;
-    }
-
-    int AsInteger() {
-        return as_.integer;
-    }
 
 private:
-    ValueType type_;
-    union {
-        int integer;
-        std::string string;
-    } as_;
+    bool isnull_;
+};
+
+class DatumInt: public Datum {
+public:
+private:
+};
+
+class DatumText: public Datum {
+public:
+private:
 };*/
 
 
 int main() {
     wsldb::DB db("/tmp/testdb");
-    db.execute("create table planets (id int primary key, name text, moons int);");
-    db.execute("insert into planets values (1, 'Venus', 0), (2, 'Earth', 1), (3, 'Mars', 2);");
+    db.ShowTables();
+//    db.execute("create table planets (id int primary key, name text, moons int);");
+//    db.execute("insert into planets values (1, 'Venus', 0), (2, 'Earth', 1), (3, 'Mars', 2);");
+//    db.execute("create table students (id int primary key, firstname text, lastname text);");
+//    db.ShowTables();
 
     /*
     db.execute("select id, name, moons from planets;");

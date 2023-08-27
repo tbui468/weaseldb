@@ -3,9 +3,10 @@
 #include <string>
 #include "rocksdb/db.h"
 #include "token.h"
-#include "stmt.h"
 
 namespace wsldb {
+
+class Stmt;
 
 class DB {
 public:
@@ -14,6 +15,16 @@ public:
     std::vector<Token> tokenize(const std::string& query);
     std::vector<Stmt*> parse(const std::vector<Token>& tokens);
     rocksdb::Status execute(const std::string& query);
+    void ShowTables();
+    void AppendRelationHandle(rocksdb::DB* h);
+
+    inline rocksdb::DB* Catalogue() {
+        return catalogue_handle_;
+    }
+
+    inline std::string GetPath() {
+        return path_;
+    }
 
     /*
     rocksdb::Status InsertRecord(int key, int v1, const std::string& v2) {
@@ -59,10 +70,11 @@ public:
     }*/
 
 private:
-    rocksdb::DB* db_;
+    rocksdb::DB* catalogue_handle_;
+    std::vector<rocksdb::DB*> relation_handles_;
     rocksdb::Options options_;
     rocksdb::Status status_;
-    rocksdb::Iterator* it_;
+    std::string path_;
 };
 
 }

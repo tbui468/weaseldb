@@ -34,6 +34,8 @@ enum class TokenType {
     Error
 };
 
+std::string TokenTypeToString(TokenType type);
+
 class Token {
 public:
     Token(std::string lexeme, TokenType type): lexeme(std::move(lexeme)), type(type) {}
