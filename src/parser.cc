@@ -1,7 +1,6 @@
 #include <vector>
 
 #include "parser.h"
-#include "tuple.h"
 
 namespace wsldb {
 
@@ -19,9 +18,8 @@ std::vector<Stmt*> Parser::ParseStmts() {
 Expr* Parser::ParsePrimaryExpr() {
     switch (PeekToken().type) {
         case TokenType::IntLiteral:
-            return new IntLiteral(NextToken());
         case TokenType::StringLiteral:
-            return new StringLiteral(NextToken());
+            return new Literal(NextToken());
         default:
             return NULL;
     }
@@ -32,7 +30,7 @@ Expr* Parser::ParseExpr() {
     return ParsePrimaryExpr();
 }
 
-Tuple* Parser::ParseTuple() {
+std::vector<Expr*> Parser::ParseTuple() {
     NextToken(); //(
     std::vector<Expr*> exprs = std::vector<Expr*>();
     while (PeekToken().type != TokenType::RParen) {
@@ -42,7 +40,7 @@ Tuple* Parser::ParseTuple() {
         }
     }
     NextToken(); //)
-    return new Tuple(exprs);
+    return exprs;
 }
 
 Stmt* Parser::ParseStmt() {
@@ -51,6 +49,7 @@ Stmt* Parser::ParseStmt() {
             NextToken(); //table
             Token target = NextToken();
             NextToken(); //(
+
             std::vector<Token> attrs;
             std::vector<Token> types;
             while (PeekToken().type != TokenType::RParen) {
@@ -74,7 +73,7 @@ Stmt* Parser::ParseStmt() {
             NextToken(); //into
             Token target = NextToken(); //table name
             NextToken(); //values
-            std::vector<Tuple*> values = std::vector<Tuple*>();
+            std::vector<std::vector<Expr*>> values = std::vector<std::vector<Expr*>>();
             while (PeekToken().type == TokenType::LParen) {
                 values.push_back(ParseTuple());
                 if (PeekToken().type == TokenType::Comma) {

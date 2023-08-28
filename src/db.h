@@ -16,7 +16,9 @@ public:
     std::vector<Stmt*> parse(const std::vector<Token>& tokens);
     rocksdb::Status execute(const std::string& query);
     void ShowTables();
-    void AppendRelationHandle(rocksdb::DB* h);
+    void AppendTableHandle(rocksdb::DB* h);
+    rocksdb::DB* GetTableHandle(const std::string& table_name);
+    std::string GetTablePath(const std::string& table_name);
 
     inline rocksdb::DB* Catalogue() {
         return catalogue_handle_;
@@ -71,7 +73,7 @@ public:
 
 private:
     rocksdb::DB* catalogue_handle_;
-    std::vector<rocksdb::DB*> relation_handles_;
+    std::vector<rocksdb::DB*> table_handles_;
     rocksdb::Options options_;
     rocksdb::Status status_;
     std::string path_;

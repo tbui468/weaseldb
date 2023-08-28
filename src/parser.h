@@ -14,7 +14,7 @@ public:
 private:
     Expr* ParsePrimaryExpr();
     Expr* ParseExpr();
-    Tuple* ParseTuple();
+    std::vector<Expr*> ParseTuple();
 
     inline Token PeekToken() {
         return tokens_.at(idx_);

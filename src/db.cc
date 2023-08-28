@@ -13,10 +13,28 @@ DB::DB(const std::string& path): path_(path) {
     }
 
     //TODO: iterate through catalog keys/values and open all database handles
+    rocksdb::Iterator* it = catalogue_handle_->NewIterator(rocksdb::ReadOptions());
+
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+        std::string table_name = it->key().ToString();
+        rocksdb::Options options;
+        options.create_if_missing = true;
+        rocksdb::DB* rel_handle;
+        rocksdb::Status status = rocksdb::DB::Open(options, GetTablePath(table_name), &rel_handle);
+        AppendTableHandle(rel_handle);
+    }
 }
 
 DB::~DB() {
+    for (rocksdb::DB* h: table_handles_) {
+        delete h;
+    }
     delete catalogue_handle_;
+}
+
+
+std::string DB::GetTablePath(const std::string& table_name) {
+    return GetPath() + "/" + table_name;
 }
 
 std::vector<Token> DB::tokenize(const std::string& query) {
@@ -42,7 +60,7 @@ rocksdb::Status DB::execute(const std::string& query) {
     std::vector<Stmt*> ptree = parse(tokens);
     /*
     for (Stmt* s: ptree) {
-        s->DebugPrint();
+        std::cout << s->ToString() << std::endl;
     }*/
 
     for (Stmt* s: ptree) {
@@ -93,8 +111,16 @@ void DB::ShowTables() {
     delete it;
 }
 
-void DB::AppendRelationHandle(rocksdb::DB* h) {
-    relation_handles_.push_back(h);    
+void DB::AppendTableHandle(rocksdb::DB* h) {
+    table_handles_.push_back(h);    
+}
+
+rocksdb::DB* DB::GetTableHandle(const std::string& table_name) {
+    for (rocksdb::DB* h: table_handles_) {
+        if (h->GetName().compare(GetTablePath(table_name)) == 0)
+            return h;
+    }
+    return NULL;
 }
 
 }
