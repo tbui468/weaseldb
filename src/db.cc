@@ -27,7 +27,7 @@ std::vector<Token> DB::tokenize(const std::string& query) {
         tokens.push_back(tokenizer.NextToken());
     } while (tokens.back().type != TokenType::Eof);
 
-    tokenizer.DebugPrintTokens(tokens);
+//    tokenizer.DebugPrintTokens(tokens);
 
     return tokens;
 }

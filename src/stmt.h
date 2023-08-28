@@ -82,10 +82,23 @@ public:
     }
 
     void Execute(DB* db) override {
-        //open table with given name
-        //insert key value pair using Put
-        //  key is just first value for now (need to take primary key into account later)
-        //  value is all values concatenated together (with each string prefixed with 4 bytes representing the length)
+        std::string value;
+        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_.lexeme, &value);
+        if (!status.ok()) {
+            std::cout << "table " << target_.lexeme <<  " not found" << std::endl;
+        } else {
+            std::cout << "table " << target_.lexeme << " found" << std::endl;
+        }
+        /*
+    -find table in catalogue using key
+    -verify that table exists
+    -find schema in catalogue using key
+    -verify that values match schema
+    -using rocksdbs::DB* handle, insert key/values
+        -key is primary key
+        -primary key is included value
+        -value is all attributes concatenated (null byte + data.
+        -type information is NOT included - schema must be used to decode data*/
     }
     void DebugPrint() override {
         std::cout << "Insert:\n";

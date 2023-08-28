@@ -28,7 +28,8 @@ int main() {
     wsldb::DB db("/tmp/testdb");
     db.ShowTables();
 //    db.execute("create table planets (id int primary key, name text, moons int);");
-//    db.execute("insert into planets values (1, 'Venus', 0), (2, 'Earth', 1), (3, 'Mars', 2);");
+    db.execute("insert into planets values (1, 'Venus', 0), (2, 'Earth', 1), (3, 'Mars', 2);");
+    db.execute("insert into pets values (1, 'Venus', 0), (2, 'Earth', 1), (3, 'Mars', 2);");
 //    db.execute("create table students (id int primary key, firstname text, lastname text);");
 //    db.ShowTables();
 
