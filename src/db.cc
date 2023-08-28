@@ -1,6 +1,7 @@
 #include "db.h"
 #include "tokenizer.h"
 #include "parser.h"
+#include "status.h"
 
 namespace wsldb {
 
@@ -65,7 +66,27 @@ rocksdb::Status DB::execute(const std::string& query) {
 
     for (Stmt* s: ptree) {
         s->Analyze(this);
-        s->Execute(this);
+        Status status = s->Execute(this);
+        std::cout << status.Msg() << std::endl;
+        
+        TupleSet* tupleset = status.Tuples();
+        if (tupleset) {
+            for (const std::string& f: tupleset->fields) {
+                std::cout << f << ", ";
+            }
+            std::cout << std::endl;
+
+            for (Tuple* t: tupleset->tuples) {
+                for (Datum d: t->data) {
+                    if (d.Type() == TokenType::Int) {
+                        std::cout << d.AsInt() << ", ";
+                    } else {
+                        std::cout << d.AsString() << ", ";
+                    }
+                }
+                std::cout << std::endl;
+            }
+        }
     }
 
     /*

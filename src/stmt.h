@@ -6,6 +6,7 @@
 #include "token.h"
 #include "db.h"
 #include "schema.h"
+#include "status.h"
 #include "rocksdb/db.h"
 
 namespace wsldb {
@@ -13,7 +14,7 @@ namespace wsldb {
 class Stmt {
 public:
     virtual void Analyze(DB* db) = 0;
-    virtual void Execute(DB* db) = 0;
+    virtual Status Execute(DB* db) = 0;
     virtual std::string ToString() = 0;
 };
 
@@ -23,10 +24,10 @@ public:
         target_(target), schema_(Schema(attrs, types)) {}
 
     void Analyze(DB* db) override {
-
+        //TODO: return error if table with this name already exists
     }
 
-    void Execute(DB* db) override {
+    Status Execute(DB* db) override {
         //TODO: batch write system catalogue and new table - should be created atomically
 
         db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, schema_.Serialize());
@@ -36,8 +37,8 @@ public:
         rocksdb::DB* rel_handle;
         rocksdb::Status status = rocksdb::DB::Open(options, db->GetTablePath(target_.lexeme), &rel_handle);
         db->AppendTableHandle(rel_handle);
-        //add this table to current catalog (name, schema, etc)
-        //create new rocksdb inside current database path, eg /tmp/testdb/planets
+
+        return Status(true, "CREATE TABLE");
     }
     std::string ToString() override {
         return "create";
@@ -56,36 +57,31 @@ public:
 
     }
 
-    void Execute(DB* db) override {
+    Status Execute(DB* db) override {
         std::string value;
         rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_.lexeme, &value);
         if (!status.ok()) {
-            std::cout << "table " << target_.lexeme <<  " not found" << std::endl;
-            return;
+            return Status(false, "Error: invalid table name");
         }
 
         Schema schema(value);
 
         if (schema.Count() != values_.size()) {
-            std::cout << "number of values must match schema" << std::endl;
-            return;
+            return Status(false, "Error: value count does not match schema on record");
         }
 
         rocksdb::DB* tab_handle = db->GetTableHandle(target_.lexeme);
-        for (std::vector<Expr*> tuple: values_) {
-            std::string key;
-            std::string rec;
-            int i = 0;
-            for (Expr* e: tuple) {
-                Datum d = e->Eval();
-                if (schema.PrimaryKeyIdx() == i) {
-                    key = d.ToString();
-                }
-                rec += d.ToString();
-                i++;
+        for (std::vector<Expr*> exprs: values_) {
+            std::vector<Datum> data = std::vector<Datum>();
+            for (Expr* e: exprs) {
+                data.push_back(e->Eval());
             }
-            tab_handle->Put(rocksdb::WriteOptions(), key, rec);
+            std::string value = schema.SerializeData(data);
+            std::string key = schema.GetKeyFromData(data);
+            tab_handle->Put(rocksdb::WriteOptions(), key, value);
         }
+
+        return Status(true, "INSERT " + std::to_string(values_.size()));
 
     }
     std::string ToString() override {
@@ -98,8 +94,39 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    //must implement execute
+    SelectStmt(Token target, std::vector<Token> fields): 
+        target_(target), fields_(std::move(fields)) {}
+    void Analyze(DB* db) override {
+    }
+    Status Execute(DB* db) override {
+        std::vector<std::string> tuplefields = std::vector<std::string>();
+        for (const Token& t: fields_) {
+            tuplefields.push_back(t.lexeme);
+        }
+
+        TupleSet* tupleset = new TupleSet(tuplefields);
+        std::string value;
+        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_.lexeme, &value);
+        Schema schema(value);
+
+        //TODO: iterate through all keys/values of target_
+        rocksdb::DB* tab_handle = db->GetTableHandle(target_.lexeme);
+        rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
+
+        for (it->SeekToFirst(); it->Valid(); it->Next()) {
+            std::string value = it->value().ToString();
+            std::vector<Datum> data = schema.DeserializeData(value);
+            tupleset->tuples.push_back(new Tuple(data));
+        }
+
+        return Status(true, "(" + std::to_string(tupleset->tuples.size()) + " rows)", tupleset);
+    }
+    std::string ToString() override {
+        return "select";
+    }
 private:
+    Token target_;
+    std::vector<Token> fields_;
 };
 
 }

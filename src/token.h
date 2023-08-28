@@ -15,6 +15,8 @@ enum class TokenType {
     Insert,
     Into,
     Values,
+    Select,
+    From,
 
     /* user-defined identifier */
     Identifier,

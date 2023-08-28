@@ -72,6 +72,10 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Into;
     } else if (len == 6 && strncmp(&query_.at(idx), "values", len) == 0) {
         type = TokenType::Values;
+    } else if (len == 6 && strncmp(&query_.at(idx), "select", len) == 0) {
+        type = TokenType::Select;
+    } else if (len == 4 && strncmp(&query_.at(idx), "from", len) == 0) {
+        type = TokenType::From;
     } else {
         type = TokenType::Identifier;
     }

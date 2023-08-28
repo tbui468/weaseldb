@@ -41,6 +41,10 @@ std::string TokenTypeToString(TokenType type) {
             return "Eof";
         case TokenType::Error:
             return "Error";
+        case TokenType::Select:
+            return "Select";
+        case TokenType::From:
+            return "From";
         default:
             return "Unrecognized token";
     }

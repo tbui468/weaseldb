@@ -83,6 +83,19 @@ Stmt* Parser::ParseStmt() {
             NextToken(); //;
             return new InsertStmt(target, values);
         }
+        case TokenType::Select: {
+            std::vector<Token> fields;
+            while (PeekToken().type != TokenType::From) {
+                fields.push_back(NextToken());
+                if (PeekToken().type == TokenType::Comma) {
+                    NextToken(); //,
+                }
+            }
+            NextToken(); //from
+            Token target = NextToken();
+            NextToken(); //;
+            return new SelectStmt(target, fields);
+        }
     }
 
     return NULL;

@@ -45,6 +45,28 @@ std::string Schema::Serialize() {
     return buf;
 }
 
+std::vector<Datum> Schema::DeserializeData(const std::string& value) {
+    std::vector<Datum> data = std::vector<Datum>();
+    int off = 0;
+    for (const Field& f: fields_) {
+        data.push_back(Datum(value, &off, f.type));
+    }
+
+    return data;
+}
+
+std::string Schema::SerializeData(const std::vector<Datum>& data) {
+    std::string value;
+    for (Datum d: data) {
+        value += d.ToString();
+    }
+    return value;
+}
+
+std::string Schema::GetKeyFromData(const std::vector<Datum>& data) {
+    return data.at(primary_key_idx_).ToString();
+}
+
 int Schema::PrimaryKeyIdx() {
     return primary_key_idx_;
 }

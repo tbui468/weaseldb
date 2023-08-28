@@ -4,32 +4,16 @@
 
 #include "db.h"
 
-/*
-
-class Datum {
-public:
-
-private:
-    bool isnull_;
-};
-
-class DatumInt: public Datum {
-public:
-private:
-};
-
-class DatumText: public Datum {
-public:
-private:
-};*/
-
-
 int main() {
     wsldb::DB db("/tmp/testdb");
-    db.ShowTables();
+//    db.ShowTables();
+    //db.execute("create table planets (id int primary key, name text, moons int);");
     db.execute("insert into planets values (1, 'Venus', 0), (2, 'Earth', 1), (3, 'Mars', 2);");
 
+    db.execute("select id, name, moons from planets;");
+
     /*
+
     rocksdb::DB* table;
     rocksdb::Options options;
     options.create_if_missing = true;
@@ -48,7 +32,7 @@ int main() {
         if (!status.ok()) {
             std::cout << "no key\n";
         } else {
-            std::cout << "okay!\n";
+            std::cout << "okay!" << value.size() << std::endl;
         }
     }*/
 
