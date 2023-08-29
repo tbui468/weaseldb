@@ -11,6 +11,9 @@ int main() {
     db.execute("insert into planets values (1, 'Venus', 0), (2, 'Earth', 1), (3, 'Mars', 2);");
 
     db.execute("select id, name, moons from planets;");
+    db.execute("select id, name from planets;");
+    db.execute("select moons from planets;");
+    db.execute("select moons, id, name from planets;");
 
     /*
 

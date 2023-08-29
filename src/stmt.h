@@ -66,7 +66,7 @@ public:
 
         Schema schema(value);
 
-        if (schema.Count() != values_.size()) {
+        if (schema.FieldCount() != values_.size()) {
             return Status(false, "Error: value count does not match schema on record");
         }
 
@@ -94,29 +94,37 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(Token target, std::vector<Token> fields): 
-        target_(target), fields_(std::move(fields)) {}
+    SelectStmt(Token target_relation, std::vector<Token> target_fields): 
+        target_relation_(target_relation), target_fields_(std::move(target_fields)) {}
     void Analyze(DB* db) override {
     }
     Status Execute(DB* db) override {
         std::vector<std::string> tuplefields = std::vector<std::string>();
-        for (const Token& t: fields_) {
+        for (const Token& t: target_fields_) {
             tuplefields.push_back(t.lexeme);
         }
 
         TupleSet* tupleset = new TupleSet(tuplefields);
-        std::string value;
-        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_.lexeme, &value);
-        Schema schema(value);
+        std::string serialized_schema;
+        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
+        Schema schema(serialized_schema);
 
-        //TODO: iterate through all keys/values of target_
-        rocksdb::DB* tab_handle = db->GetTableHandle(target_.lexeme);
+        rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
         rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
 
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
             std::string value = it->value().ToString();
-            std::vector<Datum> data = schema.DeserializeData(value);
-            tupleset->tuples.push_back(new Tuple(data));
+            std::vector<Datum> rec = schema.DeserializeData(value);
+            std::vector<Datum> final_tuple = std::vector<Datum>();
+
+            for (std::string field: tuplefields) {
+                int idx = schema.GetFieldIdx(field);
+                if (idx != -1) {
+                    final_tuple.push_back(rec.at(idx));
+                }
+            }
+
+            tupleset->tuples.push_back(new Tuple(final_tuple));
         }
 
         return Status(true, "(" + std::to_string(tupleset->tuples.size()) + " rows)", tupleset);
@@ -125,8 +133,8 @@ public:
         return "select";
     }
 private:
-    Token target_;
-    std::vector<Token> fields_;
+    Token target_relation_;
+    std::vector<Token> target_fields_;
 };
 
 }

@@ -8,11 +8,6 @@
 
 namespace wsldb {
 
-struct Field {
-    std::string name;
-    TokenType type;
-};
-
 class Schema {
 public:
     Schema(const std::vector<Token>& attrs, const std::vector<Token>& types);
@@ -21,17 +16,14 @@ public:
     std::vector<Datum> DeserializeData(const std::string& value);
     std::string SerializeData(const std::vector<Datum>& data);
     std::string GetKeyFromData(const std::vector<Datum>& data);
-    int PrimaryKeyIdx();
-    inline Field At(int i) {
-        return fields_.at(i);
-    }
-
-    inline int Count() {
-        return fields_.size();
+    int GetFieldIdx(const std::string& name);
+    inline int FieldCount() {
+        return names_.size(); // == types.size()
     }
 
 private:
-    std::vector<Field> fields_;
+    std::vector<std::string> names_;
+    std::vector<TokenType> types_;
     int primary_key_idx_;
 };
 

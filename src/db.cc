@@ -67,7 +67,6 @@ rocksdb::Status DB::execute(const std::string& query) {
     for (Stmt* s: ptree) {
         s->Analyze(this);
         Status status = s->Execute(this);
-        std::cout << status.Msg() << std::endl;
         
         TupleSet* tupleset = status.Tuples();
         if (tupleset) {
@@ -87,6 +86,8 @@ rocksdb::Status DB::execute(const std::string& query) {
                 std::cout << std::endl;
             }
         }
+
+        std::cout << status.Msg() << std::endl;
     }
 
     /*
