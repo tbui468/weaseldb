@@ -10,6 +10,7 @@ enum class TokenType {
     Table, 
     Text,
     Int,
+    Bool,
     Primary,
     Key,
     Insert,
@@ -17,6 +18,7 @@ enum class TokenType {
     Values,
     Select,
     From,
+    Where,
 
     /* user-defined identifier */
     Identifier,
@@ -24,6 +26,8 @@ enum class TokenType {
     /* literals */
     IntLiteral,
     StringLiteral,
+    TrueLiteral,
+    FalseLiteral,
 
     /* single characters */
     LParen,
@@ -31,6 +35,12 @@ enum class TokenType {
     Comma,
     SemiColon,
     Eof,
+    Equal,
+    NotEqual,
+    Less,
+    Greater,
+    LessEqual,
+    GreaterEqual,
 
     /* error */
     Error

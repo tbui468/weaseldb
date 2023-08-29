@@ -16,8 +16,10 @@ private:
     Token MakeString();
     Token MakeNumber();
 
-    inline Token MakeToken(TokenType type) {
-        return Token(query_.substr(idx_++, 1), type);
+    inline Token MakeToken(TokenType type, int char_count) {
+        int old_idx = idx_;
+        idx_ += char_count;
+        return Token(query_.substr(old_idx, char_count), type);
     }
 
     inline void SkipWhitespace() {

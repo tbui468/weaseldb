@@ -19,11 +19,21 @@ Expr* Parser::ParsePrimaryExpr() {
     switch (PeekToken().type) {
         case TokenType::IntLiteral:
         case TokenType::StringLiteral:
+        case TokenType::TrueLiteral:
+        case TokenType::FalseLiteral:
             return new Literal(NextToken());
         default:
             return NULL;
     }
     return NULL;
+}
+
+Expr* Parser::ParseRelational() {
+
+}
+
+Expr* Parser::ParseEquality() {
+
 }
 
 Expr* Parser::ParseExpr() {
@@ -84,17 +94,22 @@ Stmt* Parser::ParseStmt() {
             return new InsertStmt(target, values);
         }
         case TokenType::Select: {
-            std::vector<Token> fields;
+            std::vector<Token> target_fields;
             while (PeekToken().type != TokenType::From) {
-                fields.push_back(NextToken());
+                target_fields.push_back(NextToken());
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken(); //,
                 }
             }
             NextToken(); //from
             Token target = NextToken();
+            Expr* where_clause = nullptr;
+            if (PeekToken().type == TokenType::Where) {
+                NextToken(); //where
+                where_clause = ParseExpr(); 
+            }
             NextToken(); //;
-            return new SelectStmt(target, fields);
+            return new SelectStmt(target, target_fields, where_clause);
         }
     }
 

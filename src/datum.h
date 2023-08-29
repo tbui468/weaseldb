@@ -22,8 +22,20 @@ public:
                 data_ += t.lexeme;
                 break;
             }
+            case TokenType::TrueLiteral: {
+                type_ = TokenType::Bool;
+                bool value = true;
+                data_.append((char*)&value, sizeof(bool));
+                break;
+            }
+            case TokenType::FalseLiteral: {
+                type_ = TokenType::Bool;
+                bool value = false;
+                data_.append((char*)&value, sizeof(bool));
+                break;
+            }
             default:
-                std::cout << "invalid token type for initializing datum" << std::endl;
+                std::cout << "invalid token type for initializing datum: " << TokenTypeToString(t.type) << std::endl;
                 break;
         }
     }
@@ -44,8 +56,13 @@ public:
                 *off += size;
                 break;
             }
+            case TokenType::Bool: {
+                data_.append((char*)(buf.data() + *off), sizeof(bool));
+                *off += sizeof(bool);
+                break;
+            }
             default:
-                std::cout << "invalid token type for initializing datum" << std::endl;
+                std::cout << "invalid buffer data for initializing datum: " << TokenTypeToString(type) << std::endl;
                 break;
         } 
     }
@@ -65,6 +82,10 @@ public:
 
     int AsInt() {
         return *((int*)(data_.data()));
+    }
+
+    bool AsBool() {
+        return *((bool*)(data_.data()));
     }
 private:
     TokenType type_;

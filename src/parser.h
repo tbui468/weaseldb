@@ -13,6 +13,8 @@ public:
     std::vector<Stmt*> ParseStmts();
 private:
     Expr* ParsePrimaryExpr();
+    Expr* ParseRelational();
+    Expr* ParseEquality();
     Expr* ParseExpr();
     std::vector<Expr*> ParseTuple();
 

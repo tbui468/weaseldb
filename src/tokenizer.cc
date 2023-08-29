@@ -5,9 +5,9 @@
 namespace wsldb {
 
 Token Tokenizer::NextToken() {
-    if (AtEnd()) return MakeToken(TokenType::Eof);
+    if (AtEnd()) return MakeToken(TokenType::Eof, 1);
     SkipWhitespace();
-    if (AtEnd()) return MakeToken(TokenType::Eof);
+    if (AtEnd()) return MakeToken(TokenType::Eof, 1);
 
     if (IsAlpha(query_.at(idx_))) return MakeIdentifier();
     if (IsNumeric(query_.at(idx_))) return MakeNumber();
@@ -15,15 +15,35 @@ Token Tokenizer::NextToken() {
 
     switch (query_.at(idx_)) {
         case '(':
-            return MakeToken(TokenType::LParen);
+            return MakeToken(TokenType::LParen, 1);
         case ')':
-            return MakeToken(TokenType::RParen);
+            return MakeToken(TokenType::RParen, 1);
         case ',':
-            return MakeToken(TokenType::Comma);
+            return MakeToken(TokenType::Comma, 1);
         case ';':
-            return MakeToken(TokenType::SemiColon);
+            return MakeToken(TokenType::SemiColon, 1);
+        case '=':
+            return MakeToken(TokenType::Equal, 1);
+        case '<': {
+            char c = query_.at(idx_ + 1);
+            if (c == '>') {
+                return MakeToken(TokenType::NotEqual, 2);
+            } else if (c == '=') {
+                return MakeToken(TokenType::LessEqual, 2);
+            } else {
+                return MakeToken(TokenType::Less, 1);
+            } 
+        }
+        case '>': {
+            char c = query_.at(idx_ + 1);
+            if (c == '=') {
+                return MakeToken(TokenType::GreaterEqual, 2);
+            } else {
+                return MakeToken(TokenType::Greater, 1);
+            }
+        }
         default:
-            return MakeToken(TokenType::Error);
+            return MakeToken(TokenType::Error, 1);
     }
 
 }
@@ -76,6 +96,14 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Select;
     } else if (len == 4 && strncmp(&query_.at(idx), "from", len) == 0) {
         type = TokenType::From;
+    } else if (len == 5 && strncmp(&query_.at(idx), "where", len) == 0) {
+        type = TokenType::Where;
+    } else if (len == 4 && strncmp(&query_.at(idx), "bool", len) == 0) {
+        type = TokenType::Bool;
+    } else if (len == 4 && strncmp(&query_.at(idx), "true", len) == 0) {
+        type = TokenType::TrueLiteral;
+    } else if (len == 5 && strncmp(&query_.at(idx), "false", len) == 0) {
+        type = TokenType::FalseLiteral;
     } else {
         type = TokenType::Identifier;
     }

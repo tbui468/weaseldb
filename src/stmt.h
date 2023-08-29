@@ -66,7 +66,7 @@ public:
 
         Schema schema(value);
 
-        if (schema.FieldCount() != values_.size()) {
+        if (schema.FieldCount() != values_.at(0).size()) {
             return Status(false, "Error: value count does not match schema on record");
         }
 
@@ -94,8 +94,9 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(Token target_relation, std::vector<Token> target_fields): 
-        target_relation_(target_relation), target_fields_(std::move(target_fields)) {}
+    SelectStmt(Token target_relation, std::vector<Token> target_fields, Expr* where_clause): 
+        target_relation_(target_relation), target_fields_(std::move(target_fields)), where_clause_(where_clause) {}
+
     void Analyze(DB* db) override {
     }
     Status Execute(DB* db) override {
@@ -135,6 +136,7 @@ public:
 private:
     Token target_relation_;
     std::vector<Token> target_fields_;
+    Expr* where_clause_;
 };
 
 }

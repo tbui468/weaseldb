@@ -79,8 +79,14 @@ rocksdb::Status DB::execute(const std::string& query) {
                 for (Datum d: t->data) {
                     if (d.Type() == TokenType::Int) {
                         std::cout << d.AsInt() << ", ";
-                    } else {
+                    } else if (d.Type() == TokenType::Text) {
                         std::cout << d.AsString() << ", ";
+                    } else {
+                        if (d.AsBool()) {
+                            std::cout << "true, ";
+                        } else {
+                            std::cout << "false, ";
+                        }
                     }
                 }
                 std::cout << std::endl;

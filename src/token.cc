@@ -45,6 +45,26 @@ std::string TokenTypeToString(TokenType type) {
             return "Select";
         case TokenType::From:
             return "From";
+        case TokenType::Where:
+            return "Where";
+        case TokenType::Equal:
+            return "Equal";
+        case TokenType::NotEqual:
+            return "NotEqual";
+        case TokenType::Less:
+            return "Less";
+        case TokenType::Greater:
+            return "Greater";
+        case TokenType::LessEqual:
+            return "LessEqual";
+        case TokenType::GreaterEqual:
+            return "GreaterEqual";
+        case TokenType::Bool:
+            return "Bool";
+        case TokenType::TrueLiteral:
+            return "TrueLiteral";
+        case TokenType::FalseLiteral:
+            return "FalseLiteral";
         default:
             return "Unrecognized token";
     }
