@@ -30,13 +30,23 @@ Expr* Parser::ParsePrimary() {
     return NULL;
 }
 
+Expr* Parser::ParseUnary() {
+    if (PeekToken().type == TokenType::Minus ||
+           PeekToken().type == TokenType::Not) {
+        Token op = NextToken();
+        return new Unary(op, ParseUnary());
+    }
+
+    return ParsePrimary();
+}
+
 Expr* Parser::ParseMultiplicative() {
-    Expr* left = ParsePrimary();
+    Expr* left = ParseUnary();
 
     while (PeekToken().type == TokenType::Star ||
            PeekToken().type == TokenType::Slash) {
         Token op = NextToken();
-        left = new Binary(op, left, ParsePrimary());
+        left = new Binary(op, left, ParseUnary());
     }
 
     return left;

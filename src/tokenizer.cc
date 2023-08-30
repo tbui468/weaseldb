@@ -116,6 +116,8 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Or;
     } else if (len == 3 && strncmp(&query_.at(idx), "and", len) == 0) {
         type = TokenType::And;
+    } else if (len == 3 && strncmp(&query_.at(idx), "not", len) == 0) {
+        type = TokenType::Not;
     } else {
         type = TokenType::Identifier;
     }

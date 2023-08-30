@@ -109,7 +109,7 @@ public:
                 if (!(TokenTypeIsNumeric(left_type) && TokenTypeIsNumeric(right_type))) {
                     return Status(false, "Error: The '" + op_.lexeme + "' operator operands must both be a numeric type");
                 } 
-                *evaluated_type = TokenType::Int;
+                *evaluated_type = left_type;
                 break;
             default:
                 return Status(false, "Implementation Error: op type not implemented in Binary expr!");
@@ -120,6 +120,53 @@ public:
     }
 private:
     Expr* left_;
+    Expr* right_;
+    Token op_;
+};
+
+class Unary: public Expr {
+public:
+    Unary(Token op, Expr* right): op_(op), right_(right) {}
+    Datum Eval(Tuple* tuple) override {
+        Datum right = right_->Eval(tuple);
+        switch (op_.type) {
+            case TokenType::Minus:
+                return Datum(-right.AsInt());
+            case TokenType::Not:
+                return Datum(!right.AsBool());
+            default:
+                std::cout << "invalid op\n";
+                return Datum(false); //keep compiler quiet
+        }
+    }
+    std::string ToString() override {
+        return "(" + op_.lexeme + " " + right_->ToString() + ")";
+    }
+    Status Analyze(Schema* schema, TokenType* evaluated_type) override {
+        TokenType type;
+        right_->Analyze(schema, &type);
+        
+        switch (op_.type) {
+            case TokenType::Not:
+                if (type != TokenType::Bool) {
+                    return Status(false, "Error: 'not' operand must be a boolean type.");
+                }
+                *evaluated_type = TokenType::Bool;
+                break;
+            case TokenType::Minus:
+                if (!TokenTypeIsNumeric(type)) {
+                    return Status(false, "Error: '-' operator operand must be numeric type");
+                }
+                *evaluated_type = type;
+                break;
+            default:
+                return Status(false, "Implementation Error: op type not implemented in Binary expr!");
+                break;
+        }
+
+        return Status(true, "ok");
+    }
+private:
     Expr* right_;
     Token op_;
 };

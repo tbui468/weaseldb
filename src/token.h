@@ -21,6 +21,7 @@ enum class TokenType {
     Where,
     And,
     Or,
+    Not,
 
     /* user-defined identifier */
     Identifier,

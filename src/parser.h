@@ -13,6 +13,7 @@ public:
     std::vector<Stmt*> ParseStmts();
 private:
     Expr* ParsePrimary();
+    Expr* ParseUnary();
     Expr* ParseMultiplicative();
     Expr* ParseAdditive();
     Expr* ParseRelational();
