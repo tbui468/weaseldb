@@ -30,15 +30,39 @@ Expr* Parser::ParsePrimary() {
     return NULL;
 }
 
-Expr* Parser::ParseRelational() {
+Expr* Parser::ParseMultiplicative() {
     Expr* left = ParsePrimary();
+
+    while (PeekToken().type == TokenType::Star ||
+           PeekToken().type == TokenType::Slash) {
+        Token op = NextToken();
+        left = new Binary(op, left, ParsePrimary());
+    }
+
+    return left;
+}
+
+Expr* Parser::ParseAdditive() {
+    Expr* left = ParseMultiplicative();
+
+    while (PeekToken().type == TokenType::Plus ||
+           PeekToken().type == TokenType::Minus) {
+        Token op = NextToken();
+        left = new Binary(op, left, ParseMultiplicative());
+    }
+
+    return left;
+}
+
+Expr* Parser::ParseRelational() {
+    Expr* left = ParseAdditive();
 
     while (PeekToken().type == TokenType::Less ||
            PeekToken().type == TokenType::LessEqual ||
            PeekToken().type == TokenType::Greater ||
            PeekToken().type == TokenType::GreaterEqual) {
         Token op = NextToken();
-        left = new Binary(op, left, ParsePrimary());
+        left = new Binary(op, left, ParseAdditive());
     }
 
     return left;
@@ -56,8 +80,30 @@ Expr* Parser::ParseEquality() {
     return left;
 }
 
+Expr* Parser::ParseAnd() {
+    Expr* left = ParseEquality();
+
+    while (PeekToken().type == TokenType::And) {
+        Token op = NextToken();
+        left = new Binary(op, left, ParseEquality());
+    }
+
+    return left;
+}
+
+Expr* Parser::ParseOr() {
+    Expr* left = ParseAnd();
+
+    while (PeekToken().type == TokenType::Or) {
+        Token op = NextToken();
+        left = new Binary(op, left, ParseAnd());
+    }
+
+    return left;
+}
+
 Expr* Parser::ParseExpr() {
-    return ParseEquality();
+    return ParseOr();
 }
 
 std::vector<Expr*> Parser::ParseTuple() {

@@ -57,6 +57,18 @@ public:
                 return Datum(leftd.Compare(rightd).AsInt() > 0);
             case TokenType::GreaterEqual:
                 return Datum(leftd.Compare(rightd).AsInt() >= 0);
+            case TokenType::Plus:
+                return Datum(leftd.AsInt() + rightd.AsInt());
+            case TokenType::Minus:
+                return Datum(leftd.AsInt() - rightd.AsInt());
+            case TokenType::Star:
+                return Datum(leftd.AsInt() * rightd.AsInt());
+            case TokenType::Slash:
+                return Datum(leftd.AsInt() / rightd.AsInt());
+            case TokenType::Or:
+                return Datum(leftd.AsBool() || rightd.AsBool());
+            case TokenType::And:
+                return Datum(leftd.AsBool() && rightd.AsBool());
             default:
                 std::cout << "invalid op\n";
                 return Datum(false); //keep compiler quiet
@@ -83,7 +95,24 @@ public:
                 }
                 *evaluated_type = TokenType::Bool;
                 break;
+            case TokenType::Or:
+            case TokenType::And:
+                if (!(left_type == TokenType::Bool && right_type == TokenType::Bool)) {
+                    return Status(false, "Error: Logical operator operands must be boolean types");
+                }
+                *evaluated_type = TokenType::Bool;
+                break;
+            case TokenType::Plus:
+            case TokenType::Minus:
+            case TokenType::Star:
+            case TokenType::Slash:
+                if (!(TokenTypeIsNumeric(left_type) && TokenTypeIsNumeric(right_type))) {
+                    return Status(false, "Error: The '" + op_.lexeme + "' operator operands must both be a numeric type");
+                } 
+                *evaluated_type = TokenType::Int;
+                break;
             default:
+                return Status(false, "Implementation Error: op type not implemented in Binary expr!");
                 break;
         }
 

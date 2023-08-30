@@ -65,9 +65,25 @@ std::string TokenTypeToString(TokenType type) {
             return "TrueLiteral";
         case TokenType::FalseLiteral:
             return "FalseLiteral";
+        case TokenType::Plus:
+            return "Plus";
+        case TokenType::Minus:
+            return "Minus";
+        case TokenType::Star:
+            return "Star";
+        case TokenType::Slash:
+            return "Slash";
+        case TokenType::And:
+            return "And";
+        case TokenType::Or:
+            return "Or";
         default:
             return "Unrecognized token";
     }
+}
+
+bool TokenTypeIsNumeric(TokenType type) {
+    return type == TokenType::Int; //TODO: add more types here
 }
 
 }

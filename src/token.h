@@ -19,6 +19,8 @@ enum class TokenType {
     Select,
     From,
     Where,
+    And,
+    Or,
 
     /* user-defined identifier */
     Identifier,
@@ -41,12 +43,17 @@ enum class TokenType {
     Greater,
     LessEqual,
     GreaterEqual,
+    Plus,
+    Minus,
+    Star,
+    Slash,
 
     /* error */
     Error
 };
 
 std::string TokenTypeToString(TokenType type);
+bool TokenTypeIsNumeric(TokenType type);
 
 class Token {
 public:

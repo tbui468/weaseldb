@@ -42,6 +42,14 @@ Token Tokenizer::NextToken() {
                 return MakeToken(TokenType::Greater, 1);
             }
         }
+        case '+':
+            return MakeToken(TokenType::Plus, 1);
+        case '-':
+            return MakeToken(TokenType::Minus, 1);
+        case '*':
+            return MakeToken(TokenType::Star, 1);
+        case '/':
+            return MakeToken(TokenType::Slash, 1);
         default:
             return MakeToken(TokenType::Error, 1);
     }
@@ -104,6 +112,10 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::TrueLiteral;
     } else if (len == 5 && strncmp(&query_.at(idx), "false", len) == 0) {
         type = TokenType::FalseLiteral;
+    } else if (len == 2 && strncmp(&query_.at(idx), "or", len) == 0) {
+        type = TokenType::Or;
+    } else if (len == 3 && strncmp(&query_.at(idx), "and", len) == 0) {
+        type = TokenType::And;
     } else {
         type = TokenType::Identifier;
     }
