@@ -307,4 +307,34 @@ private:
     Expr* where_clause_;
 };
 
+class DropTableStmt: public Stmt {
+public:
+    DropTableStmt(Token target_relation, bool has_if_exists):
+        target_relation_(target_relation), has_if_exists_(has_if_exists) {}
+    Status Analyze(DB* db) override {
+        if (!has_if_exists_) {
+            std::string serialized_schema;
+            if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
+                return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
+            }
+        }
+        return Status(true, "ok");
+    }
+    Status Execute(DB* db) override {
+        db->Catalogue()->Delete(rocksdb::WriteOptions(), target_relation_.lexeme);
+        bool dropped = db->DropTable(target_relation_.lexeme);
+        if (dropped) {
+            return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");
+        } else {
+            return Status(true, "(table '" + target_relation_.lexeme + "' doesn't exist and not dropped)");
+        }
+    }
+    std::string ToString() override {
+        return "drop table";
+    }
+private:
+    Token target_relation_;
+    bool has_if_exists_;
+};
+
 }

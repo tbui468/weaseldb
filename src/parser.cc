@@ -240,6 +240,18 @@ Stmt* Parser::ParseStmt() {
             NextToken(); //;
             return new DeleteStmt(target, where_clause);
         }
+        case TokenType::Drop: {
+            NextToken(); //table
+            bool has_if_exists = false;
+            if (PeekToken().type == TokenType::If) {
+                has_if_exists = true;
+                NextToken(); //if
+                NextToken(); //exists
+            }
+            Token target = NextToken();
+            NextToken(); //;
+            return new DropTableStmt(target, has_if_exists);
+        }
     }
 
     return NULL;

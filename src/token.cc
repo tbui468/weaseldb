@@ -85,6 +85,12 @@ std::string TokenTypeToString(TokenType type) {
             return "Set";
         case TokenType::Delete:
             return "Delete";
+        case TokenType::Drop:
+            return "Drop";
+        case TokenType::If:
+            return "If";
+        case TokenType::Exists:
+            return "Exists";
         default:
             return "Unrecognized token";
     }

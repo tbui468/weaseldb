@@ -124,6 +124,12 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Set;
     } else if (len == 6 && strncmp(&query_.at(idx), "delete", len) == 0) {
         type = TokenType::Delete;
+    } else if (len == 4 && strncmp(&query_.at(idx), "drop", len) == 0) {
+        type = TokenType::Drop;
+    } else if (len == 2 && strncmp(&query_.at(idx), "if", len) == 0) {
+        type = TokenType::If;
+    } else if (len == 6 && strncmp(&query_.at(idx), "exists", len) == 0) {
+        type = TokenType::Exists;
     } else {
         type = TokenType::Identifier;
     }

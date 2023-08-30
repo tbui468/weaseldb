@@ -167,4 +167,17 @@ bool DB::TableSchema(const std::string& table_name, std::string* serialized_sche
     return status.ok();
 }
 
+bool DB::DropTable(const std::string& table_name) {
+    for (int i = 0; i < table_handles_.size(); i++) {
+        rocksdb::DB* h = table_handles_.at(i);
+        if (h->GetName().compare(GetTablePath(table_name)) == 0) {
+            delete h;
+            table_handles_.erase(table_handles_.begin() + i);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 }

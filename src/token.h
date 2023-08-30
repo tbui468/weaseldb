@@ -25,6 +25,9 @@ enum class TokenType {
     Update,
     Set,
     Delete,
+    Drop,
+    If,
+    Exists,
 
     /* user-defined identifier */
     Identifier,
