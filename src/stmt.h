@@ -54,7 +54,8 @@ public:
         target_(target), values_(std::move(values)) {}
 
     void Analyze(DB* db) override {
-
+        //TODO: check existence of schema
+        //TODO: type-check values with schema on record
     }
 
     Status Execute(DB* db) override {
@@ -103,6 +104,10 @@ public:
         Schema schema(serialized_schema);
 
         where_clause_->Analyze(&schema);
+
+        for (Expr* e: target_cols_) {
+            e->Analyze(&schema);
+        }
     }
     Status Execute(DB* db) override {
         std::vector<std::string> tuplefields = std::vector<std::string>();
@@ -123,21 +128,16 @@ public:
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
             std::string value = it->value().ToString();
 
-            std::vector<Datum> rec = schema.DeserializeData(value);
-            
             //selection
-            Tuple tuple(rec);
+            Tuple tuple(schema.DeserializeData(value));
             if (!where_clause_->Eval(&tuple).AsBool())
                 continue;
 
             //projection
             std::vector<Datum> final_tuple = std::vector<Datum>();
 
-            for (std::string field: tuplefields) {
-                int idx = schema.GetFieldIdx(field);
-                if (idx != -1) {
-                    final_tuple.push_back(rec.at(idx));
-                }
+            for (Expr* e: target_cols_) {
+                final_tuple.push_back(e->Eval(&tuple));
             }
 
             //add final tuple to output set
