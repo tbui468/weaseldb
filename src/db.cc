@@ -1,7 +1,8 @@
+#include <fstream>
+
 #include "db.h"
 #include "tokenizer.h"
 #include "parser.h"
-#include "status.h"
 
 namespace wsldb {
 
@@ -46,7 +47,7 @@ std::vector<Token> DB::tokenize(const std::string& query) {
         tokens.push_back(tokenizer.NextToken());
     } while (tokens.back().type != TokenType::Eof);
 
-//    tokenizer.DebugPrintTokens(tokens);
+    //tokenizer.DebugPrintTokens(tokens);
 
     return tokens;
 }
@@ -73,27 +74,7 @@ rocksdb::Status DB::execute(const std::string& query) {
         if (status.Ok()) { 
             TupleSet* tupleset = status.Tuples();
             if (tupleset) {
-                for (const std::string& f: tupleset->fields) {
-                    std::cout << f << ", ";
-                }
-                std::cout << std::endl;
-
-                for (Tuple* t: tupleset->tuples) {
-                    for (Datum d: t->data) {
-                        if (d.Type() == TokenType::Int) {
-                            std::cout << d.AsInt() << ", ";
-                        } else if (d.Type() == TokenType::Text) {
-                            std::cout << d.AsString() << ", ";
-                        } else {
-                            if (d.AsBool()) {
-                                std::cout << "true, ";
-                            } else {
-                                std::cout << "false, ";
-                            }
-                        }
-                    }
-                    std::cout << std::endl;
-                }
+                tupleset->Print();
             }
         }
 
@@ -101,6 +82,40 @@ rocksdb::Status DB::execute(const std::string& query) {
     }
 
     return status_;
+}
+
+wsldb::Status DB::ExecuteScript(const std::string& path) {
+    std::string line;
+    std::ifstream script(path);
+    std::vector<Token> tokens;
+    while (getline(script, line)) {
+        std::vector<Token> temp = tokenize(line);
+        if (!tokens.empty()) {
+            tokens.pop_back(); //remove Eof token at end of each line
+        }
+        tokens.insert(tokens.end(), std::make_move_iterator(temp.begin()), std::make_move_iterator(temp.end()));
+    }
+    script.close();
+
+    std::vector<Stmt*> ptree = parse(tokens);
+
+    for (Stmt* s: ptree) {
+        Status status = s->Analyze(this);
+
+        if (status.Ok()) 
+            status = s->Execute(this);
+       
+        if (status.Ok()) { 
+            TupleSet* tupleset = status.Tuples();
+            if (tupleset) {
+                tupleset->Print();
+            }
+        }
+
+        std::cout << status.Msg() << std::endl;
+    }
+
+    return Status(true, "ok");
 }
 
 void DB::ShowTables() {

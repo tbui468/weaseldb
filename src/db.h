@@ -3,6 +3,7 @@
 #include <string>
 #include "rocksdb/db.h"
 #include "token.h"
+#include "status.h"
 
 namespace wsldb {
 
@@ -15,6 +16,7 @@ public:
     std::vector<Token> tokenize(const std::string& query);
     std::vector<Stmt*> parse(const std::vector<Token>& tokens);
     rocksdb::Status execute(const std::string& query);
+    wsldb::Status ExecuteScript(const std::string& path);
     void ShowTables();
     void AppendTableHandle(rocksdb::DB* h);
     rocksdb::DB* GetTableHandle(const std::string& table_name);
