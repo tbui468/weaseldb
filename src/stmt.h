@@ -74,7 +74,7 @@ public:
         for (std::vector<Expr*> exprs: values_) {
             std::vector<Datum> data = std::vector<Datum>();
             for (Expr* e: exprs) {
-                data.push_back(e->Eval());
+                data.push_back(e->Eval(nullptr));
             }
             std::string value = schema.SerializeData(data);
             std::string key = schema.GetKeyFromData(data);
@@ -94,18 +94,25 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(Token target_relation, std::vector<Token> target_fields, Expr* where_clause): 
-        target_relation_(target_relation), target_fields_(std::move(target_fields)), where_clause_(where_clause) {}
+    SelectStmt(Token target_relation, std::vector<Expr*> target_cols, Expr* where_clause): 
+        target_relation_(target_relation), target_cols_(std::move(target_cols)), where_clause_(where_clause) {}
 
     void Analyze(DB* db) override {
+        std::string serialized_schema;
+        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
+        Schema schema(serialized_schema);
+
+        if (where_clause_)
+            where_clause_->Analyze(&schema);
     }
     Status Execute(DB* db) override {
         std::vector<std::string> tuplefields = std::vector<std::string>();
-        for (const Token& t: target_fields_) {
-            tuplefields.push_back(t.lexeme);
+        for (Expr* e: target_cols_) {
+            tuplefields.push_back(e->ToString()); //TODO: this won't work if e is not a ColRef
         }
 
         TupleSet* tupleset = new TupleSet(tuplefields);
+
         std::string serialized_schema;
         rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
         Schema schema(serialized_schema);
@@ -113,9 +120,18 @@ public:
         rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
         rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
 
+        //index scan
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
             std::string value = it->value().ToString();
+
             std::vector<Datum> rec = schema.DeserializeData(value);
+            
+            //selection
+            Tuple tuple(rec);
+            if (where_clause_ && !where_clause_->Eval(&tuple).AsBool())
+                continue;
+
+            //projection
             std::vector<Datum> final_tuple = std::vector<Datum>();
 
             for (std::string field: tuplefields) {
@@ -125,6 +141,7 @@ public:
                 }
             }
 
+            //add final tuple to output set
             tupleset->tuples.push_back(new Tuple(final_tuple));
         }
 
@@ -134,8 +151,8 @@ public:
         return "select";
     }
 private:
-    Token target_relation_;
-    std::vector<Token> target_fields_;
+    Token target_relation_; //TODO: should be expression too to allow subqueries
+    std::vector<Expr*> target_cols_;
     Expr* where_clause_;
 };
 

@@ -15,13 +15,15 @@ std::vector<Stmt*> Parser::ParseStmts() {
     return stmts;
 }
 
-Expr* Parser::ParsePrimaryExpr() {
+Expr* Parser::ParsePrimary() {
     switch (PeekToken().type) {
         case TokenType::IntLiteral:
         case TokenType::StringLiteral:
         case TokenType::TrueLiteral:
         case TokenType::FalseLiteral:
             return new Literal(NextToken());
+        case TokenType::Identifier:
+            return new ColRef(NextToken());
         default:
             return NULL;
     }
@@ -29,15 +31,33 @@ Expr* Parser::ParsePrimaryExpr() {
 }
 
 Expr* Parser::ParseRelational() {
+    Expr* left = ParsePrimary();
 
+    while (PeekToken().type == TokenType::Less ||
+           PeekToken().type == TokenType::LessEqual ||
+           PeekToken().type == TokenType::Greater ||
+           PeekToken().type == TokenType::GreaterEqual) {
+        Token op = NextToken();
+        left = new Binary(op, left, ParsePrimary());
+    }
+
+    return left;
 }
 
 Expr* Parser::ParseEquality() {
+    Expr* left = ParseRelational();
 
+    while (PeekToken().type == TokenType::Equal ||
+           PeekToken().type == TokenType::NotEqual) {
+        Token op = NextToken();
+        left = new Binary(op, left, ParseRelational());
+    }
+
+    return left;
 }
 
 Expr* Parser::ParseExpr() {
-    return ParsePrimaryExpr();
+    return ParseEquality();
 }
 
 std::vector<Expr*> Parser::ParseTuple() {
@@ -94,9 +114,9 @@ Stmt* Parser::ParseStmt() {
             return new InsertStmt(target, values);
         }
         case TokenType::Select: {
-            std::vector<Token> target_fields;
+            std::vector<Expr*> target_cols;
             while (PeekToken().type != TokenType::From) {
-                target_fields.push_back(NextToken());
+                target_cols.push_back(ParseExpr());
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken(); //,
                 }
@@ -109,7 +129,7 @@ Stmt* Parser::ParseStmt() {
                 where_clause = ParseExpr(); 
             }
             NextToken(); //;
-            return new SelectStmt(target, target_fields, where_clause);
+            return new SelectStmt(target, target_cols, where_clause);
         }
     }
 

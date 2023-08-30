@@ -3,7 +3,6 @@
 #include <vector>
 #include <string>
 #include "token.h"
-#include "expr.h"
 #include "datum.h"
 
 namespace wsldb {

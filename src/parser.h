@@ -12,7 +12,7 @@ public:
 
     std::vector<Stmt*> ParseStmts();
 private:
-    Expr* ParsePrimaryExpr();
+    Expr* ParsePrimary();
     Expr* ParseRelational();
     Expr* ParseEquality();
     Expr* ParseExpr();

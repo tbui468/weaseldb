@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <iostream>
 #include "token.h"
 
 namespace wsldb {
@@ -67,6 +68,16 @@ public:
         } 
     }
 
+    Datum(int i) {
+        type_ = TokenType::Int;
+        data_.append((char*)&i, sizeof(int));
+    }
+
+    Datum(bool b) {
+        type_ = TokenType::Bool;
+        data_.append((char*)&b, sizeof(bool));
+    }
+
     TokenType Type() const {
         return type_;
     }
@@ -86,6 +97,21 @@ public:
 
     bool AsBool() {
         return *((bool*)(data_.data()));
+    }
+
+    Datum Compare(Datum& d) {
+        switch (type_) {
+            case TokenType::Int:
+                return Datum(AsInt() - d.AsInt());
+            case TokenType::Bool:
+                return Datum(AsBool() - d.AsBool());
+            case TokenType::Text:
+                return Datum(AsString().compare(d.AsString()));
+            default:
+                std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
+                break;
+        }        
+        return Datum(0);
     }
 private:
     TokenType type_;
