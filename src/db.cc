@@ -65,45 +65,41 @@ rocksdb::Status DB::execute(const std::string& query) {
     }*/
 
     for (Stmt* s: ptree) {
-        s->Analyze(this);
-        Status status = s->Execute(this);
-        
-        TupleSet* tupleset = status.Tuples();
-        if (tupleset) {
-            for (const std::string& f: tupleset->fields) {
-                std::cout << f << ", ";
-            }
-            std::cout << std::endl;
+        Status status = s->Analyze(this);
 
-            for (Tuple* t: tupleset->tuples) {
-                for (Datum d: t->data) {
-                    if (d.Type() == TokenType::Int) {
-                        std::cout << d.AsInt() << ", ";
-                    } else if (d.Type() == TokenType::Text) {
-                        std::cout << d.AsString() << ", ";
-                    } else {
-                        if (d.AsBool()) {
-                            std::cout << "true, ";
-                        } else {
-                            std::cout << "false, ";
-                        }
-                    }
+        if (status.Ok()) 
+            status = s->Execute(this);
+       
+        if (status.Ok()) { 
+            TupleSet* tupleset = status.Tuples();
+            if (tupleset) {
+                for (const std::string& f: tupleset->fields) {
+                    std::cout << f << ", ";
                 }
                 std::cout << std::endl;
+
+                for (Tuple* t: tupleset->tuples) {
+                    for (Datum d: t->data) {
+                        if (d.Type() == TokenType::Int) {
+                            std::cout << d.AsInt() << ", ";
+                        } else if (d.Type() == TokenType::Text) {
+                            std::cout << d.AsString() << ", ";
+                        } else {
+                            if (d.AsBool()) {
+                                std::cout << "true, ";
+                            } else {
+                                std::cout << "false, ";
+                            }
+                        }
+                    }
+                    std::cout << std::endl;
+                }
             }
         }
 
         std::cout << status.Msg() << std::endl;
     }
 
-    /*
-    std::vector<RewrittenTree> rwtree = rewrite(qtree);
-    std::vector<PlanTree> plantree = plan(rwtree);
-    std::string msg = execute_plan(plantree);*/
-
-    //tokenize query
-    //parse into query tree
-    //execute query tree starting from the leaves
     return status_;
 }
 
@@ -149,6 +145,11 @@ rocksdb::DB* DB::GetTableHandle(const std::string& table_name) {
             return h;
     }
     return NULL;
+}
+
+bool DB::TableSchema(const std::string& table_name, std::string* serialized_schema) {
+    rocksdb::Status status = Catalogue()->Get(rocksdb::ReadOptions(), table_name, serialized_schema);
+    return status.ok();
 }
 
 }

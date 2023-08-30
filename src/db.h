@@ -19,6 +19,7 @@ public:
     void AppendTableHandle(rocksdb::DB* h);
     rocksdb::DB* GetTableHandle(const std::string& table_name);
     std::string GetTablePath(const std::string& table_name);
+    bool TableSchema(const std::string& table_name, std::string* serialized_schema);
 
     inline rocksdb::DB* Catalogue() {
         return catalogue_handle_;

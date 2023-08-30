@@ -19,6 +19,9 @@ public:
     inline int FieldCount() {
         return names_.size(); // == types.size()
     }
+    inline TokenType Type(int i) {
+        return types_.at(i);
+    }
 
 private:
     std::vector<std::string> names_;

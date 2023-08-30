@@ -13,7 +13,7 @@ namespace wsldb {
 
 class Stmt {
 public:
-    virtual void Analyze(DB* db) = 0;
+    virtual Status Analyze(DB* db) = 0;
     virtual Status Execute(DB* db) = 0;
     virtual std::string ToString() = 0;
 };
@@ -23,13 +23,16 @@ public:
     CreateStmt(Token target, const std::vector<Token>& attrs, const std::vector<Token>& types): 
         target_(target), schema_(Schema(attrs, types)) {}
 
-    void Analyze(DB* db) override {
-        //TODO: return error if table with this name already exists
+    Status Analyze(DB* db) override {
+        std::string serialized_schema;
+        if (db->TableSchema(target_.lexeme, &serialized_schema)) {
+            return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
+        }
+        return Status(true, "ok");
     }
 
     Status Execute(DB* db) override {
         //TODO: batch write system catalogue and new table - should be created atomically
-
         db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, schema_.Serialize());
 
         rocksdb::Options options;
@@ -53,23 +56,41 @@ public:
     InsertStmt(Token target, std::vector<std::vector<Expr*>> values):
         target_(target), values_(std::move(values)) {}
 
-    void Analyze(DB* db) override {
-        //TODO: check existence of schema
-        //TODO: type-check values with schema on record
+    Status Analyze(DB* db) override {
+        std::string serialized_schema;
+        if (!db->TableSchema(target_.lexeme, &serialized_schema)) {
+            return Status(false, "Error: Table '" + target_.lexeme + "' does not exist");
+        }
+        Schema schema(serialized_schema);
+
+        for (const std::vector<Expr*>& exprs: values_) {
+            if (exprs.size() != schema.FieldCount()) {
+                return Status(false, "Error: Value count does not match field count in schema on record");
+            }
+            int i = 0;
+            for (Expr* e: exprs) {
+                TokenType type;
+                Status status = e->Analyze(&schema, &type);
+
+                if (!status.Ok()) {
+                    return status;
+                }
+
+                if (type != schema.Type(i)) {
+                    return Status(false, "Error: Value type does not match type in schema on record");
+                }
+
+                i++;
+            }
+        }
+
+        return Status(true, "ok");
     }
 
     Status Execute(DB* db) override {
-        std::string value;
-        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_.lexeme, &value);
-        if (!status.ok()) {
-            return Status(false, "Error: invalid table name");
-        }
-
-        Schema schema(value);
-
-        if (schema.FieldCount() != values_.at(0).size()) {
-            return Status(false, "Error: value count does not match schema on record");
-        }
+        std::string serialized_schema;
+        db->TableSchema(target_.lexeme, &serialized_schema);
+        Schema schema(serialized_schema);
 
         rocksdb::DB* tab_handle = db->GetTableHandle(target_.lexeme);
         for (std::vector<Expr*> exprs: values_) {
@@ -98,16 +119,32 @@ public:
     SelectStmt(Token target_relation, std::vector<Expr*> target_cols, Expr* where_clause): 
         target_relation_(target_relation), target_cols_(std::move(target_cols)), where_clause_(where_clause) {}
 
-    void Analyze(DB* db) override {
+    Status Analyze(DB* db) override {
         std::string serialized_schema;
-        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
+        if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
+            return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
+        }
         Schema schema(serialized_schema);
 
-        where_clause_->Analyze(&schema);
+        TokenType type;
+        Status status = where_clause_->Analyze(&schema, &type);
+        if (!status.Ok()) {
+            return status;
+        }
+
+        if (type != TokenType::Bool) {
+            return Status(false, "Error: Where clause must be a boolean expression");
+        }
 
         for (Expr* e: target_cols_) {
-            e->Analyze(&schema);
+            TokenType type;
+            Status status = e->Analyze(&schema, &type);
+            if (!status.Ok()) {
+                return status;
+            }
         }
+
+        return Status(true, "ok");
     }
     Status Execute(DB* db) override {
         std::vector<std::string> tuplefields = std::vector<std::string>();

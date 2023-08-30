@@ -6,6 +6,7 @@
 #include "datum.h"
 #include "tuple.h"
 #include "schema.h"
+#include "status.h"
 
 namespace wsldb {
 
@@ -14,7 +15,7 @@ class Expr {
 public:
     virtual Datum Eval(Tuple* tuple) = 0;
     virtual std::string ToString() = 0;
-    virtual void Analyze(Schema* schema) = 0;
+    virtual Status Analyze(Schema* schema, TokenType* evaluated_type) = 0;
 };
 
 class Literal: public Expr {
@@ -27,7 +28,9 @@ public:
     std::string ToString() override {
         return t_.lexeme;
     }
-    void Analyze(Schema* schema) {
+    Status Analyze(Schema* schema, TokenType* evaluated_type) {
+        *evaluated_type = Datum(t_).Type();
+        return Status(true, "ok");
     }
 private:
     Token t_;
@@ -62,9 +65,29 @@ public:
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
     }
-    void Analyze(Schema* schema) {
-        left_->Analyze(schema);
-        right_->Analyze(schema);
+    Status Analyze(Schema* schema, TokenType* evaluated_type) {
+        TokenType left_type;
+        TokenType right_type;
+        left_->Analyze(schema, &left_type);
+        right_->Analyze(schema, &right_type);
+        
+        switch (op_.type) {
+            case TokenType::Equal:
+            case TokenType::NotEqual:
+            case TokenType::Less:
+            case TokenType::LessEqual:
+            case TokenType::Greater:
+            case TokenType::GreaterEqual:
+                if (left_type != right_type) {
+                    return Status(false, "Error: Equality and relational operands must be same data types");
+                }
+                *evaluated_type = TokenType::Bool;
+                break;
+            default:
+                break;
+        }
+
+        return Status(true, "ok");
     }
 private:
     Expr* left_;
@@ -81,8 +104,13 @@ public:
     std::string ToString() override {
         return t_.lexeme;
     }
-    void Analyze(Schema* schema) {
+    Status Analyze(Schema* schema, TokenType* evaluated_type) {
         idx_ = schema->GetFieldIdx(t_.lexeme);
+        if (idx_ == -1) {
+            return Status(false, "Error: Column '" + t_.lexeme + "' does not exist");
+        }
+        *evaluated_type = schema->Type(idx_);
+        return Status(true, "ok");
     }
 private:
     Token t_;
