@@ -122,6 +122,14 @@ Expr* Parser::ParseExpr() {
     return ParseOr();
 }
 
+Expr* Parser::ParseAssignment() {
+    Token t = NextToken();
+    NextToken(); //=
+    Expr* right = ParseExpr();
+
+    return new Assignment(t, right);    
+}
+
 std::vector<Expr*> Parser::ParseTuple() {
     NextToken(); //(
     std::vector<Expr*> exprs = std::vector<Expr*>();
@@ -194,6 +202,43 @@ Stmt* Parser::ParseStmt() {
             }
             NextToken(); //;
             return new SelectStmt(target, target_cols, where_clause);
+        }
+
+        case TokenType::Update: {
+            Token target = NextToken();
+            NextToken(); //set
+            std::vector<Expr*> assignments;
+            while (!(PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Where)) {
+                assignments.push_back(ParseAssignment());
+                if (PeekToken().type == TokenType::Comma) {
+                    NextToken(); //,
+                }
+            }
+
+            Expr* where_clause = nullptr;
+            if (PeekToken().type == TokenType::Where) {
+                NextToken(); //where
+                where_clause = ParseExpr(); 
+            } else {
+                where_clause = new Literal(true);
+            }
+            NextToken(); //;
+
+            return new UpdateStmt(target, assignments, where_clause);
+        }
+        case TokenType::Delete: {
+            NextToken(); //from
+            Token target = NextToken();
+
+            Expr* where_clause = nullptr;
+            if (PeekToken().type == TokenType::Where) {
+                NextToken(); //where
+                where_clause = ParseExpr(); 
+            } else {
+                where_clause = new Literal(true);
+            }
+            NextToken(); //;
+            return new DeleteStmt(target, where_clause);
         }
     }
 

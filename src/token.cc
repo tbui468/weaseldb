@@ -79,6 +79,12 @@ std::string TokenTypeToString(TokenType type) {
             return "Or";
         case TokenType::Not:
             return "Not";
+        case TokenType::Update:
+            return "Update";
+        case TokenType::Set:
+            return "Set";
+        case TokenType::Delete:
+            return "Delete";
         default:
             return "Unrecognized token";
     }

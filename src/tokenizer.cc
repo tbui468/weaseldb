@@ -118,6 +118,12 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::And;
     } else if (len == 3 && strncmp(&query_.at(idx), "not", len) == 0) {
         type = TokenType::Not;
+    } else if (len == 6 && strncmp(&query_.at(idx), "update", len) == 0) {
+        type = TokenType::Update;
+    } else if (len == 3 && strncmp(&query_.at(idx), "set", len) == 0) {
+        type = TokenType::Set;
+    } else if (len == 6 && strncmp(&query_.at(idx), "delete", len) == 0) {
+        type = TokenType::Delete;
     } else {
         type = TokenType::Identifier;
     }

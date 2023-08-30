@@ -22,6 +22,9 @@ enum class TokenType {
     And,
     Or,
     Not,
+    Update,
+    Set,
+    Delete,
 
     /* user-defined identifier */
     Identifier,

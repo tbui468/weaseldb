@@ -192,4 +192,119 @@ private:
     Expr* where_clause_;
 };
 
+class UpdateStmt: public Stmt {
+public:
+    UpdateStmt(Token target_relation, std::vector<Expr*> assignments, Expr* where_clause):
+        target_relation_(target_relation), assignments_(std::move(assignments)), where_clause_(where_clause) {}
+    Status Analyze(DB* db) override {
+        std::string serialized_schema;
+        if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
+            return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
+        }
+        Schema schema(serialized_schema);
+
+        TokenType type;
+        Status status = where_clause_->Analyze(&schema, &type);
+        if (!status.Ok()) {
+            return status;
+        }
+
+        for (Expr* e: assignments_) {
+            TokenType type;
+            Status status = e->Analyze(&schema, &type);
+            if (!status.Ok()) {
+                return status;
+            }
+        }
+        return Status(true, "ok");
+    }
+    Status Execute(DB* db) override {
+        std::string serialized_schema;
+        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
+        Schema schema(serialized_schema);
+
+        rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
+        rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
+
+        //index scan
+        int update_count = 0;
+        for (it->SeekToFirst(); it->Valid(); it->Next()) {
+            std::string value = it->value().ToString();
+
+            //selection
+            Tuple tuple(schema.DeserializeData(value));
+            if (!where_clause_->Eval(&tuple).AsBool())
+                continue;
+
+            update_count++;
+
+            for (Expr* e: assignments_) {
+                e->Eval(&tuple);  //return Datum is not used
+            }
+
+            std::string updated_value = schema.SerializeData(tuple.data);
+            std::string updated_key = schema.GetKeyFromData(tuple.data);
+            tab_handle->Put(rocksdb::WriteOptions(), updated_key, updated_value);
+        }
+        return Status(true, "(" + std::to_string(update_count) + " updates)");
+    }
+    std::string ToString() override {
+        return "update";
+    }
+private:
+    Token target_relation_;
+    std::vector<Expr*> assignments_;
+    Expr* where_clause_;
+};
+
+class DeleteStmt: public Stmt {
+public:
+    DeleteStmt(Token target_relation, Expr* where_clause): 
+        target_relation_(target_relation), where_clause_(where_clause) {}
+    Status Analyze(DB* db) override {
+        std::string serialized_schema;
+        if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
+            return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
+        }
+        Schema schema(serialized_schema);
+
+        TokenType type;
+        Status status = where_clause_->Analyze(&schema, &type);
+        if (!status.Ok()) {
+            return status;
+        }
+        return Status(true, "ok");
+    }
+    Status Execute(DB* db) override {
+        std::string serialized_schema;
+        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
+        Schema schema(serialized_schema);
+
+        rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
+        rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
+
+        //index scan
+        int delete_count = 0;
+        for (it->SeekToFirst(); it->Valid(); it->Next()) {
+            std::string value = it->value().ToString();
+
+            //selection
+            Tuple tuple(schema.DeserializeData(value));
+            if (!where_clause_->Eval(&tuple).AsBool())
+                continue;
+
+            delete_count++;
+
+            tab_handle->Delete(rocksdb::WriteOptions(), it->key().ToString());
+        }
+        return Status(true, "(" + std::to_string(delete_count) + " deletes)");
+    }
+    std::string ToString() override {
+        return "delete";
+    }
+private:
+    Token target_relation_;
+    Expr* where_clause_;
+};
+
 }

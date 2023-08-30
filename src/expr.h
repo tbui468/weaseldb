@@ -193,4 +193,39 @@ private:
     int idx_;
 };
 
+class Assignment: public Expr {
+public:
+    Assignment(Token col, Expr* right): col_(col), right_(right) {}
+    Datum Eval(Tuple* tuple) override {
+        tuple->data.at(idx_) = right_->Eval(tuple);
+        return Datum(0);
+    }
+    std::string ToString() override {
+        return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
+    }
+    Status Analyze(Schema* schema, TokenType* evaluated_type) {
+        TokenType type;
+        Status status = right_->Analyze(schema, &type);
+        if (!status.Ok()) {
+            return status;
+        }
+
+        idx_ = schema->GetFieldIdx(col_.lexeme);
+        if (idx_ == -1) {
+            return Status(false, "Error: Column '" + col_.lexeme + "' does not exist");
+        }
+
+        if (schema->Type(idx_) != type) {
+            return Status(false, "Error: Value type does not match type in schema");
+        }
+
+        *evaluated_type = schema->Type(idx_);
+        return Status(true, "ok");
+    }
+private:
+    Token col_;
+    int idx_;
+    Expr* right_;
+};
+
 }
