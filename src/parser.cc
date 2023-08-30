@@ -24,6 +24,12 @@ Expr* Parser::ParsePrimary() {
             return new Literal(NextToken());
         case TokenType::Identifier:
             return new ColRef(NextToken());
+        case TokenType::LParen: {
+            NextToken(); //(
+            Expr* expr = ParseExpr();
+            NextToken(); //)
+            return expr;
+        }
         default:
             return NULL;
     }
