@@ -127,6 +127,8 @@ Stmt* Parser::ParseStmt() {
             if (PeekToken().type == TokenType::Where) {
                 NextToken(); //where
                 where_clause = ParseExpr(); 
+            } else {
+                where_clause = new Literal(true);
             }
             NextToken(); //;
             return new SelectStmt(target, target_cols, where_clause);

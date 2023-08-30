@@ -20,6 +20,7 @@ public:
 class Literal: public Expr {
 public:
     Literal(Token t): t_(t) {}
+    Literal(bool b): t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
     Datum Eval(Tuple* tuple) override {
         return Datum(t_);
     }

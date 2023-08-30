@@ -102,8 +102,7 @@ public:
         rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
         Schema schema(serialized_schema);
 
-        if (where_clause_)
-            where_clause_->Analyze(&schema);
+        where_clause_->Analyze(&schema);
     }
     Status Execute(DB* db) override {
         std::vector<std::string> tuplefields = std::vector<std::string>();
@@ -128,7 +127,7 @@ public:
             
             //selection
             Tuple tuple(rec);
-            if (where_clause_ && !where_clause_->Eval(&tuple).AsBool())
+            if (!where_clause_->Eval(&tuple).AsBool())
                 continue;
 
             //projection
