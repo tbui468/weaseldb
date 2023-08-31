@@ -121,6 +121,13 @@ public:
             }
             std::string value = schema.SerializeData(data);
             std::string key = schema.GetKeyFromData(data);
+
+            std::string test_value;
+            rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), key, &test_value);
+            if (status.ok()) {
+                return Status(false, "Error: A record with the same primary key already exists");
+            }
+
             tab_handle->Put(rocksdb::WriteOptions(), key, value);
         }
 
@@ -251,6 +258,7 @@ public:
         int update_count = 0;
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
             std::string value = it->value().ToString();
+            std::string old_key = it->key().ToString();
 
             //selection
             Tuple tuple(schema.DeserializeData(value));
@@ -265,6 +273,19 @@ public:
 
             std::string updated_value = schema.SerializeData(tuple.data);
             std::string updated_key = schema.GetKeyFromData(tuple.data);
+
+            //if updated_key already exists, and report error if so
+            std::string test_value;
+            rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), updated_key, &test_value);
+            if (status.ok()) {
+                return Status(false, "Error: A record with the same primary key already exists");
+            }
+
+            //if new key is different from old key, delete old key
+            if (old_key.compare(updated_key) != 0) {
+                tab_handle->Delete(rocksdb::WriteOptions(), old_key);
+            }
+
             tab_handle->Put(rocksdb::WriteOptions(), updated_key, updated_value);
         }
         return Status(true, "(" + std::to_string(update_count) + " updates)");
