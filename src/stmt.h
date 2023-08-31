@@ -20,20 +20,28 @@ public:
 
 class CreateStmt: public Stmt {
 public:
-    CreateStmt(Token target, const std::vector<Token>& attrs, const std::vector<Token>& types): 
-        target_(target), schema_(Schema(attrs, types)) {}
+    CreateStmt(Token target, std::vector<Attribute*> attributes, std::vector<Token> primary_keys):
+        target_(target), attributes_(std::move(attributes)), primary_keys_(std::move(primary_keys)) {}
 
     Status Analyze(DB* db) override {
         std::string serialized_schema;
         if (db->TableSchema(target_.lexeme, &serialized_schema)) {
             return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
         }
+
+        //TODO: verify that col_names are valid (not keywords)
+        //TODO: verify that col_types are supported data types
+
+        //TODO: verify that primary key cols are valid columns
+        //TODO: verify that foreign table in foreign keys exists
+        //TODO: verify that foreign columns in foreign keys exist
+
         return Status(true, "ok");
     }
 
     Status Execute(DB* db) override {
-        //TODO: batch write system catalogue and new table - should be created atomically
-        db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, schema_.Serialize());
+        Schema schema(attributes_, primary_keys_);
+        db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, schema.Serialize());
 
         rocksdb::Options options;
         options.create_if_missing = true;
@@ -48,7 +56,8 @@ public:
     }
 private:
     Token target_;
-    Schema schema_;
+    std::vector<Attribute*> attributes_;
+    std::vector<Token> primary_keys_;
 };
 
 class InsertStmt: public Stmt {
@@ -335,6 +344,49 @@ public:
 private:
     Token target_relation_;
     bool has_if_exists_;
+};
+
+class DescribeTableStmt: public Stmt {
+public:
+    DescribeTableStmt(Token target_relation): target_relation_(target_relation) {}
+    Status Analyze(DB* db) override {
+        std::string serialized_schema;
+        if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
+            return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
+        }
+        return Status(true, "ok");
+    }
+    Status Execute(DB* db) override {
+        std::string serialized_schema;
+        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
+        Schema schema(serialized_schema);
+
+        std::vector<std::string> tuplefields = std::vector<std::string>();
+        tuplefields.push_back("Column");
+        tuplefields.push_back("Type");
+        TupleSet* tupleset = new TupleSet(tuplefields);
+
+        for (int i = 0; i < schema.FieldCount(); i++) {
+            std::vector<Datum> data = {Datum(schema.Name(i)), Datum(TokenTypeToString(schema.Type(i)))};
+            tupleset->tuples.push_back(new Tuple(data));
+        }
+
+        std::vector<Datum> pk_data;
+        std::string s = "Primary keys:";
+        pk_data.push_back(Datum(s));
+        for (int i = 0; i < schema.PrimaryKeyCount(); i++) {
+            pk_data.push_back(schema.Name(schema.PrimaryKey(i)));
+        }
+        tupleset->tuples.push_back(new Tuple(pk_data));
+
+        return Status(true, "table '" + target_relation_.lexeme + "'", tupleset);
+    }
+    std::string ToString() override {
+        return "describe table";
+    }
+
+private:
+    Token target_relation_;
 };
 
 }

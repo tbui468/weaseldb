@@ -28,6 +28,9 @@ enum class TokenType {
     Drop,
     If,
     Exists,
+    Foreign,
+    References,
+    Describe,
 
     /* user-defined identifier */
     Identifier,

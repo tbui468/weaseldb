@@ -130,6 +130,12 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::If;
     } else if (len == 6 && strncmp(&query_.at(idx), "exists", len) == 0) {
         type = TokenType::Exists;
+    } else if (len == 7 && strncmp(&query_.at(idx), "foreign", len) == 0) {
+        type = TokenType::Foreign;
+    } else if (len == 10 && strncmp(&query_.at(idx), "references", len) == 0) {
+        type = TokenType::References;
+    } else if (len == 8 && strncmp(&query_.at(idx), "describe", len) == 0) {
+        type = TokenType::Describe;
     } else {
         type = TokenType::Identifier;
     }

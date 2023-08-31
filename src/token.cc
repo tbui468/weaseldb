@@ -91,6 +91,12 @@ std::string TokenTypeToString(TokenType type) {
             return "If";
         case TokenType::Exists:
             return "Exists";
+        case TokenType::Foreign:
+            return "Foreign";
+        case TokenType::References:
+            return "References";
+        case TokenType::Describe:
+            return "Describe";
         default:
             return "Unrecognized token";
     }

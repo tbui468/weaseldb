@@ -4,52 +4,63 @@
 
 namespace wsldb {
 
-Schema::Schema(const std::vector<Token>& names, const std::vector<Token>& types) {
-    names_ = std::vector<std::string>();
-    for (const Token& t: names) {
-        names_.push_back(t.lexeme);
-    }
 
-    types_ = std::vector<TokenType>();
-    for (Token t: types) {
-        types_.push_back(t.type);
-    }
+Schema::Schema(std::vector<Attribute*> attributes, std::vector<Token> primary_keys) {
+    for (Attribute* a: attributes) {
+        attr_names_.push_back(a->name.lexeme);
+        attr_types_.push_back(a->type.type);
+    } 
 
-    primary_key_idx_ = 0;
+    for (Token t: primary_keys) {
+        pk_attr_idxs_.push_back(GetFieldIdx(t.lexeme));
+    }
 }
 
 Schema::Schema(const std::string& buf) {
-    names_ = std::vector<std::string>();
-    types_ = std::vector<TokenType>();
-
     int off = 0; 
     int count = *((int*)(buf.data() + off));
     off += sizeof(int);
 
     for (int i = 0; i < count; i++) {
-        types_.push_back(*((TokenType*)(buf.data() + off)));
+        attr_types_.push_back(*((TokenType*)(buf.data() + off)));
         off += sizeof(TokenType);
 
         int str_size = *((int*)(buf.data() + off));
         off += sizeof(int);
-        names_.push_back(buf.substr(off, str_size));
+        attr_names_.push_back(buf.substr(off, str_size));
         off += str_size;
     }
 
-    primary_key_idx_ = 0;
+    int pk_count = *((int*)(buf.data() + off));
+    off += sizeof(int);
+
+    for (int i = 0; i < pk_count; i++) {
+        int k = *((int*)(buf.data() + off));
+        off += sizeof(int);
+        pk_attr_idxs_.push_back(k);
+    }
+
 }
 
 std::string Schema::Serialize() {
     std::string buf;
 
-    int count = names_.size();
+    //attributes
+    int count = attr_names_.size();
     buf.append((char*)&count, sizeof(count));
 
-    for (int i = 0; i < names_.size(); i++) { //types vector should be same size
-        buf.append((char*)&types_.at(i), sizeof(TokenType));
-        int str_size = names_.at(i).length();
+    for (int i = 0; i < attr_names_.size(); i++) { //types vector should be same size
+        buf.append((char*)&attr_types_.at(i), sizeof(TokenType));
+        int str_size = attr_names_.at(i).length();
         buf.append((char*)&str_size, sizeof(int));
-        buf += names_.at(i);
+        buf += attr_names_.at(i);
+    }
+
+    //primary key(s)
+    int pk_count = pk_attr_idxs_.size();
+    buf.append((char*)&pk_count, sizeof(pk_count));
+    for (int i: pk_attr_idxs_) {
+        buf.append((char*)&i, sizeof(int));
     }
 
     return buf;
@@ -58,7 +69,7 @@ std::string Schema::Serialize() {
 std::vector<Datum> Schema::DeserializeData(const std::string& value) {
     std::vector<Datum> data = std::vector<Datum>();
     int off = 0;
-    for (const TokenType& type: types_) {
+    for (const TokenType& type: attr_types_) {
         data.push_back(Datum(value, &off, type));
     }
 
@@ -74,13 +85,13 @@ std::string Schema::SerializeData(const std::vector<Datum>& data) {
 }
 
 std::string Schema::GetKeyFromData(const std::vector<Datum>& data) {
-    return data.at(primary_key_idx_).ToString();
+    return data.at(pk_attr_idxs_.at(0)).ToString();
 }
 
 int Schema::GetFieldIdx(const std::string& name) {
-    ptrdiff_t pos = std::distance(names_.begin(), std::find(names_.begin(), names_.end(), name));
+    ptrdiff_t pos = std::distance(attr_names_.begin(), std::find(attr_names_.begin(), attr_names_.end(), name));
 
-    if (pos >= names_.size()) {
+    if (pos >= attr_names_.size()) {
         return -1;
     }
 

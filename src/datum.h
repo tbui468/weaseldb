@@ -78,6 +78,13 @@ public:
         data_.append((char*)&b, sizeof(bool));
     }
 
+    Datum(const std::string& s) {
+        type_ = TokenType::Text;
+        int size = s.size();
+        data_.append((char*)&size, sizeof(int));
+        data_ += s;
+    }
+
     TokenType Type() const {
         return type_;
     }

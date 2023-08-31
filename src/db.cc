@@ -172,6 +172,8 @@ bool DB::DropTable(const std::string& table_name) {
         rocksdb::DB* h = table_handles_.at(i);
         if (h->GetName().compare(GetTablePath(table_name)) == 0) {
             delete h;
+            rocksdb::Options options;
+            rocksdb::DestroyDB(GetTablePath(table_name), options);
             table_handles_.erase(table_handles_.begin() + i);
             return true;
         }

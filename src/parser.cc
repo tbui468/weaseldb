@@ -150,14 +150,33 @@ Stmt* Parser::ParseStmt() {
             Token target = NextToken();
             NextToken(); //(
 
-            std::vector<Token> attrs;
-            std::vector<Token> types;
+            std::vector<Attribute*> attributes;
+            std::vector<Token> pks;
             while (PeekToken().type != TokenType::RParen) {
-                attrs.push_back(NextToken());
-                types.push_back(NextToken());
                 if (PeekToken().type == TokenType::Primary) {
                     NextToken(); //primary
                     NextToken(); //key
+                    NextToken(); //(
+                    while (PeekToken().type != TokenType::RParen) {
+                        pks.push_back(NextToken());
+                        if (PeekToken().type == TokenType::Comma) {
+                            NextToken();
+                        } 
+                    }
+                    NextToken(); //)
+                    /*
+                } else if (PeekToken().type == TokenType::Foreign) {
+                    NextToken(); //foreign
+                    NextToken(); //key
+                    std::vector<Expr*> cols = ParseTuple();
+                    NextToken(); //references
+                    Token foreign_target = NextToken();
+                    std::vector<Expr*> foreign_cols = ParseTuple();
+                    constraints.push_back(new ForeignKey(cols, foreign_target, foreign_cols));*/
+                } else {
+                    Token name = NextToken();
+                    Token type = NextToken();
+                    attributes.push_back(new Attribute(name, type));
                 }
 
                 if (PeekToken().type == TokenType::Comma) {
@@ -167,7 +186,7 @@ Stmt* Parser::ParseStmt() {
 
             NextToken();//)
             NextToken();//;
-            return new CreateStmt(target, attrs, types);
+            return new CreateStmt(target, attributes, pks);
         }
         case TokenType::Insert: {
             NextToken(); //into
@@ -251,6 +270,12 @@ Stmt* Parser::ParseStmt() {
             Token target = NextToken();
             NextToken(); //;
             return new DropTableStmt(target, has_if_exists);
+        }
+        case TokenType::Describe: {
+            NextToken(); //table
+            Token target = NextToken();
+            NextToken(); //;
+            return new DescribeTableStmt(target);
         }
     }
 
