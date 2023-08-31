@@ -18,6 +18,8 @@ Schema::Schema(std::vector<Attribute*> attributes, std::vector<Token> primary_ke
 
 Schema::Schema(const std::string& buf) {
     int off = 0; 
+
+    //attributes
     int count = *((int*)(buf.data() + off));
     off += sizeof(int);
 
@@ -31,6 +33,7 @@ Schema::Schema(const std::string& buf) {
         off += str_size;
     }
 
+    //primary key
     int pk_count = *((int*)(buf.data() + off));
     off += sizeof(int);
 

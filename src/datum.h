@@ -122,6 +122,12 @@ public:
         }        
         return Datum(0);
     }
+
+    static inline bool ValidType(TokenType type) {
+        return type == TokenType::Int ||
+               type == TokenType::Text ||
+               type == TokenType::Bool;
+    }
 private:
     TokenType type_;
     std::string data_;

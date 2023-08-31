@@ -29,10 +29,22 @@ public:
             return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
         }
 
-        //TODO: verify that col_names are valid (not keywords)
-        //TODO: verify that col_types are supported data types
+        for (Attribute* a: attributes_) {
+            if (a->name.type != TokenType::Identifier) {
+                return Status(false, "Error: '" + a->name.lexeme + "' is not allowed as column name");
+            }
+            if (!Datum::ValidType(a->type.type)) {
+                return Status(false, "Error: '" + a->type.lexeme + "' is not a valid data type");
+            }
+        }
 
-        //TODO: verify that primary key cols are valid columns
+        Schema schema(attributes_, primary_keys_);
+        for (Token t: primary_keys_) {
+            if (schema.GetFieldIdx(t.lexeme) == -1) {
+                return Status(false, "Error: Column '" + t.lexeme + "' not declared in table '" + target_.lexeme + "'");
+            }
+        }
+
         //TODO: verify that foreign table in foreign keys exists
         //TODO: verify that foreign columns in foreign keys exist
 
