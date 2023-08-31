@@ -79,13 +79,17 @@ std::vector<Datum> Schema::DeserializeData(const std::string& value) {
 std::string Schema::SerializeData(const std::vector<Datum>& data) {
     std::string value;
     for (Datum d: data) {
-        value += d.ToString();
+        value += d.Serialize();
     }
     return value;
 }
 
 std::string Schema::GetKeyFromData(const std::vector<Datum>& data) {
-    return data.at(pk_attr_idxs_.at(0)).ToString();
+    std::string primary_key;
+    for (int i: pk_attr_idxs_) {
+        primary_key += data.at(i).Serialize();
+    }
+    return primary_key;
 }
 
 int Schema::GetFieldIdx(const std::string& name) {

@@ -5,4 +5,3 @@ insert into planets values (3, 'Earth', 1, false), (3, 'Mars', 2, false), (3, 'S
 select id, name, moons, rings from planets;
 
 describe table planets;
-drop table planets;

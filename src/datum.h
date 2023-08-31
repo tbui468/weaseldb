@@ -18,8 +18,6 @@ public:
             }
             case TokenType::StringLiteral: {
                 type_ = TokenType::Text;
-                int size = t.lexeme.size();
-                data_.append((char*)&size, sizeof(int));
                 data_ += t.lexeme;
                 break;
             }
@@ -52,7 +50,6 @@ public:
             case TokenType::Text: {
                 int size = *((int*)(buf.data() + *off));
                 *off += sizeof(int);
-                data_.append((char*)&size, sizeof(int));
                 data_.append(buf.data() + *off, size);
                 *off += size;
                 break;
@@ -80,22 +77,27 @@ public:
 
     Datum(const std::string& s) {
         type_ = TokenType::Text;
-        int size = s.size();
-        data_.append((char*)&size, sizeof(int));
-        data_ += s;
+        data_ = s;
     }
 
     TokenType Type() const {
         return type_;
     }
 
-    std::string ToString() const {
+    std::string Serialize() const {
+        if (type_ == TokenType::Text) {
+            std::string result;
+            int size = data_.size();
+            result.append((char*)&size, sizeof(int));
+            result += data_;
+            return result;
+        }
+
         return data_;
     }
 
     std::string AsString() {
-        int off = sizeof(int); //string length
-        return data_.substr(off, data_.size() - off);
+        return data_;
     }
 
     int AsInt() {
