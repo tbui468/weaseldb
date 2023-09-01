@@ -36,6 +36,7 @@ enum class TokenType {
     By,
     Desc,
     Asc,
+    Limit,
 
     /* user-defined identifier */
     Identifier,

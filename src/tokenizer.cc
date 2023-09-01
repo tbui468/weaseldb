@@ -146,6 +146,8 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Desc;
     } else if (len == 3 && strncmp(&query_.at(idx), "asc", len) == 0) {
         type = TokenType::Asc;
+    } else if (len == 5 && strncmp(&query_.at(idx), "limit", len) == 0) {
+        type = TokenType::Limit;
     } else {
         type = TokenType::Identifier;
     }

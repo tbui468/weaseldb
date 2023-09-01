@@ -22,6 +22,7 @@ class Literal: public Expr {
 public:
     Literal(Token t): t_(t) {}
     Literal(bool b): t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
+    Literal(int i): t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
     Datum Eval(Tuple* tuple) override {
         return Datum(t_);
     }

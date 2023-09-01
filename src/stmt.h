@@ -147,11 +147,13 @@ public:
     SelectStmt(Token target_relation, 
                std::vector<Expr*> target_cols, 
                Expr* where_clause, 
-               std::vector<OrderCol> order_cols):
+               std::vector<OrderCol> order_cols,
+               Expr* limit):
                     target_relation_(target_relation), 
                     target_cols_(std::move(target_cols)), 
                     where_clause_(where_clause),
-                    order_cols_(std::move(order_cols)) {}
+                    order_cols_(std::move(order_cols)),
+                    limit_(limit) {}
 
     Status Analyze(DB* db) override {
         std::string serialized_schema;
@@ -192,7 +194,16 @@ public:
                 return status;
             }
         }
-        
+       
+        //limit
+        status = limit_->Analyze(&schema, &type);
+        if (!status.Ok()) {
+            return status;     
+        }
+
+        if (type != TokenType::Int) {
+            return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
+        }
 
         return Status(true, "ok");
     }
@@ -248,6 +259,11 @@ public:
                             return true;
                         });
         }
+
+        int limit = limit_->Eval(nullptr).AsInt();
+        if (limit != -1) {
+            tupleset->tuples.resize(limit);
+        }
         
         //TODO: apply projection
 
@@ -261,6 +277,7 @@ private:
     std::vector<Expr*> target_cols_;
     Expr* where_clause_;
     std::vector<OrderCol> order_cols_;
+    Expr* limit_;
 };
 
 class UpdateStmt: public Stmt {

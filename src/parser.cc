@@ -230,8 +230,16 @@ Stmt* Parser::ParseStmt() {
                 }
             }
 
+            Expr* limit = nullptr;
+            if (PeekToken().type == TokenType::Limit) {
+                NextToken(); //limit
+                limit = ParseExpr();
+            } else {
+                limit = new Literal(-1);
+            } 
+
             NextToken(); //;
-            return new SelectStmt(target, target_cols, where_clause, order_cols);
+            return new SelectStmt(target, target_cols, where_clause, order_cols, limit);
         }
 
         case TokenType::Update: {

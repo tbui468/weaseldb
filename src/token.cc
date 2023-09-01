@@ -107,6 +107,8 @@ std::string TokenTypeToString(TokenType type) {
             return "Desc";
         case TokenType::Asc:
             return "Asc";
+        case TokenType::Limit:
+            return "Limit";
         default:
             return "Unrecognized token";
     }
