@@ -267,15 +267,13 @@ public:
 
         if (use_groups) {
             for (Expr* e: target_cols_) {
-                if (e->ContainsNonAggregatedColRef(nongroup_cols)) {
-                    return Status(false, "Error: column needs to be aggregated");
-                    //TODO: report error
+                if (e->ContainsNonAggregatedColRef(nongroup_cols) >= 0) {
+                    return Status(false, "Error: Column '" + e->ToString() + "' needs to be an argument to an aggregate function or a 'group by' column");
                 }
             }
             for (OrderCol oc: order_cols_) {
-                if (oc.col->ContainsNonAggregatedColRef(nongroup_cols)) {
-                    return Status(false, "Error: column needs to be aggregated");
-                    //TODO: report error
+                if (oc.col->ContainsNonAggregatedColRef(nongroup_cols) >= 0) {
+                    return Status(false, "Error: Column '" + oc.col->ToString() + "' needs to be an argument to an aggregate function or a 'group by' column");
                 }
             }
             /* //TODO: uncomment after adding 'having' clause
