@@ -122,14 +122,6 @@ Expr* Parser::ParseExpr() {
     return ParseOr();
 }
 
-Expr* Parser::ParseAssignment() {
-    Token t = NextToken();
-    NextToken(); //=
-    Expr* right = ParseExpr();
-
-    return new Assignment(t, right);    
-}
-
 std::vector<Expr*> Parser::ParseTuple() {
     NextToken(); //(
     std::vector<Expr*> exprs = std::vector<Expr*>();
@@ -247,7 +239,10 @@ Stmt* Parser::ParseStmt() {
             NextToken(); //set
             std::vector<Expr*> assignments;
             while (!(PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Where)) {
-                assignments.push_back(ParseAssignment());
+                Token col = NextToken();
+                NextToken(); //=
+                Expr* value = ParseExpr();
+                assignments.push_back(new AssignCol(col, value));
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken(); //,
                 }

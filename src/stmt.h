@@ -317,15 +317,14 @@ public:
             std::string updated_value = schema.SerializeData(tuple.data);
             std::string updated_key = schema.GetKeyFromData(tuple.data);
 
-            //if updated_key already exists, and report error if so
-            std::string test_value;
-            rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), updated_key, &test_value);
-            if (status.ok()) {
-                return Status(false, "Error: A record with the same primary key already exists");
-            }
+            //if updated key is different
+            if (updated_key.compare(old_key) != 0) {
+                std::string test_value;
+                rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), updated_key, &test_value);
+                if (status.ok()) {
+                    return Status(false, "Error: A record with the same primary key already exists");
+                }
 
-            //if new key is different from old key, delete old key
-            if (old_key.compare(updated_key) != 0) {
                 tab_handle->Delete(rocksdb::WriteOptions(), old_key);
             }
 

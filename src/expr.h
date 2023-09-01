@@ -193,9 +193,9 @@ private:
     int idx_;
 };
 
-class Assignment: public Expr {
+class AssignCol: public Expr {
 public:
-    Assignment(Token col, Expr* right): col_(col), right_(right) {}
+    AssignCol(Token col, Expr* right): col_(col), right_(right) {}
     Datum Eval(Tuple* tuple) override {
         tuple->data.at(idx_) = right_->Eval(tuple);
         return Datum(0);
@@ -232,30 +232,5 @@ struct OrderCol {
     Expr* col;
     Expr* asc;
 };
-
-/*
-class OrderCol: public Expr {
-public:
-    OrderCol(Token col, Token order): col_(new ColRef(col)), order_(order) {}
-    Datum Eval(Tuple* tuple) override {
-        return col_->Eval(tuple);
-    }
-    std::string ToString() override {
-        return "order " + col_->ToString();
-    }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) {
-        TokenType type;
-        Status status = col_->Analyze(schema, &type);
-        if (!status.Ok()) {
-            return status;
-        } 
-
-        *evaluated_type = TokenType::Null;
-        return Status(true, "ok"); 
-    }
-private:
-    Expr* col_;
-    Token order_;
-};*/
 
 }
