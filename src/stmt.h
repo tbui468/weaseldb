@@ -144,8 +144,14 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(Token target_relation, std::vector<Expr*> target_cols, Expr* where_clause): 
-        target_relation_(target_relation), target_cols_(std::move(target_cols)), where_clause_(where_clause) {}
+    SelectStmt(Token target_relation, 
+               std::vector<Expr*> target_cols, 
+               Expr* where_clause, 
+               std::vector<OrderCol> order_cols):
+                    target_relation_(target_relation), 
+                    target_cols_(std::move(target_cols)), 
+                    where_clause_(where_clause),
+                    order_cols_(std::move(order_cols)) {}
 
     Status Analyze(DB* db) override {
         std::string serialized_schema;
@@ -154,6 +160,16 @@ public:
         }
         Schema schema(serialized_schema);
 
+        //projection
+        for (Expr* e: target_cols_) {
+            TokenType type;
+            Status status = e->Analyze(&schema, &type);
+            if (!status.Ok()) {
+                return status;
+            }
+        }
+
+        //where clause
         TokenType type;
         Status status = where_clause_->Analyze(&schema, &type);
         if (!status.Ok()) {
@@ -164,23 +180,24 @@ public:
             return Status(false, "Error: Where clause must be a boolean expression");
         }
 
-        for (Expr* e: target_cols_) {
+        //order
+        for (OrderCol oc: order_cols_) {
             TokenType type;
-            Status status = e->Analyze(&schema, &type);
+            Status status = oc.col->Analyze(&schema, &type);
+            if (!status.Ok())
+                return status;
+
+            status = oc.asc->Analyze(&schema, &type);
             if (!status.Ok()) {
                 return status;
             }
         }
+        
 
         return Status(true, "ok");
     }
     Status Execute(DB* db) override {
-        std::vector<std::string> tuplefields = std::vector<std::string>();
-        for (Expr* e: target_cols_) {
-            tuplefields.push_back(e->ToString()); //TODO: this won't work if e is not a ColRef
-        }
-
-        TupleSet* tupleset = new TupleSet(tuplefields);
+        TupleSet* tupleset = new TupleSet();
 
         std::string serialized_schema;
         rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
@@ -198,16 +215,41 @@ public:
             if (!where_clause_->Eval(&tuple).AsBool())
                 continue;
 
+            /*
             //projection
             std::vector<Datum> final_tuple = std::vector<Datum>();
 
             for (Expr* e: target_cols_) {
                 final_tuple.push_back(e->Eval(&tuple));
-            }
+            }*/
 
             //add final tuple to output set
-            tupleset->tuples.push_back(new Tuple(final_tuple));
+
+            tupleset->tuples.push_back(new Tuple(schema.DeserializeData(value)));
         }
+
+        if (!order_cols_.empty()) {
+            std::vector<OrderCol>& order_cols = order_cols_; //lambdas can only capture non-member variable
+
+            std::sort(tupleset->tuples.begin(), tupleset->tuples.end(), 
+                        [order_cols](Tuple* t1, Tuple* t2) -> bool { 
+                            for (OrderCol oc: order_cols) {
+                                Datum d1 = oc.col->Eval(t1);
+                                Datum d2 = oc.col->Eval(t2);
+                                if (d1.Compare(d2).AsInt() == 0)
+                                    continue;
+
+                                if (oc.asc->Eval(nullptr).AsBool()) {
+                                    return d1.Compare(d2).AsInt() < 0;
+                                }
+                                return d1.Compare(d2).AsInt() > 0;
+                            }
+
+                            return true;
+                        });
+        }
+        
+        //TODO: apply projection
 
         return Status(true, "(" + std::to_string(tupleset->tuples.size()) + " rows)", tupleset);
     }
@@ -218,6 +260,7 @@ private:
     Token target_relation_; //TODO: should be expression too to allow subqueries
     std::vector<Expr*> target_cols_;
     Expr* where_clause_;
+    std::vector<OrderCol> order_cols_;
 };
 
 class UpdateStmt: public Stmt {
@@ -397,7 +440,7 @@ public:
         std::vector<std::string> tuplefields = std::vector<std::string>();
         tuplefields.push_back("Column");
         tuplefields.push_back("Type");
-        TupleSet* tupleset = new TupleSet(tuplefields);
+        TupleSet* tupleset = new TupleSet();
 
         for (int i = 0; i < schema.FieldCount(); i++) {
             std::vector<Datum> data = {Datum(schema.Name(i)), Datum(TokenTypeToString(schema.Type(i)))};

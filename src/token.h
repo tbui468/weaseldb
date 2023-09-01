@@ -11,6 +11,7 @@ enum class TokenType {
     Text,
     Int,
     Bool,
+    Null,
     Primary,
     Key,
     Insert,
@@ -31,6 +32,10 @@ enum class TokenType {
     Foreign,
     References,
     Describe,
+    Order,
+    By,
+    Desc,
+    Asc,
 
     /* user-defined identifier */
     Identifier,
@@ -40,6 +45,7 @@ enum class TokenType {
     StringLiteral,
     TrueLiteral,
     FalseLiteral,
+    //NullLiteral, //TODO: should we have this along with TokenType::Null
 
     /* single characters */
     LParen,

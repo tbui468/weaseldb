@@ -228,4 +228,34 @@ private:
     Expr* right_;
 };
 
+struct OrderCol {
+    Expr* col;
+    Expr* asc;
+};
+
+/*
+class OrderCol: public Expr {
+public:
+    OrderCol(Token col, Token order): col_(new ColRef(col)), order_(order) {}
+    Datum Eval(Tuple* tuple) override {
+        return col_->Eval(tuple);
+    }
+    std::string ToString() override {
+        return "order " + col_->ToString();
+    }
+    Status Analyze(Schema* schema, TokenType* evaluated_type) {
+        TokenType type;
+        Status status = col_->Analyze(schema, &type);
+        if (!status.Ok()) {
+            return status;
+        } 
+
+        *evaluated_type = TokenType::Null;
+        return Status(true, "ok"); 
+    }
+private:
+    Expr* col_;
+    Token order_;
+};*/
+
 }

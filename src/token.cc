@@ -61,6 +61,8 @@ std::string TokenTypeToString(TokenType type) {
             return "GreaterEqual";
         case TokenType::Bool:
             return "Bool";
+        case TokenType::Null:
+            return "Null";
         case TokenType::TrueLiteral:
             return "TrueLiteral";
         case TokenType::FalseLiteral:
@@ -97,6 +99,14 @@ std::string TokenTypeToString(TokenType type) {
             return "References";
         case TokenType::Describe:
             return "Describe";
+        case TokenType::Order:
+            return "Order";
+        case TokenType::By:
+            return "By";
+        case TokenType::Desc:
+            return "Desc";
+        case TokenType::Asc:
+            return "Asc";
         default:
             return "Unrecognized token";
     }

@@ -212,6 +212,7 @@ Stmt* Parser::ParseStmt() {
             }
             NextToken(); //from
             Token target = NextToken();
+
             Expr* where_clause = nullptr;
             if (PeekToken().type == TokenType::Where) {
                 NextToken(); //where
@@ -219,8 +220,26 @@ Stmt* Parser::ParseStmt() {
             } else {
                 where_clause = new Literal(true);
             }
+
+            std::vector<OrderCol> order_cols;
+            if (PeekToken().type == TokenType::Order) {
+                NextToken();
+                NextToken();
+
+                Expr* col = ParseExpr();
+                Token asc = NextToken();
+                order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
+
+                while (PeekToken().type == TokenType::Comma) {
+                    NextToken();
+                    Expr* col = ParseExpr();
+                    Token asc = NextToken();
+                    order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
+                }
+            }
+
             NextToken(); //;
-            return new SelectStmt(target, target_cols, where_clause);
+            return new SelectStmt(target, target_cols, where_clause, order_cols);
         }
 
         case TokenType::Update: {

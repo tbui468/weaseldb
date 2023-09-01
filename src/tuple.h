@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <algorithm>
 
 #include "datum.h"
 #include "schema.h"
@@ -15,14 +16,12 @@ public:
 
 class TupleSet {
 public:
-    TupleSet(std::vector<std::string> fields): fields(std::move(fields)) {}
-    std::vector<std::string> fields;
-    std::vector<Tuple*> tuples;
     void Print() {
+        /*
         for (const std::string& f: fields) {
             std::cout << f << ", ";
         }
-        std::cout << std::endl;
+        std::cout << std::endl;*/
 
         for (Tuple* t: tuples) {
             for (Datum d: t->data) {
@@ -41,6 +40,11 @@ public:
             std::cout << std::endl;
         }
     }
+
+public:
+    std::vector<int> ordering_idxs;
+    std::vector<std::string> fields;
+    std::vector<Tuple*> tuples;
 };
 
 

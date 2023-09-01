@@ -108,6 +108,8 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Where;
     } else if (len == 4 && strncmp(&query_.at(idx), "bool", len) == 0) {
         type = TokenType::Bool;
+    } else if (len == 4 && strncmp(&query_.at(idx), "null", len) == 0) {
+        type = TokenType::Null;
     } else if (len == 4 && strncmp(&query_.at(idx), "true", len) == 0) {
         type = TokenType::TrueLiteral;
     } else if (len == 5 && strncmp(&query_.at(idx), "false", len) == 0) {
@@ -136,6 +138,14 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::References;
     } else if (len == 8 && strncmp(&query_.at(idx), "describe", len) == 0) {
         type = TokenType::Describe;
+    } else if (len == 5 && strncmp(&query_.at(idx), "order", len) == 0) {
+        type = TokenType::Order;
+    } else if (len == 2 && strncmp(&query_.at(idx), "by", len) == 0) {
+        type = TokenType::By;
+    } else if (len == 4 && strncmp(&query_.at(idx), "desc", len) == 0) {
+        type = TokenType::Desc;
+    } else if (len == 3 && strncmp(&query_.at(idx), "asc", len) == 0) {
+        type = TokenType::Asc;
     } else {
         type = TokenType::Identifier;
     }
