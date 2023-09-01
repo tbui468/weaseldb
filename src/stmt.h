@@ -254,6 +254,38 @@ public:
             }
         }*/
 
+        //make vector of all column indexes NOT grouped
+        //need to use these to check if aggregates are required for certain columns
+        std::vector<int> nongroup_cols;
+        for (int i = 0; i < schema.FieldCount(); i++) {
+            nongroup_cols.push_back(i);
+        }
+        for (Expr* e: group_cols_) {
+            int idx = ((ColRef*)e)->ColIdx();
+            nongroup_cols.erase(std::remove(nongroup_cols.begin(), nongroup_cols.end(), idx), nongroup_cols.end());
+        } 
+
+        if (use_groups) {
+            for (Expr* e: target_cols_) {
+                if (e->ContainsNonAggregatedColRef(nongroup_cols)) {
+                    return Status(false, "Error: column needs to be aggregated");
+                    //TODO: report error
+                }
+            }
+            for (OrderCol oc: order_cols_) {
+                if (oc.col->ContainsNonAggregatedColRef(nongroup_cols)) {
+                    return Status(false, "Error: column needs to be aggregated");
+                    //TODO: report error
+                }
+            }
+            /* //TODO: uncomment after adding 'having' clause
+            for (Expr* e: having_cols_) {
+                if (e->ContainsNonAggregatedColRef(nongroup_cols)) {
+                    //TODO: report error
+                }
+            }*/
+        }
+
         TupleGroup* group = new TupleGroup();
 
         //index scan

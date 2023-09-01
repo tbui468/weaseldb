@@ -18,6 +18,7 @@ public:
     virtual std::string ToString() = 0;
     virtual Status Analyze(Schema* schema, TokenType* evaluated_type) = 0;
     virtual bool ContainsAggregateFunctions() = 0;
+    virtual bool ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) = 0;
 };
 
 class Literal: public Expr {
@@ -36,6 +37,9 @@ public:
         return Status(true, "ok");
     }
     bool ContainsAggregateFunctions() override {
+        return false;
+    }
+    bool ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
         return false;
     }
 private:
@@ -128,6 +132,9 @@ public:
     bool ContainsAggregateFunctions() override {
         return left_->ContainsAggregateFunctions() || right_->ContainsAggregateFunctions();
     }
+    bool ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
+        return left_->ContainsNonAggregatedColRef(nongroup_cols) || right_->ContainsNonAggregatedColRef(nongroup_cols);
+    }
 private:
     Expr* left_;
     Expr* right_;
@@ -179,6 +186,9 @@ public:
     bool ContainsAggregateFunctions() override {
         return right_->ContainsAggregateFunctions();
     }
+    bool ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
+        return right_->ContainsNonAggregatedColRef(nongroup_cols);
+    }
 private:
     Expr* right_;
     Token op_;
@@ -202,6 +212,13 @@ public:
         return Status(true, "ok");
     }
     bool ContainsAggregateFunctions() override {
+        return false;
+    }
+    bool ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
+        if (std::find(nongroup_cols.begin(), nongroup_cols.end(), idx_) != nongroup_cols.end()) {
+            return true;
+        }
+
         return false;
     }
     int ColIdx() {
@@ -243,6 +260,9 @@ public:
     }
     bool ContainsAggregateFunctions() override {
         return right_->ContainsAggregateFunctions();
+    }
+    bool ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
+        return false; //TODO: need to think this through - could this ever be true?
     }
 private:
     Token col_;
@@ -306,6 +326,9 @@ public:
     }
     bool ContainsAggregateFunctions() override {
         return true;
+    }
+    bool ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
+        return false;
     }
 private:
     Token fcn_;
