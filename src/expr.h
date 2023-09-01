@@ -2,6 +2,7 @@
 
 #include <string>
 #include <iostream>
+#include <algorithm>
 #include "token.h"
 #include "datum.h"
 #include "tuple.h"
@@ -203,6 +204,9 @@ public:
     bool ContainsAggregateFunctions() override {
         return false;
     }
+    int ColIdx() {
+        return idx_;
+    }
 private:
     Token t_;
     int idx_;
@@ -255,20 +259,27 @@ struct Call: public Expr {
 public:
     Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
     Datum Eval(Row* row) override {
+        int col_idx = ((ColRef*)arg_)->ColIdx(); //ugly, but it gets the job done
+        std::vector<Datum> cols = row->GetCols(col_idx);
         switch (fcn_.type) {
             case TokenType::Avg:
                 //TODO:
                 break;
             case TokenType::Count: {
-                std::vector<Datum> cols = row->GetCols(arg_->Eval(row).AsInt());
                 return Datum(int(cols.size()));
             }
-            case TokenType::Max:
-                //TODO:
-                break;
-            case TokenType::Min:
-                //TODO
-                break;
+            case TokenType::Max: {
+                return *std::max_element(cols.begin(), cols.end(), 
+                        [](Datum left, Datum right) -> bool {
+                            return left.Compare(right).AsInt() < 0;
+                        });
+            }
+            case TokenType::Min: {
+                return *std::min_element(cols.begin(), cols.end(), 
+                        [](Datum left, Datum right) -> bool {
+                            return left.Compare(right).AsInt() < 0;
+                        });
+            }
             case TokenType::Sum:
                 //TODO
                 break;
