@@ -109,6 +109,18 @@ std::string TokenTypeToString(TokenType type) {
             return "Asc";
         case TokenType::Limit:
             return "Limit";
+        case TokenType::Group:
+            return "Group";
+        case TokenType::Count:
+            return "Count";
+        case TokenType::Avg:
+            return "Avg";
+        case TokenType::Sum:
+            return "Sum";
+        case TokenType::Max:
+            return "Max";
+        case TokenType::Min:
+            return "Min";
         default:
             return "Unrecognized token";
     }
@@ -116,6 +128,14 @@ std::string TokenTypeToString(TokenType type) {
 
 bool TokenTypeIsNumeric(TokenType type) {
     return type == TokenType::Int; //TODO: add more types here
+}
+
+bool TokenTypeIsAggregateFunction(TokenType type) {
+    return type == TokenType::Avg ||
+           type == TokenType::Sum ||
+           type == TokenType::Count ||
+           type == TokenType::Max ||
+           type == TokenType::Min;
 }
 
 }

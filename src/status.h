@@ -7,7 +7,7 @@ namespace wsldb {
 class Status {
 public:
     Status(bool ok, std::string msg): ok_(ok), msg_(std::move(msg)), tuples_(nullptr) {}
-    Status(bool ok, std::string msg, TupleSet* tuples): ok_(ok), msg_(std::move(msg)), tuples_(tuples) {}
+    Status(bool ok, std::string msg, RowSet* tuples): ok_(ok), msg_(std::move(msg)), tuples_(tuples) {}
 
     inline bool Ok() {
         return ok_;
@@ -17,13 +17,13 @@ public:
         return msg_;
     }
 
-    inline TupleSet* Tuples() {
+    inline RowSet* Tuples() {
         return tuples_;
     }
 private:
     bool ok_;
     std::string msg_;
-    TupleSet* tuples_;
+    RowSet* tuples_;
 };
 
 }

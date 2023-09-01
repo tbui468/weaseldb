@@ -31,6 +31,13 @@ Expr* Parser::ParsePrimary() {
             return expr;
         }
         default:
+            if (TokenTypeIsAggregateFunction(PeekToken().type)) {
+                Token fcn = NextToken();
+                NextToken(); //(
+                Expr* arg = ParseExpr();
+                NextToken(); //)
+                return new Call(fcn, arg);
+            }
             return NULL;
     }
     return NULL;
@@ -213,6 +220,17 @@ Stmt* Parser::ParseStmt() {
                 where_clause = new Literal(true);
             }
 
+            std::vector<Expr*> group_cols;
+            if (PeekToken().type == TokenType::Group) {
+                NextToken(); //group
+                NextToken(); //by
+                group_cols.push_back(ParseExpr());
+                while (PeekToken().type == TokenType::Comma) {
+                    NextToken(); //,
+                    group_cols.push_back(ParseExpr());
+                }
+            }
+
             std::vector<OrderCol> order_cols;
             if (PeekToken().type == TokenType::Order) {
                 NextToken();
@@ -239,7 +257,7 @@ Stmt* Parser::ParseStmt() {
             } 
 
             NextToken(); //;
-            return new SelectStmt(target, target_cols, where_clause, order_cols, limit);
+            return new SelectStmt(target, target_cols, where_clause, group_cols, order_cols, limit);
         }
 
         case TokenType::Update: {

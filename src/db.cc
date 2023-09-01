@@ -72,7 +72,7 @@ rocksdb::Status DB::execute(const std::string& query) {
             status = s->Execute(this);
        
         if (status.Ok()) { 
-            TupleSet* tupleset = status.Tuples();
+            RowSet* tupleset = status.Tuples();
             if (tupleset) {
                 tupleset->Print();
             }
@@ -106,7 +106,7 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
             status = s->Execute(this);
        
         if (status.Ok()) { 
-            TupleSet* tupleset = status.Tuples();
+            RowSet* tupleset = status.Tuples();
             if (tupleset) {
                 tupleset->Print();
             }

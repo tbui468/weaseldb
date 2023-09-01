@@ -147,11 +147,13 @@ public:
     SelectStmt(Token target_relation, 
                std::vector<Expr*> target_cols, 
                Expr* where_clause, 
+               std::vector<Expr*> group_cols,
                std::vector<OrderCol> order_cols,
                Expr* limit):
                     target_relation_(target_relation), 
                     target_cols_(std::move(target_cols)), 
                     where_clause_(where_clause),
+                    group_cols_(std::move(group_cols)), 
                     order_cols_(std::move(order_cols)),
                     limit_(limit) {}
 
@@ -172,17 +174,27 @@ public:
         }
 
         //where clause
-        TokenType type;
-        Status status = where_clause_->Analyze(&schema, &type);
-        if (!status.Ok()) {
-            return status;
+        {
+            TokenType type;
+            Status status = where_clause_->Analyze(&schema, &type);
+            if (!status.Ok()) {
+                return status;
+            }
+
+            if (type != TokenType::Bool) {
+                return Status(false, "Error: Where clause must be a boolean expression");
+            }
         }
 
-        if (type != TokenType::Bool) {
-            return Status(false, "Error: Where clause must be a boolean expression");
+        //group cols
+        for (Expr* e: group_cols_) {
+            TokenType type;
+            Status status = e->Analyze(&schema, &type);
+            if (!status.Ok())
+                return status;
         }
 
-        //order
+        //order cols
         for (OrderCol oc: order_cols_) {
             TokenType type;
             Status status = oc.col->Analyze(&schema, &type);
@@ -196,19 +208,22 @@ public:
         }
        
         //limit
-        status = limit_->Analyze(&schema, &type);
-        if (!status.Ok()) {
-            return status;     
-        }
+        {
+            TokenType type;
+            Status status = limit_->Analyze(&schema, &type);
+            if (!status.Ok()) {
+                return status;     
+            }
 
-        if (type != TokenType::Int) {
-            return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
+            if (type != TokenType::Int) {
+                return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
+            }
         }
 
         return Status(true, "ok");
     }
     Status Execute(DB* db) override {
-        TupleSet* tupleset = new TupleSet();
+        RowSet* tupleset = new RowSet();
 
         std::string serialized_schema;
         rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
@@ -216,6 +231,30 @@ public:
 
         rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
         rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
+
+        //check if aggregates are used anywhere
+        bool use_groups = group_cols_.empty() ? false : true;
+        for (Expr* e: target_cols_) {
+            if (e->ContainsAggregateFunctions()) {
+                use_groups = true;
+                break;
+            }
+        }
+        for (OrderCol oc: order_cols_) {
+            if (oc.col->ContainsAggregateFunctions()) {
+                use_groups = true;
+                break;
+            }
+        }
+        /* //TODO: uncomment after adding 'having' clause
+        for (Expr* e: having_cols_) {
+            if (e->ContainsAggregateFunctions()) {
+                use_groups = true;
+                break;
+            }
+        }*/
+
+        TupleGroup* group = new TupleGroup();
 
         //index scan
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
@@ -226,24 +265,36 @@ public:
             if (!where_clause_->Eval(&tuple).AsBool())
                 continue;
 
-            /*
-            //projection
-            std::vector<Datum> final_tuple = std::vector<Datum>();
+            //grouping
+            //TODO: row is Tuple if
+            //  1. no aggregate function used in projection/having/order by
+            //  2. no columns in group by
+            //  othewise row is TupleGroup
+            //  1. Same TupleGroup with group keys empty if no columns in group by
+            //  otherwise add to TupleGroup with groups keys specified by group by clause
 
-            for (Expr* e: target_cols_) {
-                final_tuple.push_back(e->Eval(&tuple));
-            }*/
-
-            //add final tuple to output set
-
-            tupleset->tuples.push_back(new Tuple(schema.DeserializeData(value)));
+            if (use_groups) {
+                group->AddTuple(schema.DeserializeData(value));
+            } else {
+                tupleset->tuples.push_back(new Tuple(schema.DeserializeData(value)));
+            }
         }
 
+        if (use_groups) {
+            tupleset->tuples.push_back(group);
+        }
+
+        //TODO: if TupleSet is empty at this point, we know that all processing must be done on TupleGroups
+        //otherwise process TupleSet
+
+        //TODO: apply having clause on TupleGroup (having requires aggregates, so should not be TupleSet...right?)
+
+        //TODO: sort Tuples in TupleSet or sort TupleGroups
         if (!order_cols_.empty()) {
             std::vector<OrderCol>& order_cols = order_cols_; //lambdas can only capture non-member variable
 
             std::sort(tupleset->tuples.begin(), tupleset->tuples.end(), 
-                        [order_cols](Tuple* t1, Tuple* t2) -> bool { 
+                        [order_cols](Row* t1, Row* t2) -> bool { 
                             for (OrderCol oc: order_cols) {
                                 Datum d1 = oc.col->Eval(t1);
                                 Datum d2 = oc.col->Eval(t2);
@@ -260,27 +311,15 @@ public:
                         });
         }
 
+        //TODO: this should be moved to after projection is applied
         int limit = limit_->Eval(nullptr).AsInt();
         if (limit != -1) {
             tupleset->tuples.resize(limit);
         }
         
-        //TODO: apply projection
-            /*
-            //projection
-            std::vector<Datum> final_tuple = std::vector<Datum>();
-
-            for (Expr* e: target_cols_) {
-                final_tuple.push_back(e->Eval(&tuple));
-            }
-
-            //add final tuple to output set
-
-            tupleset->tuples.push_back(new Tuple(data));
-        */
-        //apply projection
-        TupleSet* result = new TupleSet();
-        for (Tuple* t: tupleset->tuples) {
+        //TODO: apply projection (if TupleGroup, flatten at this point)
+        RowSet* result = new RowSet();
+        for (Row* t: tupleset->tuples) {
             std::vector<Datum> data;
             for (Expr* e: target_cols_) {
                 data.push_back(e->Eval(t));
@@ -297,6 +336,7 @@ private:
     Token target_relation_; //TODO: should be expression too to allow subqueries
     std::vector<Expr*> target_cols_;
     Expr* where_clause_;
+    std::vector<Expr*> group_cols_;
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
 };
@@ -352,8 +392,8 @@ public:
                 e->Eval(&tuple);  //return Datum is not used
             }
 
-            std::string updated_value = schema.SerializeData(tuple.data);
-            std::string updated_key = schema.GetKeyFromData(tuple.data);
+            std::string updated_value = schema.SerializeData(tuple.Data());
+            std::string updated_key = schema.GetKeyFromData(tuple.Data());
 
             //if updated key is different
             if (updated_key.compare(old_key) != 0) {
@@ -477,7 +517,7 @@ public:
         std::vector<std::string> tuplefields = std::vector<std::string>();
         tuplefields.push_back("Column");
         tuplefields.push_back("Type");
-        TupleSet* tupleset = new TupleSet();
+        RowSet* tupleset = new RowSet();
 
         for (int i = 0; i < schema.FieldCount(); i++) {
             std::vector<Datum> data = {Datum(schema.Name(i)), Datum(TokenTypeToString(schema.Type(i)))};

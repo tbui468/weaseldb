@@ -148,6 +148,18 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Asc;
     } else if (len == 5 && strncmp(&query_.at(idx), "limit", len) == 0) {
         type = TokenType::Limit;
+    } else if (len == 5 && strncmp(&query_.at(idx), "group", len) == 0) {
+        type = TokenType::Group;
+    } else if (len == 3 && strncmp(&query_.at(idx), "avg", len) == 0) {
+        type = TokenType::Avg;
+    } else if (len == 5 && strncmp(&query_.at(idx), "count", len) == 0) {
+        type = TokenType::Count;
+    } else if (len == 3 && strncmp(&query_.at(idx), "sum", len) == 0) {
+        type = TokenType::Sum;
+    } else if (len == 3 && strncmp(&query_.at(idx), "max", len) == 0) {
+        type = TokenType::Max;
+    } else if (len == 3 && strncmp(&query_.at(idx), "min", len) == 0) {
+        type = TokenType::Min;
     } else {
         type = TokenType::Identifier;
     }

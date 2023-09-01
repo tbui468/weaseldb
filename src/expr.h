@@ -13,9 +13,10 @@ namespace wsldb {
 
 class Expr {
 public:
-    virtual Datum Eval(Tuple* tuple) = 0;
+    virtual Datum Eval(Row* tuple) = 0;
     virtual std::string ToString() = 0;
     virtual Status Analyze(Schema* schema, TokenType* evaluated_type) = 0;
+    virtual bool ContainsAggregateFunctions() = 0;
 };
 
 class Literal: public Expr {
@@ -23,15 +24,18 @@ public:
     Literal(Token t): t_(t) {}
     Literal(bool b): t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
     Literal(int i): t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
-    Datum Eval(Tuple* tuple) override {
+    Datum Eval(Row* tuple) override {
         return Datum(t_);
     }
     std::string ToString() override {
         return t_.lexeme;
     }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) {
+    Status Analyze(Schema* schema, TokenType* evaluated_type) override {
         *evaluated_type = Datum(t_).Type();
         return Status(true, "ok");
+    }
+    bool ContainsAggregateFunctions() override {
+        return false;
     }
 private:
     Token t_;
@@ -42,7 +46,7 @@ public:
     Binary(Token op, Expr* left, Expr* right):
         op_(op), left_(left), right_(right) {}
 
-    Datum Eval(Tuple* tuple) override {
+    Datum Eval(Row* tuple) override {
         Datum leftd = left_->Eval(tuple);
         Datum rightd = right_->Eval(tuple);
         switch (op_.type) {
@@ -78,7 +82,7 @@ public:
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
     }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) {
+    Status Analyze(Schema* schema, TokenType* evaluated_type) override {
         TokenType left_type;
         TokenType right_type;
         left_->Analyze(schema, &left_type);
@@ -119,6 +123,10 @@ public:
 
         return Status(true, "ok");
     }
+
+    bool ContainsAggregateFunctions() override {
+        return left_->ContainsAggregateFunctions() || right_->ContainsAggregateFunctions();
+    }
 private:
     Expr* left_;
     Expr* right_;
@@ -128,7 +136,7 @@ private:
 class Unary: public Expr {
 public:
     Unary(Token op, Expr* right): op_(op), right_(right) {}
-    Datum Eval(Tuple* tuple) override {
+    Datum Eval(Row* tuple) override {
         Datum right = right_->Eval(tuple);
         switch (op_.type) {
             case TokenType::Minus:
@@ -167,6 +175,9 @@ public:
 
         return Status(true, "ok");
     }
+    bool ContainsAggregateFunctions() override {
+        return right_->ContainsAggregateFunctions();
+    }
 private:
     Expr* right_;
     Token op_;
@@ -175,8 +186,8 @@ private:
 class ColRef: public Expr {
 public:
     ColRef(Token t): t_(t), idx_(-1) {}
-    Datum Eval(Tuple* tuple) override {
-        return tuple->data.at(idx_);
+    Datum Eval(Row* tuple) override {
+        return tuple->GetCol(idx_);
     }
     std::string ToString() override {
         return t_.lexeme;
@@ -189,6 +200,9 @@ public:
         *evaluated_type = schema->Type(idx_);
         return Status(true, "ok");
     }
+    bool ContainsAggregateFunctions() override {
+        return false;
+    }
 private:
     Token t_;
     int idx_;
@@ -197,8 +211,8 @@ private:
 class AssignCol: public Expr {
 public:
     AssignCol(Token col, Expr* right): col_(col), right_(right) {}
-    Datum Eval(Tuple* tuple) override {
-        tuple->data.at(idx_) = right_->Eval(tuple);
+    Datum Eval(Row* tuple) override {
+        tuple->SetCol(idx_, right_->Eval(tuple));
         return Datum(0);
     }
     std::string ToString() override {
@@ -223,6 +237,9 @@ public:
         *evaluated_type = schema->Type(idx_);
         return Status(true, "ok");
     }
+    bool ContainsAggregateFunctions() override {
+        return right_->ContainsAggregateFunctions();
+    }
 private:
     Token col_;
     int idx_;
@@ -232,6 +249,56 @@ private:
 struct OrderCol {
     Expr* col;
     Expr* asc;
+};
+
+struct Call: public Expr {
+public:
+    Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
+    Datum Eval(Row* row) override {
+        switch (fcn_.type) {
+            case TokenType::Avg:
+                //TODO:
+                break;
+            case TokenType::Count: {
+                std::vector<Datum> cols = row->GetCols(arg_->Eval(row).AsInt());
+                return Datum(int(cols.size()));
+            }
+            case TokenType::Max:
+                //TODO:
+                break;
+            case TokenType::Min:
+                //TODO
+                break;
+            case TokenType::Sum:
+                //TODO
+                break;
+            default:
+                //Error should have been reported before getting to this point
+                break;
+        }
+        return Datum(0); //silence warnings for now
+    }
+    std::string ToString() override {
+        return fcn_.lexeme + arg_->ToString();
+    }
+    Status Analyze(Schema* schema, TokenType* evaluated_type) override {
+        Status status = arg_->Analyze(schema, evaluated_type);
+        if (!status.Ok()) {
+            return status;
+        }
+
+        if (!TokenTypeIsAggregateFunction(fcn_.type)) {
+            return Status(false, "Error: Function '" + fcn_.lexeme + "' does not exist");
+        }
+
+        return Status(true, "ok");
+    }
+    bool ContainsAggregateFunctions() override {
+        return true;
+    }
+private:
+    Token fcn_;
+    Expr* arg_;
 };
 
 }

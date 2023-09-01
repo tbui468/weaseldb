@@ -37,6 +37,12 @@ enum class TokenType {
     Desc,
     Asc,
     Limit,
+    Group,
+    Count,
+    Avg,
+    Sum,
+    Min,
+    Max,
 
     /* user-defined identifier */
     Identifier,
@@ -71,6 +77,7 @@ enum class TokenType {
 
 std::string TokenTypeToString(TokenType type);
 bool TokenTypeIsNumeric(TokenType type);
+bool TokenTypeIsAggregateFunction(TokenType type);
 
 class Token {
 public:
