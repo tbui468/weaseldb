@@ -266,8 +266,29 @@ public:
         }
         
         //TODO: apply projection
+            /*
+            //projection
+            std::vector<Datum> final_tuple = std::vector<Datum>();
 
-        return Status(true, "(" + std::to_string(tupleset->tuples.size()) + " rows)", tupleset);
+            for (Expr* e: target_cols_) {
+                final_tuple.push_back(e->Eval(&tuple));
+            }
+
+            //add final tuple to output set
+
+            tupleset->tuples.push_back(new Tuple(data));
+        */
+        //apply projection
+        TupleSet* result = new TupleSet();
+        for (Tuple* t: tupleset->tuples) {
+            std::vector<Datum> data;
+            for (Expr* e: target_cols_) {
+                data.push_back(e->Eval(t));
+            } 
+            result->tuples.push_back(new Tuple(data));
+        }
+
+        return Status(true, "(" + std::to_string(tupleset->tuples.size()) + " rows)", result);
     }
     std::string ToString() override {
         return "select";
