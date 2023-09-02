@@ -65,16 +65,16 @@ public:
         for (Row* t: tuples) {
             for (Datum d: t->Data()) {
                 if (d.Type() == TokenType::Int) {
-                    std::cout << d.AsInt() << ", ";
+                    std::cout << d.AsInt() << ",";
                 } else if (d.Type() == TokenType::Float4) {
-                    std::cout << d.AsFloat4() << ", ";
+                    std::cout << d.AsFloat4() << ",";
                 } else if (d.Type() == TokenType::Text) {
-                    std::cout << d.AsString() << ", ";
+                    std::cout << d.AsString() << ",";
                 } else {
                     if (d.AsBool()) {
-                        std::cout << "true, ";
+                        std::cout << "true,";
                     } else {
-                        std::cout << "false, ";
+                        std::cout << "false,";
                     }
                 }
             }

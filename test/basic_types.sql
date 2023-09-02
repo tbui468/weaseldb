@@ -1,0 +1,10 @@
+select 1;
+select -2;
+select true;
+select false;
+select 'cat';
+select '123';
+select 23.2;
+select -2.4;
+select .42;
+select -.5;

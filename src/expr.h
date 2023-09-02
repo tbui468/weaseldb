@@ -152,7 +152,11 @@ public:
         Datum right = right_->Eval(tuple);
         switch (op_.type) {
             case TokenType::Minus:
-                return Datum(-right.AsInt());
+                if (right.Type() == TokenType::Float4) {
+                    return Datum(-right.AsFloat4());
+                } else if (right.Type() == TokenType::Int) {
+                    return Datum(-right.AsInt());
+                }
             case TokenType::Not:
                 return Datum(!right.AsBool());
             default:

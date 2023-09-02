@@ -112,7 +112,7 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
             }
         }
 
-        std::cout << status.Msg() << std::endl;
+        //std::cout << status.Msg() << std::endl;
     }
 
     return Status(true, "ok");
