@@ -10,7 +10,7 @@ Token Tokenizer::NextToken() {
     if (AtEnd()) return MakeToken(TokenType::Eof, 1);
 
     if (IsAlpha(query_.at(idx_))) return MakeIdentifier();
-    if (IsNumeric(query_.at(idx_))) return MakeNumber();
+    if (IsNumeric(query_.at(idx_)) || query_.at(idx_) == '.') return MakeNumber();
     if (query_.at(idx_) == '\'') return MakeString();
 
     switch (query_.at(idx_)) {
@@ -90,6 +90,8 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Text;
     } else if (len == 3 && strncmp(&query_.at(idx), "int", len) == 0) {
         type = TokenType::Int;
+    } else if (len == 6 && strncmp(&query_.at(idx), "float4", len) == 0) {
+        type = TokenType::Float4;
     } else if (len == 7 && strncmp(&query_.at(idx), "primary", len) == 0) {
         type = TokenType::Primary;
     } else if (len == 3 && strncmp(&query_.at(idx), "key", len) == 0) {
@@ -185,7 +187,9 @@ Token Tokenizer::MakeNumber() {
     int idx = idx_;
     int len = 0;
     TokenType type = TokenType::IntLiteral;
-    while (IsNumeric(query_.at(idx_))) {
+    while (IsNumeric(query_.at(idx_)) || query_.at(idx_) == '.') {
+        if (query_.at(idx_) == '.')
+            type = TokenType::FloatLiteral;
         idx_++;
         len++;
     }

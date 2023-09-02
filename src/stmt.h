@@ -33,7 +33,7 @@ public:
             if (a->name.type != TokenType::Identifier) {
                 return Status(false, "Error: '" + a->name.lexeme + "' is not allowed as column name");
             }
-            if (!Datum::ValidType(a->type.type)) {
+            if (!TokenTypeValidDataType(a->type.type)) {
                 return Status(false, "Error: '" + a->type.lexeme + "' is not a valid data type");
             }
         }
@@ -144,13 +144,13 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(Token target_relation, 
+    SelectStmt(std::vector<Range*> target_ranges, 
                std::vector<Expr*> target_cols, 
                Expr* where_clause, 
                std::vector<Expr*> group_cols,
                std::vector<OrderCol> order_cols,
                Expr* limit):
-                    target_relation_(target_relation), 
+                    target_ranges_(target_ranges), 
                     target_cols_(std::move(target_cols)), 
                     where_clause_(where_clause),
                     group_cols_(std::move(group_cols)), 
@@ -158,7 +158,30 @@ public:
                     limit_(limit) {}
 
     Status Analyze(DB* db) override {
+        if (target_ranges_.empty()) {
+            TokenType type;
+            for (Expr* e: target_cols_) {
+                Status status = e->Analyze(nullptr, &type);
+                if (!status.Ok()) {
+                    return status;
+                }
+            }
+            {
+                TokenType type;
+                Status status = limit_->Analyze(nullptr, &type);
+                if (!status.Ok()) {
+                    return status;     
+                }
+
+                if (type != TokenType::Int) {
+                    return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
+                }
+            }
+            return Status(true, "ok");
+        }
+
         std::string serialized_schema;
+        Token target_relation_ = target_ranges_.at(0)->GetToken(); //ugly
         if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
             return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
         }
@@ -223,6 +246,49 @@ public:
         return Status(true, "ok");
     }
     Status Execute(DB* db) override {
+        if (target_ranges_.empty()) {
+            bool use_groups = group_cols_.empty() ? false : true;
+            for (Expr* e: target_cols_) {
+                if (e->ContainsAggregateFunctions()) {
+                    use_groups = true;
+                    break;
+                }
+            }
+
+            RowSet* result = new RowSet();
+
+            if (use_groups) {
+                std::vector<Datum> data;
+                TupleGroup* dummy_group = new TupleGroup(); //expecting a single row if aggregate functions used
+                dummy_group->AddTuple(nullptr);
+                for (Expr* e: target_cols_) {
+                    data.push_back(e->Eval(dummy_group));
+                } 
+                Tuple* t = new Tuple(data);
+
+                TupleGroup* tg = new TupleGroup();
+                tg->AddTuple(t);
+                result->tuples.push_back(tg);
+            } else {
+                std::vector<Datum> data;
+                for (Expr* e: target_cols_) {
+                    data.push_back(e->Eval(nullptr));
+                } 
+                Tuple* t = new Tuple(data);
+                result->tuples.push_back(t);
+            }
+
+            int limit = limit_->Eval(nullptr).AsInt();
+            if (limit != -1) {
+                result->tuples.resize(limit);
+            }
+            
+
+            return Status(true, "(" + std::to_string(result->tuples.size()) + " rows)", result);
+        }
+
+
+        Token target_relation_ = target_ranges_.at(0)->GetToken(); //ugly
         RowSet* tupleset = new RowSet();
 
         std::string serialized_schema;
@@ -304,7 +370,7 @@ public:
             //  otherwise add to TupleGroup with groups keys specified by group by clause
 
             if (use_groups) {
-                group->AddTuple(schema.DeserializeData(value));
+                group->AddTuple(new Tuple(schema.DeserializeData(value)));
             } else {
                 tupleset->tuples.push_back(new Tuple(schema.DeserializeData(value)));
             }
@@ -363,7 +429,7 @@ public:
         return "select";
     }
 private:
-    Token target_relation_; //TODO: should be expression too to allow subqueries
+    std::vector<Range*> target_ranges_;
     std::vector<Expr*> target_cols_;
     Expr* where_clause_;
     std::vector<Expr*> group_cols_;

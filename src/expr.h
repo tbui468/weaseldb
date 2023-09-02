@@ -69,6 +69,9 @@ public:
             case TokenType::GreaterEqual:
                 return Datum(leftd.Compare(rightd).AsInt() >= 0);
             case TokenType::Plus:
+                if (!(TokenTypeIsNumeric(leftd.Type()) && TokenTypeIsNumeric(rightd.Type()))) {
+                    std::cout << "Implementation Error: + operator only usable with numeric types - give user a error message" << std::endl;
+                }
                 return Datum(leftd.AsInt() + rightd.AsInt());
             case TokenType::Minus:
                 return Datum(leftd.AsInt() - rightd.AsInt());
@@ -281,30 +284,41 @@ struct Call: public Expr {
 public:
     Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
     Datum Eval(Row* row) override {
-        int col_idx = ((ColRef*)arg_)->ColIdx(); //ugly, but it gets the job done
-        std::vector<Datum> cols = row->GetCols(col_idx);
+        TupleGroup* tg = (TupleGroup*)row;
+
         switch (fcn_.type) {
             case TokenType::Avg:
-                //TODO:
+                //TODO: implement avg
                 break;
-            case TokenType::Count: {
-                return Datum(int(cols.size()));
-            }
+            case TokenType::Count:
+                return Datum(int(tg->data_.size()));
             case TokenType::Max: {
-                return *std::max_element(cols.begin(), cols.end(), 
-                        [](Datum left, Datum right) -> bool {
-                            return left.Compare(right).AsInt() < 0;
-                        });
+                Datum largest(arg_->Eval(tg->data_.at(0)));
+                for (int i = 1; i < tg->data_.size(); i++) {
+                    Datum cur = arg_->Eval(tg->data_.at(i));
+                    if (largest.Compare(cur).AsInt() < 0) {
+                        largest = cur;
+                    }
+                }
+                return largest;
             }
             case TokenType::Min: {
-                return *std::min_element(cols.begin(), cols.end(), 
-                        [](Datum left, Datum right) -> bool {
-                            return left.Compare(right).AsInt() < 0;
-                        });
+                Datum smallest(arg_->Eval(tg->data_.at(0)));
+                for (int i = 1; i < tg->data_.size(); i++) {
+                    Datum cur = arg_->Eval(tg->data_.at(i));
+                    if (smallest.Compare(cur).AsInt() > 0) {
+                        smallest = cur;
+                    }
+                }
+                return smallest;
             }
-            case TokenType::Sum:
-                //TODO
-                break;
+            case TokenType::Sum: {
+                Datum s(0);
+                for (Tuple* t: tg->data_) {
+                    s = s + arg_->Eval(t);
+                }
+                return s;
+            }
             default:
                 //Error should have been reported before getting to this point
                 break;
@@ -336,5 +350,30 @@ private:
     Token fcn_;
     Expr* arg_;
 };
+
+class Range {
+public:
+    /*
+    virtual Status Analyze() = 0;
+    virtual void BeginScan() = 0;
+    virtual Row* NextRow() = 0;
+    virtual void EndScan() = 0;*/
+    virtual Token GetToken() = 0;
+};
+
+class TableRef: public Range {
+public:
+    TableRef(Token t): t_(t) {}
+    Token GetToken() override {
+        return t_;
+    }
+private: 
+    Token t_;
+};
+
+/*
+class SubQuery: public Range {
+
+};*/
 
 }

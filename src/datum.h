@@ -16,6 +16,12 @@ public:
                 data_.append((char*)&value, sizeof(int));
                 break;
             }
+            case TokenType::FloatLiteral: {
+                type_ = TokenType::Float4;
+                float value = std::stof(t.lexeme);
+                data_.append((char*)&value, sizeof(float));
+                break;
+            }
             case TokenType::StringLiteral: {
                 type_ = TokenType::Text;
                 data_ += t.lexeme;
@@ -47,6 +53,11 @@ public:
                 *off += sizeof(int);
                 break;
             }
+            case TokenType::Float4: {
+                data_.append((char*)(buf.data() + *off), sizeof(float));
+                *off += sizeof(float);
+                break;
+            }
             case TokenType::Text: {
                 int size = *((int*)(buf.data() + *off));
                 *off += sizeof(int);
@@ -68,6 +79,11 @@ public:
     Datum(int i) {
         type_ = TokenType::Int;
         data_.append((char*)&i, sizeof(int));
+    }
+
+    Datum(float f) {
+        type_ = TokenType::Float4;
+        data_.append((char*)&f, sizeof(float));
     }
 
     Datum(bool b) {
@@ -96,15 +112,19 @@ public:
         return data_;
     }
 
-    std::string AsString() {
+    std::string AsString() const {
         return data_;
     }
 
-    int AsInt() {
+    int AsInt() const {
         return *((int*)(data_.data()));
     }
 
-    bool AsBool() {
+    float AsFloat4() const {
+        return *((float*)(data_.data()));
+    }
+
+    bool AsBool() const {
         return *((bool*)(data_.data()));
     }
 
@@ -123,14 +143,16 @@ public:
         return Datum(0);
     }
 
-    static inline bool ValidType(TokenType type) {
-        return type == TokenType::Int ||
-               type == TokenType::Text ||
-               type == TokenType::Bool;
+    Datum operator+(const Datum& d) {
+        //Using ternary operators to get correct type and let c compiler promote to correct type
+        return Datum((d.Type() == TokenType::Int ? d.AsInt() : d.AsFloat4()) + 
+                     (Type() == TokenType::Int ? AsInt() : AsFloat4()));
     }
+
 private:
     TokenType type_;
     std::string data_;
 };
+
 
 }

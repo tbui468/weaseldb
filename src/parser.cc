@@ -18,6 +18,7 @@ std::vector<Stmt*> Parser::ParseStmts() {
 Expr* Parser::ParsePrimary() {
     switch (PeekToken().type) {
         case TokenType::IntLiteral:
+        case TokenType::FloatLiteral:
         case TokenType::StringLiteral:
         case TokenType::TrueLiteral:
         case TokenType::FalseLiteral:
@@ -203,14 +204,34 @@ Stmt* Parser::ParseStmt() {
         }
         case TokenType::Select: {
             std::vector<Expr*> target_cols;
-            while (PeekToken().type != TokenType::From) {
+
+            target_cols.push_back(ParseExpr());
+            while (PeekToken().type == TokenType::Comma) {
+                NextToken(); //,
                 target_cols.push_back(ParseExpr());
-                if (PeekToken().type == TokenType::Comma) {
-                    NextToken(); //,
-                }
             }
+
+            if (PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Limit) {
+                Expr* limit = nullptr;
+                if (PeekToken().type == TokenType::Limit) {
+                    NextToken(); //limit
+                    limit = ParseExpr();
+                } else {
+                    limit = new Literal(-1); //no limit
+                }
+                NextToken(); //semicolon
+                return new SelectStmt({}, target_cols, nullptr, {}, {}, limit);
+            }
+
+            std::vector<Range*> target_ranges;
+
             NextToken(); //from
-            Token target = NextToken();
+            //TODO: need to potentially parse a subquery here (and not just a table reference)
+            target_ranges.push_back(new TableRef(NextToken()));
+            while (PeekToken().type == TokenType::Comma) {
+                NextToken(); //,
+                target_ranges.push_back(new TableRef(NextToken()));
+            }
 
             Expr* where_clause = nullptr;
             if (PeekToken().type == TokenType::Where) {
@@ -253,11 +274,11 @@ Stmt* Parser::ParseStmt() {
                 NextToken(); //limit
                 limit = ParseExpr();
             } else {
-                limit = new Literal(-1);
+                limit = new Literal(-1); //no limit
             } 
 
             NextToken(); //;
-            return new SelectStmt(target, target_cols, where_clause, group_cols, order_cols, limit);
+            return new SelectStmt(target_ranges, target_cols, where_clause, group_cols, order_cols, limit);
         }
 
         case TokenType::Update: {

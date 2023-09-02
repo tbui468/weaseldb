@@ -13,6 +13,8 @@ std::string TokenTypeToString(TokenType type) {
             return "Text";
         case TokenType::Int:
             return "Int";
+        case TokenType::Float4:
+            return "Float4";
         case TokenType::Primary:
             return "Primary";
         case TokenType::Key:
@@ -127,7 +129,15 @@ std::string TokenTypeToString(TokenType type) {
 }
 
 bool TokenTypeIsNumeric(TokenType type) {
-    return type == TokenType::Int; //TODO: add more types here
+    return type == TokenType::Int ||
+           type == TokenType::Float4;
+}
+
+bool TokenTypeValidDataType(TokenType type) {
+    return type == TokenType::Int ||
+           type == TokenType::Float4 ||
+           type == TokenType::Text ||
+           type == TokenType::Bool;
 }
 
 bool TokenTypeIsAggregateFunction(TokenType type) {
