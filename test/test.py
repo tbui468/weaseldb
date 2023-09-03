@@ -6,7 +6,7 @@ RED = '\033[31m'
 ENDC = '\033[0m'
 
 def test(filename):
-    cmd = "./../src/main ./" + filename + ".sql"
+    cmd = "./../src/wsldb ./" + filename + ".sql"
     cmd += " > result.txt"
 
     return_code = subprocess.call(cmd, shell=True)
@@ -46,3 +46,7 @@ for n in names:
 print("")
 print(GREEN + "passed: " + str(passed) + "  " + RED + "failed: " + str(failed) + ENDC + "  of " + str(len(names)) + " tests")
 print("")
+
+
+cmd = "rm result.txt"
+return_code = subprocess.call(cmd, shell=True)
