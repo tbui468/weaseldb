@@ -69,16 +69,13 @@ public:
             case TokenType::GreaterEqual:
                 return Datum(leftd.Compare(rightd).AsInt() >= 0);
             case TokenType::Plus:
-                if (!(TokenTypeIsNumeric(leftd.Type()) && TokenTypeIsNumeric(rightd.Type()))) {
-                    std::cout << "Implementation Error: + operator only usable with numeric types - give user a error message" << std::endl;
-                }
-                return Datum(leftd.AsInt() + rightd.AsInt());
+                return leftd + rightd;
             case TokenType::Minus:
-                return Datum(leftd.AsInt() - rightd.AsInt());
+                return leftd - rightd;
             case TokenType::Star:
-                return Datum(leftd.AsInt() * rightd.AsInt());
+                return leftd * rightd;
             case TokenType::Slash:
-                return Datum(leftd.AsInt() / rightd.AsInt());
+                return leftd / rightd;
             case TokenType::Or:
                 return Datum(leftd.AsBool() || rightd.AsBool());
             case TokenType::And:

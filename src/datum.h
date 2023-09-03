@@ -132,6 +132,8 @@ public:
         switch (type_) {
             case TokenType::Int:
                 return Datum(AsInt() - d.AsInt());
+            case TokenType::Float4:
+                return Datum(AsFloat4() - d.AsFloat4());
             case TokenType::Bool:
                 return Datum(AsBool() - d.AsBool());
             case TokenType::Text:
@@ -144,9 +146,23 @@ public:
     }
 
     Datum operator+(const Datum& d) {
-        //Using ternary operators to get correct type and let c compiler promote to correct type
-        return Datum((d.Type() == TokenType::Int ? d.AsInt() : d.AsFloat4()) + 
-                     (Type() == TokenType::Int ? AsInt() : AsFloat4()));
+        return Datum((Type() == TokenType::Int ? AsInt() : AsFloat4()) + 
+                     (d.Type() == TokenType::Int ? d.AsInt() : d.AsFloat4()));
+    }
+
+    Datum operator-(const Datum& d) {
+        return Datum((Type() == TokenType::Int ? AsInt() : AsFloat4()) -
+                     (d.Type() == TokenType::Int ? d.AsInt() : d.AsFloat4()));
+    }
+
+    Datum operator*(const Datum& d) {
+        return Datum((Type() == TokenType::Int ? AsInt() : AsFloat4()) *
+                     (d.Type() == TokenType::Int ? d.AsInt() : d.AsFloat4()));
+    }
+
+    Datum operator/(const Datum& d) {
+        return Datum((Type() == TokenType::Int ? AsInt() : AsFloat4()) /
+                     (d.Type() == TokenType::Int ? d.AsInt() : d.AsFloat4()));
     }
 
 private:

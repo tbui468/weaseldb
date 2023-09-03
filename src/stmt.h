@@ -279,7 +279,7 @@ public:
             }
 
             int limit = limit_->Eval(nullptr).AsInt();
-            if (limit != -1) {
+            if (limit != -1 && limit < result->tuples.size()) {
                 result->tuples.resize(limit);
             }
             
@@ -407,12 +407,6 @@ public:
                         });
         }
 
-        //TODO: this should be moved to after projection is applied
-        int limit = limit_->Eval(nullptr).AsInt();
-        if (limit != -1) {
-            tupleset->tuples.resize(limit);
-        }
-        
         //TODO: apply projection (if TupleGroup, flatten at this point)
         RowSet* result = new RowSet();
         for (Row* t: tupleset->tuples) {
@@ -421,6 +415,12 @@ public:
                 data.push_back(e->Eval(t));
             } 
             result->tuples.push_back(new Tuple(data));
+        }
+
+        //TODO: this should be moved to after projection is applied
+        int limit = limit_->Eval(nullptr).AsInt();
+        if (limit != -1 && limit < result->tuples.size()) {
+            result->tuples.resize(limit);
         }
 
         return Status(true, "(" + std::to_string(tupleset->tuples.size()) + " rows)", result);
