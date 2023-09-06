@@ -5,7 +5,7 @@
 #include <algorithm>
 #include "token.h"
 #include "datum.h"
-#include "tuple.h"
+#include "row.h"
 #include "schema.h"
 #include "status.h"
 #include "db.h"

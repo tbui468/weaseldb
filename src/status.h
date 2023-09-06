@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tuple.h"
+#include "row.h"
 
 namespace wsldb {
 
