@@ -1,4 +1,4 @@
-create table planets (id int, name text, moons int, primary key (id));
+create table planets (id int4, name text, moons int4, primary key (id));
 insert into planets values (1, 'Earth', 1), (2, 'Mars', 2), (3, 'Venus', 0);
 
 select count(id), count(name), count(moons) from planets;

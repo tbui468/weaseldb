@@ -57,22 +57,22 @@ public:
             Datum r = right_values.at(i);
             switch (op_.type) {
                 case TokenType::Equal:
-                    output.emplace_back(l.Compare(r).AsInt() == 0);
+                    output.emplace_back(l.Compare(r).AsInt4() == 0);
                     break;
                 case TokenType::NotEqual:
-                    output.emplace_back(l.Compare(r).AsInt() != 0);
+                    output.emplace_back(l.Compare(r).AsInt4() != 0);
                     break;
                 case TokenType::Less:
-                    output.emplace_back(l.Compare(r).AsInt() < 0);
+                    output.emplace_back(l.Compare(r).AsInt4() < 0);
                     break;
                 case TokenType::LessEqual:
-                    output.emplace_back(l.Compare(r).AsInt() <= 0);
+                    output.emplace_back(l.Compare(r).AsInt4() <= 0);
                     break;
                 case TokenType::Greater:
-                    output.emplace_back(l.Compare(r).AsInt() > 0);
+                    output.emplace_back(l.Compare(r).AsInt4() > 0);
                     break;
                 case TokenType::GreaterEqual:
-                    output.emplace_back(l.Compare(r).AsInt() >= 0);
+                    output.emplace_back(l.Compare(r).AsInt4() >= 0);
                     break;
                 case TokenType::Plus:
                     output.emplace_back(l + r);
@@ -162,8 +162,8 @@ public:
                 case TokenType::Minus:
                     if (right.Type() == TokenType::Float4) {
                         output.emplace_back(-right.AsFloat4());
-                    } else if (right.Type() == TokenType::Int) {
-                        output.emplace_back(-right.AsInt());
+                    } else if (right.Type() == TokenType::Int4) {
+                        output.emplace_back(-right.AsInt4());
                     }
                     break;
                 case TokenType::Not:
@@ -302,7 +302,7 @@ public:
                 std::vector<Datum> values = arg_->Eval(rs);
                 std::vector<Datum>::iterator it = std::max_element(values.begin(), values.end(), 
                         [](Datum& left, Datum& right) -> bool {
-                            return left.Compare(right).AsInt() < 0;
+                            return left.Compare(right).AsInt4() < 0;
                         });
                 return {*it};
             }
@@ -310,7 +310,7 @@ public:
                 std::vector<Datum> values = arg_->Eval(rs);
                 std::vector<Datum>::iterator it = std::min_element(values.begin(), values.end(), 
                         [](Datum& left, Datum& right) -> bool {
-                            return left.Compare(right).AsInt() < 0;
+                            return left.Compare(right).AsInt4() < 0;
                         });
                 return {*it};
             }

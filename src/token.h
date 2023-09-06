@@ -9,7 +9,7 @@ enum class TokenType {
     Create,
     Table, 
     Text,
-    Int,
+    Int4,
     Bool,
     Float4,
     Null,

@@ -27,8 +27,8 @@ public:
 
         for (Row* r: rows_) {
             for (Datum d: r->data_) {
-                if (d.Type() == TokenType::Int) {
-                    std::cout << d.AsInt() << ",";
+                if (d.Type() == TokenType::Int4) {
+                    std::cout << d.AsInt4() << ",";
                 } else if (d.Type() == TokenType::Float4) {
                     std::cout << d.AsFloat4() << ",";
                 } else if (d.Type() == TokenType::Text) {

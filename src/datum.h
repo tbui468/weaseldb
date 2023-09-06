@@ -11,7 +11,7 @@ public:
     Datum(Token t) {
         switch (t.type) {
             case TokenType::IntLiteral: {
-                type_ = TokenType::Int;
+                type_ = TokenType::Int4;
                 int value = std::stoi(t.lexeme);
                 data_.append((char*)&value, sizeof(int));
                 break;
@@ -48,7 +48,7 @@ public:
     Datum(const std::string& buf, int* off, TokenType type) {
         type_ = type;
         switch (type) {
-            case TokenType::Int: {
+            case TokenType::Int4: {
                 data_.append((char*)(buf.data() + *off), sizeof(int));
                 *off += sizeof(int);
                 break;
@@ -77,7 +77,7 @@ public:
     }
 
     Datum(int i) {
-        type_ = TokenType::Int;
+        type_ = TokenType::Int4;
         data_.append((char*)&i, sizeof(int));
     }
 
@@ -116,7 +116,7 @@ public:
         return data_;
     }
 
-    int AsInt() const {
+    int AsInt4() const {
         return *((int*)(data_.data()));
     }
 
@@ -130,8 +130,8 @@ public:
 
     Datum Compare(Datum& d) {
         switch (type_) {
-            case TokenType::Int:
-                return Datum(AsInt() - d.AsInt());
+            case TokenType::Int4:
+                return Datum(AsInt4() - d.AsInt4());
             case TokenType::Float4:
                 return Datum(AsFloat4() - d.AsFloat4());
             case TokenType::Bool:
@@ -146,23 +146,23 @@ public:
     }
 
     Datum operator+(const Datum& d) {
-        return Datum((Type() == TokenType::Int ? AsInt() : AsFloat4()) + 
-                     (d.Type() == TokenType::Int ? d.AsInt() : d.AsFloat4()));
+        return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) + 
+                     (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
     }
 
     Datum operator-(const Datum& d) {
-        return Datum((Type() == TokenType::Int ? AsInt() : AsFloat4()) -
-                     (d.Type() == TokenType::Int ? d.AsInt() : d.AsFloat4()));
+        return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) -
+                     (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
     }
 
     Datum operator*(const Datum& d) {
-        return Datum((Type() == TokenType::Int ? AsInt() : AsFloat4()) *
-                     (d.Type() == TokenType::Int ? d.AsInt() : d.AsFloat4()));
+        return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) *
+                     (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
     }
 
     Datum operator/(const Datum& d) {
-        return Datum((Type() == TokenType::Int ? AsInt() : AsFloat4()) /
-                     (d.Type() == TokenType::Int ? d.AsInt() : d.AsFloat4()));
+        return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) /
+                     (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
     }
 
 private:

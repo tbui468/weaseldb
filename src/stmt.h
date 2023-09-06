@@ -220,7 +220,7 @@ public:
                 return status;     
             }
 
-            if (type != TokenType::Int) {
+            if (type != TokenType::Int4) {
                 return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
             }
         }
@@ -282,15 +282,15 @@ public:
                                 right.rows_.push_back(t2);
                                 Datum d1 = oc.col->Eval(&left).at(0);
                                 Datum d2 = oc.col->Eval(&right).at(0);
-                                if (d1.Compare(d2).AsInt() == 0)
+                                if (d1.Compare(d2).AsInt4() == 0)
                                     continue;
 
                                 RowSet dummy_rs;
                                 dummy_rs.rows_.push_back(new Row({}));
                                 if (oc.asc->Eval(&dummy_rs).at(0).AsBool()) {
-                                    return d1.Compare(d2).AsInt() < 0;
+                                    return d1.Compare(d2).AsInt4() < 0;
                                 }
-                                return d1.Compare(d2).AsInt() > 0;
+                                return d1.Compare(d2).AsInt4() > 0;
                             }
 
                             return true;
@@ -317,7 +317,7 @@ public:
         }
 
         //limit in-place
-        int limit = limit_->Eval(dummy_rows).at(0).AsInt();
+        int limit = limit_->Eval(dummy_rows).at(0).AsInt4();
         if (limit != -1 && limit < proj_rs->rows_.size()) {
             proj_rs->rows_.resize(limit);
         }
@@ -351,7 +351,7 @@ public:
             result->tuples.push_back(nr->tuples_.at(0));
         }
 
-        int limit = limit_->Eval(nullptr).AsInt();
+        int limit = limit_->Eval(nullptr).AsInt4();
         if (limit != -1 && limit < result->tuples.size()) {
             result->tuples.resize(limit);
         }
@@ -456,13 +456,13 @@ public:
                             for (OrderCol oc: order_cols) {
                                 Datum d1 = oc.col->Eval(t1);
                                 Datum d2 = oc.col->Eval(t2);
-                                if (d1.Compare(d2).AsInt() == 0)
+                                if (d1.Compare(d2).AsInt4() == 0)
                                     continue;
 
                                 if (oc.asc->Eval(nullptr).AsBool()) {
-                                    return d1.Compare(d2).AsInt() < 0;
+                                    return d1.Compare(d2).AsInt4() < 0;
                                 }
-                                return d1.Compare(d2).AsInt() > 0;
+                                return d1.Compare(d2).AsInt4() > 0;
                             }
 
                             return true;
@@ -480,7 +480,7 @@ public:
         }
 
         //TODO: this should be moved to after projection is applied
-        int limit = limit_->Eval(nullptr).AsInt();
+        int limit = limit_->Eval(nullptr).AsInt4();
         if (limit != -1 && limit < result->tuples.size()) {
             result->tuples.resize(limit);
         }

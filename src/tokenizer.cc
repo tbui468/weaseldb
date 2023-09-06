@@ -61,6 +61,7 @@ void Tokenizer::DebugPrintTokens(const std::vector<Token>& tokens) {
         switch (t.type) {
             case TokenType::Identifier:
             case TokenType::IntLiteral:
+            case TokenType::FloatLiteral:
             case TokenType::StringLiteral:
                 std::cout << TokenTypeToString(t.type) << " " << t.lexeme << std::endl;
                 break;
@@ -88,8 +89,8 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Table;
     } else if (len == 4 && strncmp(&query_.at(idx), "text", len) == 0) {
         type = TokenType::Text;
-    } else if (len == 3 && strncmp(&query_.at(idx), "int", len) == 0) {
-        type = TokenType::Int;
+    } else if (len == 4 && strncmp(&query_.at(idx), "int4", len) == 0) {
+        type = TokenType::Int4;
     } else if (len == 6 && strncmp(&query_.at(idx), "float4", len) == 0) {
         type = TokenType::Float4;
     } else if (len == 7 && strncmp(&query_.at(idx), "primary", len) == 0) {

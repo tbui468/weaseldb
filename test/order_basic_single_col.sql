@@ -1,4 +1,4 @@
-create table pets (id int, name text, mass float4, primary key (id));
+create table pets (id int4, name text, mass float4, primary key (id));
 insert into pets values (1, 'cat', 30.0), (2, 'bat', 10.0), (3, 'ant' 20.0);
 
 select id, name from pets order by id asc;
