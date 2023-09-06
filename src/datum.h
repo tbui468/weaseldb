@@ -180,6 +180,15 @@ public:
         return (*this).AsBool() && d.AsBool();
     }
 
+    static std::string SerializeData(const std::vector<Datum>& data) {
+        std::string value;
+        for (Datum d: data) {
+            value += d.Serialize();
+        }
+        return value;
+    }
+
+
 private:
     Datum Compare(const Datum& d) {
         switch (type_) {
@@ -202,6 +211,5 @@ private:
     TokenType type_;
     std::string data_;
 };
-
 
 }

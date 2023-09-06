@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <unordered_map>
 
 #include "expr.h"
 #include "token.h"
@@ -150,12 +151,14 @@ public:
                std::vector<Expr*> projs,
                Expr* where_clause, 
                std::vector<OrderCol> order_cols,
-               Expr* limit):
+               Expr* limit,
+               bool remove_duplicates):
                     ranges_(std::move(ranges)),
                     projs_(std::move(projs)),
                     where_clause_(where_clause),
                     order_cols_(std::move(order_cols)),
-                    limit_(limit) {}
+                    limit_(limit),
+                    remove_duplicates_(remove_duplicates) {}
 
     Status Analyze(DB* db) override {
         //Expr::Eval(RowSet*) evaluates once for each row
@@ -316,177 +319,28 @@ public:
             }
         }
 
+        //remove duplicates
+        RowSet* final_rs = new RowSet();
+        if (remove_duplicates_) {
+            std::unordered_map<std::string, bool> map;
+            for (Row* r: proj_rs->rows_) {
+                std::string key = Datum::SerializeData(r->data_);
+                if (map.find(key) == map.end()) {
+                    map.insert({key, true});
+                    final_rs->rows_.push_back(r);
+                }
+            }
+        } else {
+            final_rs = proj_rs;
+        }
+
         //limit in-place
         int limit = limit_->Eval(dummy_rows).at(0).AsInt4();
-        if (limit != -1 && limit < proj_rs->rows_.size()) {
-            proj_rs->rows_.resize(limit);
+        if (limit != -1 && limit < final_rs->rows_.size()) {
+            final_rs->rows_.resize(limit);
         }
 
-        return Status(true, "(" + std::to_string(proj_rs->rows_.size()) + " rows)", proj_rs);
-
-        /*
-
-        std::string serialized_schema;
-        Token target_relation_ = target_ranges_.at(0)->GetToken(); //ugly
-        if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
-            return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
-        }
-        Schema schema(serialized_schema);
-
-        //projection
-        for (Expr* e: target_cols_) {
-            TokenType type;
-            Status status = e->Analyze(&schema, &type);
-            if (!status.Ok()) {
-                return status;
-            }
-        }
-
-        //input range is used
-        std::vector<NewRow*> rows = ranges_->Eval(db, where_clause_);
-        std::vector<NewRow*> nrs = proj_->Eval(rows);
-
-        RowSet* result = new RowSet();
-        for (NewRow* nr: nrs) {
-            result->tuples.push_back(nr->tuples_.at(0));
-        }
-
-        int limit = limit_->Eval(nullptr).AsInt4();
-        if (limit != -1 && limit < result->tuples.size()) {
-            result->tuples.resize(limit);
-        }
-        
-
-        return Status(true, "(" + std::to_string(result->tuples.size()) + " rows)", result);*/
-        return Status(true, "ok");
-
-        /*
-        //if range is used
-
-        Token target_relation_ = target_ranges_.at(0)->GetToken(); //ugly
-        RowSet* tupleset = new RowSet();
-
-        std::string serialized_schema;
-        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
-        Schema schema(serialized_schema);
-
-        rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
-        rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
-
-        //check if aggregates are used anywhere
-        bool use_groups = group_cols_.empty() ? false : true;
-        for (Expr* e: target_cols_) {
-            if (e->ContainsAggregateFunctions()) {
-                use_groups = true;
-                break;
-            }
-        }
-        for (OrderCol oc: order_cols_) {
-            if (oc.col->ContainsAggregateFunctions()) {
-                use_groups = true;
-                break;
-            }
-        }
-
-        //make vector of all column indexes NOT grouped
-        //need to use these to check if aggregates are required for certain columns
-        std::vector<int> nongroup_cols;
-        for (int i = 0; i < schema.FieldCount(); i++) {
-            nongroup_cols.push_back(i);
-        }
-        for (Expr* e: group_cols_) {
-            int idx = ((ColRef*)e)->ColIdx();
-            nongroup_cols.erase(std::remove(nongroup_cols.begin(), nongroup_cols.end(), idx), nongroup_cols.end());
-        } 
-
-        if (use_groups) {
-            for (Expr* e: target_cols_) {
-                if (e->ContainsNonAggregatedColRef(nongroup_cols) >= 0) {
-                    return Status(false, "Error: Column '" + e->ToString() + "' needs to be an argument to an aggregate function or a 'group by' column");
-                }
-            }
-            for (OrderCol oc: order_cols_) {
-                if (oc.col->ContainsNonAggregatedColRef(nongroup_cols) >= 0) {
-                    return Status(false, "Error: Column '" + oc.col->ToString() + "' needs to be an argument to an aggregate function or a 'group by' column");
-                }
-            }
-        }
-
-        TupleGroup* group = new TupleGroup();
-
-        //index scan
-        for (it->SeekToFirst(); it->Valid(); it->Next()) {
-            std::string value = it->value().ToString();
-
-            //selection
-            Tuple tuple(schema.DeserializeData(value));
-            if (!where_clause_->Eval(&tuple).AsBool())
-                continue;
-
-            //grouping
-            //TODO: row is Tuple if
-            //  1. no aggregate function used in projection/having/order by
-            //  2. no columns in group by
-            //  othewise row is TupleGroup
-            //  1. Same TupleGroup with group keys empty if no columns in group by
-            //  otherwise add to TupleGroup with groups keys specified by group by clause
-
-            if (use_groups) {
-                group->AddTuple(new Tuple(schema.DeserializeData(value)));
-            } else {
-                tupleset->tuples.push_back(new Tuple(schema.DeserializeData(value)));
-            }
-        }
-
-        if (use_groups) {
-            tupleset->tuples.push_back(group);
-        }
-
-        //TODO: if TupleSet is empty at this point, we know that all processing must be done on TupleGroups
-        //otherwise process TupleSet
-
-        //TODO: apply having clause on TupleGroup (having requires aggregates, so should not be TupleSet...right?)
-
-        //TODO: sort Tuples in TupleSet or sort TupleGroups
-        if (!order_cols_.empty()) {
-            std::vector<OrderCol>& order_cols = order_cols_; //lambdas can only capture non-member variable
-
-            std::sort(tupleset->tuples.begin(), tupleset->tuples.end(), 
-                        [order_cols](Row* t1, Row* t2) -> bool { 
-                            for (OrderCol oc: order_cols) {
-                                Datum d1 = oc.col->Eval(t1);
-                                Datum d2 = oc.col->Eval(t2);
-                                if (d1.Compare(d2).AsInt4() == 0)
-                                    continue;
-
-                                if (oc.asc->Eval(nullptr).AsBool()) {
-                                    return d1.Compare(d2).AsInt4() < 0;
-                                }
-                                return d1.Compare(d2).AsInt4() > 0;
-                            }
-
-                            return true;
-                        });
-        }
-
-        //TODO: apply projection (if TupleGroup, flatten at this point)
-        RowSet* result = new RowSet();
-        for (Row* t: tupleset->tuples) {
-            std::vector<Datum> data;
-            for (Expr* e: target_cols_) {
-                data.push_back(e->Eval(t));
-            } 
-            result->tuples.push_back(new Tuple(data));
-        }
-
-        //TODO: this should be moved to after projection is applied
-        int limit = limit_->Eval(nullptr).AsInt4();
-        if (limit != -1 && limit < result->tuples.size()) {
-            result->tuples.resize(limit);
-        }
-
-        return Status(true, "(" + std::to_string(tupleset->tuples.size()) + " rows)", result);*/
-        return Status(true, "ok");
+        return Status(true, "(" + std::to_string(final_rs->rows_.size()) + " rows)", final_rs);
     }
     std::string ToString() override {
         return "select";
@@ -497,6 +351,7 @@ private:
     Expr* where_clause_;
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
+    bool remove_duplicates_;
 };
 
 class UpdateStmt: public Stmt {

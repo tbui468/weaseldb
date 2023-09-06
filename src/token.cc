@@ -123,6 +123,8 @@ std::string TokenTypeToString(TokenType type) {
             return "Max";
         case TokenType::Min:
             return "Min";
+        case TokenType::Distinct:
+            return "Distinct";
         default:
             return "Unrecognized token";
     }

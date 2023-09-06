@@ -44,6 +44,7 @@ enum class TokenType {
     Sum,
     Min,
     Max,
+    Distinct,
 
     /* user-defined identifier */
     Identifier,

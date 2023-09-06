@@ -203,8 +203,13 @@ Stmt* Parser::ParseStmt() {
             return new InsertStmt(target, values);
         }
         case TokenType::Select: {
-            std::vector<Expr*> target_cols;
+            bool remove_duplicates = false;
+            if (PeekToken().type == TokenType::Distinct) {
+                NextToken(); //distinct
+                remove_duplicates = true;
+            }
 
+            std::vector<Expr*> target_cols;
             target_cols.push_back(ParseExpr());
             while (PeekToken().type == TokenType::Comma) {
                 NextToken(); //,
@@ -220,7 +225,7 @@ Stmt* Parser::ParseStmt() {
                     limit = new Literal(-1); //no limit
                 }
                 NextToken(); //semicolon
-                return new SelectStmt({}, target_cols, new Literal(true), {}, limit);
+                return new SelectStmt({}, target_cols, new Literal(true), {}, limit, remove_duplicates);
             }
 
             std::vector<Expr*> target_ranges;
@@ -267,7 +272,7 @@ Stmt* Parser::ParseStmt() {
             } 
 
             NextToken(); //;
-            return new SelectStmt(target_ranges, target_cols, where_clause, order_cols, limit);
+            return new SelectStmt(target_ranges, target_cols, where_clause, order_cols, limit, remove_duplicates);
         }
 
         case TokenType::Update: {

@@ -163,6 +163,8 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Max;
     } else if (len == 3 && strncmp(&query_.at(idx), "min", len) == 0) {
         type = TokenType::Min;
+    } else if (len == 8 && strncmp(&query_.at(idx), "distinct", len) == 0) {
+        type = TokenType::Distinct;
     } else {
         type = TokenType::Identifier;
     }
