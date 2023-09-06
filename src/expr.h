@@ -56,45 +56,19 @@ public:
             Datum l = left_values.at(i);
             Datum r = right_values.at(i);
             switch (op_.type) {
-                case TokenType::Equal:
-                    output.emplace_back(l.Compare(r).AsInt4() == 0);
-                    break;
-                case TokenType::NotEqual:
-                    output.emplace_back(l.Compare(r).AsInt4() != 0);
-                    break;
-                case TokenType::Less:
-                    output.emplace_back(l.Compare(r).AsInt4() < 0);
-                    break;
-                case TokenType::LessEqual:
-                    output.emplace_back(l.Compare(r).AsInt4() <= 0);
-                    break;
-                case TokenType::Greater:
-                    output.emplace_back(l.Compare(r).AsInt4() > 0);
-                    break;
-                case TokenType::GreaterEqual:
-                    output.emplace_back(l.Compare(r).AsInt4() >= 0);
-                    break;
-                case TokenType::Plus:
-                    output.emplace_back(l + r);
-                    break;
-                case TokenType::Minus:
-                    output.emplace_back(l - r);
-                    break;
-                case TokenType::Star:
-                    output.emplace_back(l * r);
-                    break;
-                case TokenType::Slash:
-                    output.emplace_back(l / r);
-                    break;
-                case TokenType::Or:
-                    output.emplace_back(l.AsBool() || r.AsBool());
-                    break;
-                case TokenType::And:
-                    output.emplace_back(l.AsBool() && r.AsBool());
-                    break;
-                default:
-                    std::cout << "invalid op\n";
-                    return {}; //keep compiler quiet
+                case TokenType::Equal:          output.emplace_back(l == r);    break;
+                case TokenType::NotEqual:       output.emplace_back(l != r);    break;
+                case TokenType::Less:           output.emplace_back(l < r);     break;
+                case TokenType::LessEqual:      output.emplace_back(l <= r);    break;
+                case TokenType::Greater:        output.emplace_back(l > r);     break;
+                case TokenType::GreaterEqual:   output.emplace_back(l >= r);    break;
+                case TokenType::Plus:           output.emplace_back(l + r);     break;
+                case TokenType::Minus:          output.emplace_back(l - r);     break;
+                case TokenType::Star:           output.emplace_back(l * r);     break;
+                case TokenType::Slash:          output.emplace_back(l / r);     break;
+                case TokenType::Or:             output.emplace_back(l || r);    break;
+                case TokenType::And:            output.emplace_back(l && r);    break;
+                default:                        std::cout << "invalid op\n";    break;
             }
         }
 
@@ -302,7 +276,7 @@ public:
                 std::vector<Datum> values = arg_->Eval(rs);
                 std::vector<Datum>::iterator it = std::max_element(values.begin(), values.end(), 
                         [](Datum& left, Datum& right) -> bool {
-                            return left.Compare(right).AsInt4() < 0;
+                            return left < right;
                         });
                 return {*it};
             }
@@ -310,7 +284,7 @@ public:
                 std::vector<Datum> values = arg_->Eval(rs);
                 std::vector<Datum>::iterator it = std::min_element(values.begin(), values.end(), 
                         [](Datum& left, Datum& right) -> bool {
-                            return left.Compare(right).AsInt4() < 0;
+                            return left < right;
                         });
                 return {*it};
             }

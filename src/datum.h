@@ -128,23 +128,6 @@ public:
         return *((bool*)(data_.data()));
     }
 
-    Datum Compare(Datum& d) {
-        switch (type_) {
-            case TokenType::Int4:
-                return Datum(AsInt4() - d.AsInt4());
-            case TokenType::Float4:
-                return Datum(AsFloat4() - d.AsFloat4());
-            case TokenType::Bool:
-                return Datum(AsBool() - d.AsBool());
-            case TokenType::Text:
-                return Datum(AsString().compare(d.AsString()));
-            default:
-                std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
-                break;
-        }        
-        return Datum(0);
-    }
-
     Datum operator+(const Datum& d) {
         return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) + 
                      (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
@@ -163,6 +146,56 @@ public:
     Datum operator/(const Datum& d) {
         return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) /
                      (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
+    }
+
+    bool operator==(const Datum& d) {
+        return this->Compare(d).AsInt4() == 0;
+    }
+
+    bool operator!=(const Datum& d) {
+        return !(*this == d);
+    }
+
+    bool operator<(const Datum& d) {
+        return this->Compare(d).AsInt4() < 0;
+    }
+
+    bool operator<=(const Datum& d) {
+        return *this == d || *this < d;
+    }
+
+    bool operator>=(const Datum& d) {
+        return !(*this < d);
+    }
+
+    bool operator>(const Datum& d) {
+        return !(*this <= d);
+    }
+
+    bool operator||(const Datum& d) {
+        return (*this).AsBool() || d.AsBool();
+    }
+
+    bool operator&&(const Datum& d) {
+        return (*this).AsBool() && d.AsBool();
+    }
+
+private:
+    Datum Compare(const Datum& d) {
+        switch (type_) {
+            case TokenType::Int4:
+                return Datum(AsInt4() - d.AsInt4());
+            case TokenType::Float4:
+                return Datum(AsFloat4() - d.AsFloat4());
+            case TokenType::Bool:
+                return Datum(AsBool() - d.AsBool());
+            case TokenType::Text:
+                return Datum(AsString().compare(d.AsString()));
+            default:
+                std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
+                break;
+        }        
+        return Datum(0);
     }
 
 private:

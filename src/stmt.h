@@ -282,15 +282,15 @@ public:
                                 right.rows_.push_back(t2);
                                 Datum d1 = oc.col->Eval(&left).at(0);
                                 Datum d2 = oc.col->Eval(&right).at(0);
-                                if (d1.Compare(d2).AsInt4() == 0)
+                                if (d1 == d2)
                                     continue;
 
                                 RowSet dummy_rs;
                                 dummy_rs.rows_.push_back(new Row({}));
                                 if (oc.asc->Eval(&dummy_rs).at(0).AsBool()) {
-                                    return d1.Compare(d2).AsInt4() < 0;
+                                    return d1 < d2;
                                 }
-                                return d1.Compare(d2).AsInt4() > 0;
+                                return d1 > d2;
                             }
 
                             return true;
