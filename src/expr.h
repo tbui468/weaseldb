@@ -15,6 +15,7 @@ namespace wsldb {
 class Expr {
 public:
     virtual std::vector<Datum> Eval(RowSet* rs) = 0;
+    virtual inline Datum Eval(Row* r) = 0;
     virtual std::string ToString() = 0;
     virtual Status Analyze(Schema* schema, TokenType* evaluated_type) = 0;
 };
@@ -27,9 +28,12 @@ public:
     std::vector<Datum> Eval(RowSet* rs) override {
         std::vector<Datum> output;
         for (Row* r: rs->rows_) {
-            output.emplace_back(t_);
+            output.push_back(Eval(r));
         }
         return output;
+    }
+    inline Datum Eval(Row* r) override {
+        return Datum(t_);
     }
     std::string ToString() override {
         return t_.lexeme;
@@ -48,31 +52,31 @@ public:
         op_(op), left_(left), right_(right) {}
 
     std::vector<Datum> Eval(RowSet* rs) override {
-        std::vector<Datum> left_values = left_->Eval(rs);
-        std::vector<Datum> right_values = right_->Eval(rs);
-
         std::vector<Datum> output;
-        for (int i = 0; i < rs->rows_.size(); i++) {
-            Datum l = left_values.at(i);
-            Datum r = right_values.at(i);
-            switch (op_.type) {
-                case TokenType::Equal:          output.emplace_back(l == r);    break;
-                case TokenType::NotEqual:       output.emplace_back(l != r);    break;
-                case TokenType::Less:           output.emplace_back(l < r);     break;
-                case TokenType::LessEqual:      output.emplace_back(l <= r);    break;
-                case TokenType::Greater:        output.emplace_back(l > r);     break;
-                case TokenType::GreaterEqual:   output.emplace_back(l >= r);    break;
-                case TokenType::Plus:           output.emplace_back(l + r);     break;
-                case TokenType::Minus:          output.emplace_back(l - r);     break;
-                case TokenType::Star:           output.emplace_back(l * r);     break;
-                case TokenType::Slash:          output.emplace_back(l / r);     break;
-                case TokenType::Or:             output.emplace_back(l || r);    break;
-                case TokenType::And:            output.emplace_back(l && r);    break;
-                default:                        std::cout << "invalid op\n";    break;
-            }
+        for (Row* r: rs->rows_) {
+            output.push_back(Eval(r));
         }
 
         return output;
+    }
+    inline Datum Eval(Row* row) override {
+        Datum l = left_->Eval(row);
+        Datum r = right_->Eval(row);
+        switch (op_.type) {
+            case TokenType::Equal:          return Datum(l == r);
+            case TokenType::NotEqual:       return Datum(l != r);
+            case TokenType::Less:           return Datum(l < r);
+            case TokenType::LessEqual:      return Datum(l <= r);
+            case TokenType::Greater:        return Datum(l > r);
+            case TokenType::GreaterEqual:   return Datum(l >= r);
+            case TokenType::Plus:           return Datum(l + r);
+            case TokenType::Minus:          return Datum(l - r);
+            case TokenType::Star:           return Datum(l * r);
+            case TokenType::Slash:          return Datum(l / r);
+            case TokenType::Or:             return Datum(l || r);
+            case TokenType::And:            return Datum(l && r);
+            default:                        return Datum(0);
+        }
     }
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
@@ -128,28 +132,30 @@ class Unary: public Expr {
 public:
     Unary(Token op, Expr* right): op_(op), right_(right) {}
     std::vector<Datum> Eval(RowSet* rs) override {
-        std::vector<Datum> right_values = right_->Eval(rs);
-
         std::vector<Datum> output;
-        for (Datum right: right_values) {
-            switch (op_.type) {
-                case TokenType::Minus:
-                    if (right.Type() == TokenType::Float4) {
-                        output.emplace_back(-right.AsFloat4());
-                    } else if (right.Type() == TokenType::Int4) {
-                        output.emplace_back(-right.AsInt4());
-                    }
-                    break;
-                case TokenType::Not:
-                    output.emplace_back(!right.AsBool());
-                    break;
-                default:
-                    std::cout << "invalid op\n";
-                    return {}; //keep compiler quiet
-            }
+        for (Row* r: rs->rows_) {
+            output.push_back(Eval(r));
         }
 
         return output;
+    }
+    inline Datum Eval(Row* r) override {
+        Datum right = right_->Eval(r);
+        switch (op_.type) {
+            case TokenType::Minus:
+                if (right.Type() == TokenType::Float4) {
+                    return Datum(-right.AsFloat4());
+                } else if (right.Type() == TokenType::Int4) {
+                    return Datum(-right.AsInt4());
+                }
+                break;
+            case TokenType::Not:
+                return Datum(!right.AsBool());
+            default:
+                std::cout << "invalid op\n";
+                break;
+        }
+        return Datum(0);
     }
     std::string ToString() override {
         return "(" + op_.lexeme + " " + right_->ToString() + ")";
@@ -189,10 +195,13 @@ public:
     std::vector<Datum> Eval(RowSet* rs) override {
         std::vector<Datum> output;
         for (Row* r: rs->rows_) {
-            output.push_back(r->data_.at(idx_));
+            output.push_back(Eval(r));
         }
 
         return output;
+    }
+    inline Datum Eval(Row* r) override {
+        return r->data_.at(idx_);
     }
     std::string ToString() override {
         return t_.lexeme;
@@ -218,11 +227,15 @@ public:
     AssignCol(Token col, Expr* right): col_(col), right_(right) {}
     std::vector<Datum> Eval(RowSet* rs) override {
         std::vector<Datum> right_values = right_->Eval(rs);
-        
-        for (int i = 0; i < rs->rows_.size(); i++) {
-            rs->rows_.at(i)->data_.at(idx_) = right_values.at(i);
-        }
+        for (Row* r: rs->rows_) {
+            Eval(r);
+        } 
         return {};
+    }
+    inline Datum Eval(Row* r) override {
+        Datum right = right_->Eval(r);
+        r->data_.at(idx_) = right;
+        return Datum(0);
     }
     std::string ToString() override {
         return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
@@ -302,6 +315,10 @@ public:
         }
         return {};
     }
+    inline Datum Eval(Row* r) override {
+        std::cout << "should report error: cannot call aggregate function on single row" << std::endl;
+        return Datum(0);
+    }
     std::string ToString() override {
         return fcn_.lexeme + arg_->ToString();
     }
@@ -329,10 +346,13 @@ public:
         std::vector<Datum> output;
 
         for (Row* r: rs->rows_) {
-            output.emplace_back(t_.lexeme);
+            output.push_back(Eval(r));
         }
 
         return output;
+    }
+    inline Datum Eval(Row* r) override {
+        return Datum(t_.lexeme);
     }
     std::string ToString() override {
         return "table ref";

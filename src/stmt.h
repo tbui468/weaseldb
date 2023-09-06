@@ -252,45 +252,31 @@ public:
             //index scan
             for (it->SeekToFirst(); it->Valid(); it->Next()) {
                 std::string value = it->value().ToString();
-                std::string old_key = it->key().ToString();
 
-                rs->rows_.push_back(new Row(schema.DeserializeData(value)));
+                Row row(schema.DeserializeData(value));
+                if (where_clause_->Eval(&row).AsBool()) {
+                    rs->rows_.push_back(new Row(schema.DeserializeData(value)));
+                }
             }
         } else {
             //no input rows, so putting in empty dummy row to Eval to output a single row
             rs->rows_.push_back(new Row({}));
         }
 
-        //filtering rows based on where clause
-        std::vector<Datum> filter = where_clause_->Eval(rs);
-        RowSet* filtered_rs = new RowSet();
-        for (int i = 0; i < filter.size(); i++) {
-            if (filter.at(i).AsBool()) {
-                filtered_rs->rows_.push_back(rs->rows_.at(i));
-            }
-        }
-
         //sort filtered rows in-place
         if (!order_cols_.empty()) {
             std::vector<OrderCol>& order_cols = order_cols_; //lambdas can only capture non-member variable
 
-            std::sort(filtered_rs->rows_.begin(), filtered_rs->rows_.end(), 
+            std::sort(rs->rows_.begin(), rs->rows_.end(), 
                         [order_cols](Row* t1, Row* t2) -> bool { 
                             for (OrderCol oc: order_cols) {
-                                //need to create temporary rowsets due to way Eval works now
-                                //should allow evaluation of single rows later (this will simplify 'where' clause too)
-                                RowSet left;
-                                left.rows_.push_back(t1);
-                                RowSet right;
-                                right.rows_.push_back(t2);
-                                Datum d1 = oc.col->Eval(&left).at(0);
-                                Datum d2 = oc.col->Eval(&right).at(0);
+                                Datum d1 = oc.col->Eval(t1);
+                                Datum d2 = oc.col->Eval(t2);
                                 if (d1 == d2)
                                     continue;
 
-                                RowSet dummy_rs;
-                                dummy_rs.rows_.push_back(new Row({}));
-                                if (oc.asc->Eval(&dummy_rs).at(0).AsBool()) {
+                                Row* r = nullptr;
+                                if (oc.asc->Eval(r).AsBool()) {
                                     return d1 < d2;
                                 }
                                 return d1 > d2;
@@ -302,12 +288,12 @@ public:
 
         //projection
         RowSet* proj_rs = new RowSet();
-        for (Row* r: filtered_rs->rows_) {
+        for (Row* r: rs->rows_) {
             proj_rs->rows_.push_back(new Row({}));
         }
 
         for (Expr* e: projs_) {
-            std::vector<Datum> col = e->Eval(filtered_rs);
+            std::vector<Datum> col = e->Eval(rs);
             if (col.size() < proj_rs->rows_.size()) {
                 proj_rs->rows_.resize(col.size());
             } else if (col.size() > proj_rs->rows_.size()) {
@@ -389,59 +375,36 @@ public:
         rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
 
         //index scan
-        RowSet* rs = new RowSet();
+        int update_count = 0;
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
             std::string value = it->value().ToString();
             std::string old_key = it->key().ToString();
 
-            rs->rows_.push_back(new Row(schema.DeserializeData(value)));
-        }
+            Row row(schema.DeserializeData(value));
+            if (where_clause_->Eval(&row).AsBool()) {
+                for (int i = 0; i < cols_.size(); i++) {
+                    int col_idx = cols_.at(i)->ColIdx();
+                    Datum v = values_.at(i)->Eval(&row);
+                    row.data_.at(col_idx) = v;
+                }
+                std::string new_key = schema.GetKeyFromData(row.data_);
+                //if updated key is different
+                if (new_key.compare(old_key) != 0) {
+                    std::string test_value;
+                    rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), new_key, &test_value);
+                    if (status.ok()) {
+                        return Status(false, "Error: A record with the same primary key already exists");
+                    }
 
-        //filtering rows based on where clause
-        std::vector<Datum> filter = where_clause_->Eval(rs);
-        RowSet* filtered_rs = new RowSet();
-        for (int i = 0; i < filter.size(); i++) {
-            if (filter.at(i).AsBool()) {
-                filtered_rs->rows_.push_back(rs->rows_.at(i));
-            }
-        }
-
-        //cache old keys to compare against updated keys later
-        std::vector<std::string> old_keys;
-        for (Row* r: filtered_rs->rows_) {
-            old_keys.push_back(schema.GetKeyFromData(r->data_));
-        }
-
-        //applying updates to filtered rows
-        for (int i = 0; i < cols_.size(); i++) {
-            int col_idx =  cols_.at(i)->ColIdx();
-            std::vector<Datum> values = values_.at(i)->Eval(filtered_rs);
-
-            for (int j = 0; j < filtered_rs->rows_.size(); j++) {
-                filtered_rs->rows_.at(j)->data_.at(col_idx) = values.at(j);
-            }
-        }
-
-        //write updated record to disk
-        int update_count = 0;
-        for (int i = 0; i < filtered_rs->rows_.size(); i++) {
-            std::string old_key = old_keys.at(i);
-            std::string new_key = schema.GetKeyFromData(filtered_rs->rows_.at(i)->data_);
-
-            //if updated key is different
-            if (new_key.compare(old_key) != 0) {
-                std::string test_value;
-                rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), new_key, &test_value);
-                if (status.ok()) {
-                    return Status(false, "Error: A record with the same primary key already exists");
+                    tab_handle->Delete(rocksdb::WriteOptions(), old_key);
                 }
 
-                tab_handle->Delete(rocksdb::WriteOptions(), old_key);
+                tab_handle->Put(rocksdb::WriteOptions(), new_key, schema.SerializeData(row.data_));
+                update_count++;
             }
 
-            tab_handle->Put(rocksdb::WriteOptions(), new_key, schema.SerializeData(filtered_rs->rows_.at(i)->data_));
-            update_count++;
         }
+
 
         return Status(true, "(" + std::to_string(update_count) + " updates)");
     }
@@ -481,22 +444,15 @@ public:
         rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
         rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
 
-        //index scan
         int delete_count = 0;
 
-        RowSet* rs = new RowSet();
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
             std::string value = it->value().ToString();
 
-            rs->rows_.push_back(new Row(schema.DeserializeData(value)));
-        }
-
-        std::vector<Datum> filter = where_clause_->Eval(rs);
-
-        for (int i = 0; i < filter.size(); i++) {
-            if (filter.at(i).AsBool()) {
+            Row row(schema.DeserializeData(value));
+            if (where_clause_->Eval(&row).AsBool()) {
                 delete_count++;
-                std::string key = schema.GetKeyFromData(rs->rows_.at(i)->data_);
+                std::string key = schema.GetKeyFromData(row.data_);
                 tab_handle->Delete(rocksdb::WriteOptions(), key);
             }
         }
