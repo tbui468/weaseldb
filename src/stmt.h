@@ -357,6 +357,14 @@ public:
             return status;
         }
 
+        for (ColRef* c: cols_) {
+            TokenType type;
+            Status status = c->Analyze(&schema, &type);
+            if (!status.Ok()) {
+                return status;
+            }
+        }
+
         for (Expr* e: values_) {
             TokenType type;
             Status status = e->Analyze(&schema, &type);
