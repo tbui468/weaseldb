@@ -10,5 +10,6 @@ select count(5) from planets;
 select sum(5) from planets;
 select min(0) from planets;
 select max(0) from planets;
+select avg(9) from planets;
 
 drop table planets;

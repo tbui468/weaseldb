@@ -288,9 +288,14 @@ public:
     Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
     std::vector<Datum> Eval(RowSet* rs) override {
         switch (fcn_.type) {
-            case TokenType::Avg:
-                //TODO: implement avg
-                break;
+            case TokenType::Avg: {
+                std::vector<Datum> values = arg_->Eval(rs);
+                Datum s(0);
+                for (Datum d: values) {
+                    s = s + d;
+                }
+                return { s / Datum(float(values.size())) };
+            }
             case TokenType::Count:
                 return { Datum(int(rs->rows_.size())) };
             case TokenType::Max: {
