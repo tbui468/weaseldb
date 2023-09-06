@@ -68,9 +68,9 @@ rocksdb::Status DB::execute(const std::string& query) {
     for (Stmt* s: ptree) {
         Status status = s->Analyze(this);
 
-        if (status.Ok()) 
+        if (status.Ok())
             status = s->Execute(this);
-       
+           
         if (status.Ok()) { 
             RowSet* tupleset = status.Tuples();
             if (tupleset) {
@@ -112,6 +112,7 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
             }
         }
 
+        //disabling status messages for tests
         //std::cout << status.Msg() << std::endl;
     }
 

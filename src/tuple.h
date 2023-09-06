@@ -8,49 +8,12 @@
 
 namespace wsldb {
 
+//Row will have either a single tuple (just the input row) or many (group row)
 class Row {
 public:
-    virtual void SetCol(int col_idx, Datum d) = 0;
-    virtual Datum GetCol(int col_idx) = 0;
-    virtual const std::vector<Datum>& Data() = 0;
-};
-
-
-class Tuple: public Row {
+    Row(std::vector<Datum> data): data_({data}) {}
 public:
-    Tuple(std::vector<Datum> data): data_(std::move(data)) {}
-    void SetCol(int col_idx, Datum d) override {
-        data_.at(col_idx) = d;
-    }
-    Datum GetCol(int col_idx) override {
-        return data_.at(col_idx);
-    }
-    const std::vector<Datum>& Data() override {
-        return data_;
-    }
-private:
     std::vector<Datum> data_;
-};
-
-
-class TupleGroup: public Row {
-public:
-    TupleGroup() {}
-
-    void AddTuple(Tuple* tuple) {
-        data_.push_back(tuple);
-    }
-    void SetCol(int col_idx, Datum d) {
-        data_.at(0)->SetCol(col_idx, d); //only sets col in first row
-    }
-    Datum GetCol(int col_idx) {
-        return data_.at(0)->GetCol(col_idx); //only returns col in first row
-    }
-    const std::vector<Datum>& Data() override {
-        return data_.at(0)->Data(); //data for first tuple
-    }
-public:
-    std::vector<Tuple*> data_;
 };
 
 class RowSet {
@@ -62,8 +25,8 @@ public:
         }
         std::cout << std::endl;*/
 
-        for (Row* t: tuples) {
-            for (Datum d: t->Data()) {
+        for (Row* r: rows_) {
+            for (Datum d: r->data_) {
                 if (d.Type() == TokenType::Int) {
                     std::cout << d.AsInt() << ",";
                 } else if (d.Type() == TokenType::Float4) {
@@ -83,7 +46,7 @@ public:
     }
 
 public:
-    std::vector<Row*> tuples;
+    std::vector<Row*> rows_;
 };
 
 

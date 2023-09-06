@@ -8,18 +8,15 @@
 #include "tuple.h"
 #include "schema.h"
 #include "status.h"
+#include "db.h"
 
 namespace wsldb {
 
-
 class Expr {
 public:
-    virtual Datum Eval(Row* tuple) = 0;
+    virtual std::vector<Datum> Eval(RowSet* rs) = 0;
     virtual std::string ToString() = 0;
     virtual Status Analyze(Schema* schema, TokenType* evaluated_type) = 0;
-    virtual bool ContainsAggregateFunctions() = 0;
-    //return index of any non-aggregated column not in the grouping columns
-    virtual int ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) = 0;
 };
 
 class Literal: public Expr {
@@ -27,8 +24,12 @@ public:
     Literal(Token t): t_(t) {}
     Literal(bool b): t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
     Literal(int i): t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
-    Datum Eval(Row* tuple) override {
-        return Datum(t_);
+    std::vector<Datum> Eval(RowSet* rs) override {
+        std::vector<Datum> output;
+        for (Row* r: rs->rows_) {
+            output.emplace_back(t_);
+        }
+        return output;
     }
     std::string ToString() override {
         return t_.lexeme;
@@ -36,12 +37,6 @@ public:
     Status Analyze(Schema* schema, TokenType* evaluated_type) override {
         *evaluated_type = Datum(t_).Type();
         return Status(true, "ok");
-    }
-    bool ContainsAggregateFunctions() override {
-        return false;
-    }
-    int ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
-        return -1;
     }
 private:
     Token t_;
@@ -52,38 +47,58 @@ public:
     Binary(Token op, Expr* left, Expr* right):
         op_(op), left_(left), right_(right) {}
 
-    Datum Eval(Row* tuple) override {
-        Datum leftd = left_->Eval(tuple);
-        Datum rightd = right_->Eval(tuple);
-        switch (op_.type) {
-            case TokenType::Equal:
-                return Datum(leftd.Compare(rightd).AsInt() == 0);
-            case TokenType::NotEqual:
-                return Datum(leftd.Compare(rightd).AsInt() != 0);
-            case TokenType::Less:
-                return Datum(leftd.Compare(rightd).AsInt() < 0);
-            case TokenType::LessEqual:
-                return Datum(leftd.Compare(rightd).AsInt() <= 0);
-            case TokenType::Greater:
-                return Datum(leftd.Compare(rightd).AsInt() > 0);
-            case TokenType::GreaterEqual:
-                return Datum(leftd.Compare(rightd).AsInt() >= 0);
-            case TokenType::Plus:
-                return leftd + rightd;
-            case TokenType::Minus:
-                return leftd - rightd;
-            case TokenType::Star:
-                return leftd * rightd;
-            case TokenType::Slash:
-                return leftd / rightd;
-            case TokenType::Or:
-                return Datum(leftd.AsBool() || rightd.AsBool());
-            case TokenType::And:
-                return Datum(leftd.AsBool() && rightd.AsBool());
-            default:
-                std::cout << "invalid op\n";
-                return Datum(false); //keep compiler quiet
+    std::vector<Datum> Eval(RowSet* rs) override {
+        std::vector<Datum> left_values = left_->Eval(rs);
+        std::vector<Datum> right_values = right_->Eval(rs);
+
+        std::vector<Datum> output;
+        for (int i = 0; i < rs->rows_.size(); i++) {
+            Datum l = left_values.at(i);
+            Datum r = right_values.at(i);
+            switch (op_.type) {
+                case TokenType::Equal:
+                    output.emplace_back(l.Compare(r).AsInt() == 0);
+                    break;
+                case TokenType::NotEqual:
+                    output.emplace_back(l.Compare(r).AsInt() != 0);
+                    break;
+                case TokenType::Less:
+                    output.emplace_back(l.Compare(r).AsInt() < 0);
+                    break;
+                case TokenType::LessEqual:
+                    output.emplace_back(l.Compare(r).AsInt() <= 0);
+                    break;
+                case TokenType::Greater:
+                    output.emplace_back(l.Compare(r).AsInt() > 0);
+                    break;
+                case TokenType::GreaterEqual:
+                    output.emplace_back(l.Compare(r).AsInt() >= 0);
+                    break;
+                case TokenType::Plus:
+                    output.emplace_back(l + r);
+                    break;
+                case TokenType::Minus:
+                    output.emplace_back(l - r);
+                    break;
+                case TokenType::Star:
+                    output.emplace_back(l * r);
+                    break;
+                case TokenType::Slash:
+                    output.emplace_back(l / r);
+                    break;
+                case TokenType::Or:
+                    output.emplace_back(l.AsBool() || r.AsBool());
+                    break;
+                case TokenType::And:
+                    output.emplace_back(l.AsBool() && r.AsBool());
+                    break;
+                default:
+                    std::cout << "invalid op\n";
+                    return {}; //keep compiler quiet
+            }
         }
+
+        return output;
     }
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
@@ -129,13 +144,6 @@ public:
 
         return Status(true, "ok");
     }
-
-    bool ContainsAggregateFunctions() override {
-        return left_->ContainsAggregateFunctions() || right_->ContainsAggregateFunctions();
-    }
-    int ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
-        return std::max(left_->ContainsNonAggregatedColRef(nongroup_cols), right_->ContainsNonAggregatedColRef(nongroup_cols));
-    }
 private:
     Expr* left_;
     Expr* right_;
@@ -145,21 +153,29 @@ private:
 class Unary: public Expr {
 public:
     Unary(Token op, Expr* right): op_(op), right_(right) {}
-    Datum Eval(Row* tuple) override {
-        Datum right = right_->Eval(tuple);
-        switch (op_.type) {
-            case TokenType::Minus:
-                if (right.Type() == TokenType::Float4) {
-                    return Datum(-right.AsFloat4());
-                } else if (right.Type() == TokenType::Int) {
-                    return Datum(-right.AsInt());
-                }
-            case TokenType::Not:
-                return Datum(!right.AsBool());
-            default:
-                std::cout << "invalid op\n";
-                return Datum(false); //keep compiler quiet
+    std::vector<Datum> Eval(RowSet* rs) override {
+        std::vector<Datum> right_values = right_->Eval(rs);
+
+        std::vector<Datum> output;
+        for (Datum right: right_values) {
+            switch (op_.type) {
+                case TokenType::Minus:
+                    if (right.Type() == TokenType::Float4) {
+                        output.emplace_back(-right.AsFloat4());
+                    } else if (right.Type() == TokenType::Int) {
+                        output.emplace_back(-right.AsInt());
+                    }
+                    break;
+                case TokenType::Not:
+                    output.emplace_back(!right.AsBool());
+                    break;
+                default:
+                    std::cout << "invalid op\n";
+                    return {}; //keep compiler quiet
+            }
         }
+
+        return output;
     }
     std::string ToString() override {
         return "(" + op_.lexeme + " " + right_->ToString() + ")";
@@ -188,12 +204,6 @@ public:
 
         return Status(true, "ok");
     }
-    bool ContainsAggregateFunctions() override {
-        return right_->ContainsAggregateFunctions();
-    }
-    int ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
-        return right_->ContainsNonAggregatedColRef(nongroup_cols);
-    }
 private:
     Expr* right_;
     Token op_;
@@ -202,8 +212,13 @@ private:
 class ColRef: public Expr {
 public:
     ColRef(Token t): t_(t), idx_(-1) {}
-    Datum Eval(Row* tuple) override {
-        return tuple->GetCol(idx_);
+    std::vector<Datum> Eval(RowSet* rs) override {
+        std::vector<Datum> output;
+        for (Row* r: rs->rows_) {
+            output.push_back(r->data_.at(idx_));
+        }
+
+        return output;
     }
     std::string ToString() override {
         return t_.lexeme;
@@ -216,17 +231,6 @@ public:
         *evaluated_type = schema->Type(idx_);
         return Status(true, "ok");
     }
-    bool ContainsAggregateFunctions() override {
-        return false;
-    }
-    int ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
-        for (int i = 0; i < nongroup_cols.size(); i++) {
-            if (nongroup_cols.at(i) == idx_)
-                return i;
-        }
-
-        return -1;
-    }
     int ColIdx() {
         return idx_;
     }
@@ -238,9 +242,13 @@ private:
 class AssignCol: public Expr {
 public:
     AssignCol(Token col, Expr* right): col_(col), right_(right) {}
-    Datum Eval(Row* tuple) override {
-        tuple->SetCol(idx_, right_->Eval(tuple));
-        return Datum(0);
+    std::vector<Datum> Eval(RowSet* rs) override {
+        std::vector<Datum> right_values = right_->Eval(rs);
+        
+        for (int i = 0; i < rs->rows_.size(); i++) {
+            rs->rows_.at(i)->data_.at(idx_) = right_values.at(i);
+        }
+        return {};
     }
     std::string ToString() override {
         return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
@@ -264,12 +272,6 @@ public:
         *evaluated_type = schema->Type(idx_);
         return Status(true, "ok");
     }
-    bool ContainsAggregateFunctions() override {
-        return right_->ContainsAggregateFunctions();
-    }
-    int ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
-        return -1; //TODO: need to think this through - could this ever be true?
-    }
 private:
     Token col_;
     int idx_;
@@ -284,47 +286,42 @@ struct OrderCol {
 struct Call: public Expr {
 public:
     Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
-    Datum Eval(Row* row) override {
-        TupleGroup* tg = (TupleGroup*)row;
-
+    std::vector<Datum> Eval(RowSet* rs) override {
         switch (fcn_.type) {
             case TokenType::Avg:
                 //TODO: implement avg
                 break;
             case TokenType::Count:
-                return Datum(int(tg->data_.size()));
+                return { Datum(int(rs->rows_.size())) };
             case TokenType::Max: {
-                Datum largest(arg_->Eval(tg->data_.at(0)));
-                for (int i = 1; i < tg->data_.size(); i++) {
-                    Datum cur = arg_->Eval(tg->data_.at(i));
-                    if (largest.Compare(cur).AsInt() < 0) {
-                        largest = cur;
-                    }
-                }
-                return largest;
+                std::vector<Datum> values = arg_->Eval(rs);
+                std::vector<Datum>::iterator it = std::max_element(values.begin(), values.end(), 
+                        [](Datum& left, Datum& right) -> bool {
+                            return left.Compare(right).AsInt() < 0;
+                        });
+                return {*it};
             }
             case TokenType::Min: {
-                Datum smallest(arg_->Eval(tg->data_.at(0)));
-                for (int i = 1; i < tg->data_.size(); i++) {
-                    Datum cur = arg_->Eval(tg->data_.at(i));
-                    if (smallest.Compare(cur).AsInt() > 0) {
-                        smallest = cur;
-                    }
-                }
-                return smallest;
+                std::vector<Datum> values = arg_->Eval(rs);
+                std::vector<Datum>::iterator it = std::min_element(values.begin(), values.end(), 
+                        [](Datum& left, Datum& right) -> bool {
+                            return left.Compare(right).AsInt() < 0;
+                        });
+                return {*it};
             }
             case TokenType::Sum: {
+                std::vector<Datum> values = arg_->Eval(rs);
                 Datum s(0);
-                for (Tuple* t: tg->data_) {
-                    s = s + arg_->Eval(t);
+                for (Datum d: values) {
+                    s = s + d;
                 }
-                return s;
+                return {s};
             }
             default:
                 //Error should have been reported before getting to this point
                 break;
         }
-        return Datum(0); //silence warnings for now
+        return {};
     }
     std::string ToString() override {
         return fcn_.lexeme + arg_->ToString();
@@ -341,40 +338,32 @@ public:
 
         return Status(true, "ok");
     }
-    bool ContainsAggregateFunctions() override {
-        return true;
-    }
-    int ContainsNonAggregatedColRef(const std::vector<int>& nongroup_cols) override {
-        return -1;
-    }
 private:
     Token fcn_;
     Expr* arg_;
 };
 
-class Range {
-public:
-    /*
-    virtual Status Analyze() = 0;
-    virtual void BeginScan() = 0;
-    virtual Row* NextRow() = 0;
-    virtual void EndScan() = 0;*/
-    virtual Token GetToken() = 0;
-};
-
-class TableRef: public Range {
+class TableRef: public Expr {
 public:
     TableRef(Token t): t_(t) {}
-    Token GetToken() override {
-        return t_;
+    std::vector<Datum> Eval(RowSet* rs) override {
+        std::vector<Datum> output;
+
+        for (Row* r: rs->rows_) {
+            output.emplace_back(t_.lexeme);
+        }
+
+        return output;
     }
-private: 
+    std::string ToString() override {
+        return "table ref";
+    }
+    Status Analyze(Schema* schema, TokenType* evaluated_type) {
+        return Status(true, "ok");
+    }
+private:
     Token t_;
 };
 
-/*
-class SubQuery: public Range {
-
-};*/
 
 }

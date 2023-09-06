@@ -220,10 +220,10 @@ Stmt* Parser::ParseStmt() {
                     limit = new Literal(-1); //no limit
                 }
                 NextToken(); //semicolon
-                return new SelectStmt({}, target_cols, nullptr, {}, {}, limit);
+                return new SelectStmt({}, target_cols, new Literal(true), {}, limit);
             }
 
-            std::vector<Range*> target_ranges;
+            std::vector<Expr*> target_ranges;
 
             NextToken(); //from
             //TODO: need to potentially parse a subquery here (and not just a table reference)
@@ -239,17 +239,6 @@ Stmt* Parser::ParseStmt() {
                 where_clause = ParseExpr(); 
             } else {
                 where_clause = new Literal(true);
-            }
-
-            std::vector<Expr*> group_cols;
-            if (PeekToken().type == TokenType::Group) {
-                NextToken(); //group
-                NextToken(); //by
-                group_cols.push_back(ParseExpr());
-                while (PeekToken().type == TokenType::Comma) {
-                    NextToken(); //,
-                    group_cols.push_back(ParseExpr());
-                }
             }
 
             std::vector<OrderCol> order_cols;
@@ -278,18 +267,18 @@ Stmt* Parser::ParseStmt() {
             } 
 
             NextToken(); //;
-            return new SelectStmt(target_ranges, target_cols, where_clause, group_cols, order_cols, limit);
+            return new SelectStmt(target_ranges, target_cols, where_clause, order_cols, limit);
         }
 
         case TokenType::Update: {
             Token target = NextToken();
             NextToken(); //set
-            std::vector<Expr*> assignments;
+            std::vector<ColRef*> cols;
+            std::vector<Expr*> values;
             while (!(PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Where)) {
-                Token col = NextToken();
+                cols.push_back(new ColRef(NextToken()));
                 NextToken(); //=
-                Expr* value = ParseExpr();
-                assignments.push_back(new AssignCol(col, value));
+                values.push_back(ParseExpr());
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken(); //,
                 }
@@ -304,7 +293,7 @@ Stmt* Parser::ParseStmt() {
             }
             NextToken(); //;
 
-            return new UpdateStmt(target, assignments, where_clause);
+            return new UpdateStmt(target, cols, values, where_clause);
         }
         case TokenType::Delete: {
             NextToken(); //from

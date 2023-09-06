@@ -109,6 +109,8 @@ public:
     }
 
     Status Execute(DB* db) override {
+        RowSet* dummy_rows = new RowSet();
+        dummy_rows->rows_.push_back(new Row({}));
         std::string serialized_schema;
         db->TableSchema(target_.lexeme, &serialized_schema);
         Schema schema(serialized_schema);
@@ -117,7 +119,7 @@ public:
         for (std::vector<Expr*> exprs: values_) {
             std::vector<Datum> data = std::vector<Datum>();
             for (Expr* e: exprs) {
-                data.push_back(e->Eval(nullptr));
+                data.push_back(e->Eval(dummy_rows).at(0));
             }
             std::string value = schema.SerializeData(data);
             std::string key = schema.GetKeyFromData(data);
@@ -144,41 +146,185 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(std::vector<Range*> target_ranges, 
-               std::vector<Expr*> target_cols, 
+    SelectStmt(std::vector<Expr*> ranges, 
+               std::vector<Expr*> projs,
                Expr* where_clause, 
-               std::vector<Expr*> group_cols,
                std::vector<OrderCol> order_cols,
                Expr* limit):
-                    target_ranges_(target_ranges), 
-                    target_cols_(std::move(target_cols)), 
+                    ranges_(std::move(ranges)),
+                    projs_(std::move(projs)),
                     where_clause_(where_clause),
-                    group_cols_(std::move(group_cols)), 
                     order_cols_(std::move(order_cols)),
                     limit_(limit) {}
 
     Status Analyze(DB* db) override {
-        if (target_ranges_.empty()) {
-            TokenType type;
-            for (Expr* e: target_cols_) {
-                Status status = e->Analyze(nullptr, &type);
-                if (!status.Ok()) {
-                    return status;
-                }
-            }
-            {
-                TokenType type;
-                Status status = limit_->Analyze(nullptr, &type);
-                if (!status.Ok()) {
-                    return status;     
-                }
+        //Expr::Eval(RowSet*) evaluates once for each row
+        //so making a dummy rowset for usage with Eval when input rows aren't available
+        RowSet* dummy_rs = new RowSet();
+        dummy_rs->rows_.push_back(new Row({}));
 
-                if (type != TokenType::Int) {
-                    return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
+        Schema* schema = nullptr;
+        if (!ranges_.empty()) {
+            std::string serialized_schema;
+            for (Expr* e: ranges_) {
+                std::string target_relation = e->Eval(dummy_rs).at(0).AsString();
+                if (!db->TableSchema(target_relation, &serialized_schema)) {
+                    return Status(false, "Error: Table '" + target_relation + "' does not exist");
                 }
             }
-            return Status(true, "ok");
+            schema = new Schema(serialized_schema);
+        } else {
+            schema = new Schema({}, {});
         }
+
+        //projection
+        for (Expr* e: projs_) {
+            TokenType type;
+            Status status = e->Analyze(schema, &type);
+            if (!status.Ok()) {
+                return status;
+            }
+        }
+
+        //where clause
+        {
+            TokenType type;
+            Status status = where_clause_->Analyze(schema, &type);
+            if (!status.Ok()) {
+                return status;
+            }
+
+            if (type != TokenType::Bool) {
+                return Status(false, "Error: Where clause must be a boolean expression");
+            }
+        }
+
+        //order cols
+        for (OrderCol oc: order_cols_) {
+            TokenType type;
+            Status status = oc.col->Analyze(schema, &type);
+            if (!status.Ok())
+                return status;
+
+            status = oc.asc->Analyze(schema, &type);
+            if (!status.Ok()) {
+                return status;
+            }
+        }
+
+        //limit
+        {
+            TokenType type;
+            Status status = limit_->Analyze(schema, &type);
+            if (!status.Ok()) {
+                return status;     
+            }
+
+            if (type != TokenType::Int) {
+                return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
+            }
+        }
+
+        return Status(true, "ok");
+    }
+    Status Execute(DB* db) override {
+        //Expr::Eval(RowSet*) evaluates once for each row
+        //so making a dummy rowset for usage with Eval when input rows aren't available
+        RowSet* dummy_rows = new RowSet();
+        dummy_rows->rows_.push_back(new Row({}));
+
+        RowSet* rs = new RowSet();
+        if (!ranges_.empty()) {
+            //TODO: read in multiple tables
+            std::string serialized_schema;
+            std::string target_relation = ranges_.at(0)->Eval(dummy_rows).at(0).AsString();
+            if (!db->TableSchema(target_relation, &serialized_schema)) {
+                return Status(false, "Error: Table '" + target_relation + "' does not exist");
+            }
+            Schema schema(serialized_schema);
+
+            rocksdb::DB* tab_handle = db->GetTableHandle(target_relation);
+            rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
+
+            //index scan
+            for (it->SeekToFirst(); it->Valid(); it->Next()) {
+                std::string value = it->value().ToString();
+                std::string old_key = it->key().ToString();
+
+                rs->rows_.push_back(new Row(schema.DeserializeData(value)));
+            }
+        } else {
+            //no input rows, so putting in empty dummy row to Eval to output a single row
+            rs->rows_.push_back(new Row({}));
+        }
+
+        //filtering rows based on where clause
+        std::vector<Datum> filter = where_clause_->Eval(rs);
+        RowSet* filtered_rs = new RowSet();
+        for (int i = 0; i < filter.size(); i++) {
+            if (filter.at(i).AsBool()) {
+                filtered_rs->rows_.push_back(rs->rows_.at(i));
+            }
+        }
+
+        //sort filtered rows in-place
+        if (!order_cols_.empty()) {
+            std::vector<OrderCol>& order_cols = order_cols_; //lambdas can only capture non-member variable
+
+            std::sort(filtered_rs->rows_.begin(), filtered_rs->rows_.end(), 
+                        [order_cols](Row* t1, Row* t2) -> bool { 
+                            for (OrderCol oc: order_cols) {
+                                //need to create temporary rowsets due to way Eval works now
+                                //should allow evaluation of single rows later (this will simplify 'where' clause too)
+                                RowSet left;
+                                left.rows_.push_back(t1);
+                                RowSet right;
+                                right.rows_.push_back(t2);
+                                Datum d1 = oc.col->Eval(&left).at(0);
+                                Datum d2 = oc.col->Eval(&right).at(0);
+                                if (d1.Compare(d2).AsInt() == 0)
+                                    continue;
+
+                                RowSet dummy_rs;
+                                dummy_rs.rows_.push_back(new Row({}));
+                                if (oc.asc->Eval(&dummy_rs).at(0).AsBool()) {
+                                    return d1.Compare(d2).AsInt() < 0;
+                                }
+                                return d1.Compare(d2).AsInt() > 0;
+                            }
+
+                            return true;
+                        });
+        }
+
+        //projection
+        RowSet* proj_rs = new RowSet();
+        for (Row* r: filtered_rs->rows_) {
+            proj_rs->rows_.push_back(new Row({}));
+        }
+
+        for (Expr* e: projs_) {
+            std::vector<Datum> col = e->Eval(filtered_rs);
+            if (col.size() < proj_rs->rows_.size()) {
+                proj_rs->rows_.resize(col.size());
+            } else if (col.size() > proj_rs->rows_.size()) {
+                return Status(false, "Error: Mixing column references with and without aggregation functions causes mismatched column sizes!");
+            }
+
+            for (int i = 0; i < col.size(); i++) {
+                proj_rs->rows_.at(i)->data_.push_back(col.at(i));
+            }
+        }
+
+        //limit in-place
+        int limit = limit_->Eval(dummy_rows).at(0).AsInt();
+        if (limit != -1 && limit < proj_rs->rows_.size()) {
+            proj_rs->rows_.resize(limit);
+        }
+
+        return Status(true, "(" + std::to_string(proj_rs->rows_.size()) + " rows)", proj_rs);
+
+        /*
 
         std::string serialized_schema;
         Token target_relation_ = target_ranges_.at(0)->GetToken(); //ugly
@@ -196,97 +342,26 @@ public:
             }
         }
 
-        //where clause
-        {
-            TokenType type;
-            Status status = where_clause_->Analyze(&schema, &type);
-            if (!status.Ok()) {
-                return status;
-            }
+        //input range is used
+        std::vector<NewRow*> rows = ranges_->Eval(db, where_clause_);
+        std::vector<NewRow*> nrs = proj_->Eval(rows);
 
-            if (type != TokenType::Bool) {
-                return Status(false, "Error: Where clause must be a boolean expression");
-            }
+        RowSet* result = new RowSet();
+        for (NewRow* nr: nrs) {
+            result->tuples.push_back(nr->tuples_.at(0));
         }
 
-        //group cols
-        for (Expr* e: group_cols_) {
-            TokenType type;
-            Status status = e->Analyze(&schema, &type);
-            if (!status.Ok())
-                return status;
+        int limit = limit_->Eval(nullptr).AsInt();
+        if (limit != -1 && limit < result->tuples.size()) {
+            result->tuples.resize(limit);
         }
+        
 
-        //order cols
-        for (OrderCol oc: order_cols_) {
-            TokenType type;
-            Status status = oc.col->Analyze(&schema, &type);
-            if (!status.Ok())
-                return status;
-
-            status = oc.asc->Analyze(&schema, &type);
-            if (!status.Ok()) {
-                return status;
-            }
-        }
-       
-        //limit
-        {
-            TokenType type;
-            Status status = limit_->Analyze(&schema, &type);
-            if (!status.Ok()) {
-                return status;     
-            }
-
-            if (type != TokenType::Int) {
-                return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
-            }
-        }
-
+        return Status(true, "(" + std::to_string(result->tuples.size()) + " rows)", result);*/
         return Status(true, "ok");
-    }
-    Status Execute(DB* db) override {
-        if (target_ranges_.empty()) {
-            bool use_groups = group_cols_.empty() ? false : true;
-            for (Expr* e: target_cols_) {
-                if (e->ContainsAggregateFunctions()) {
-                    use_groups = true;
-                    break;
-                }
-            }
 
-            RowSet* result = new RowSet();
-
-            if (use_groups) {
-                std::vector<Datum> data;
-                TupleGroup* dummy_group = new TupleGroup(); //expecting a single row if aggregate functions used
-                dummy_group->AddTuple(nullptr);
-                for (Expr* e: target_cols_) {
-                    data.push_back(e->Eval(dummy_group));
-                } 
-                Tuple* t = new Tuple(data);
-
-                TupleGroup* tg = new TupleGroup();
-                tg->AddTuple(t);
-                result->tuples.push_back(tg);
-            } else {
-                std::vector<Datum> data;
-                for (Expr* e: target_cols_) {
-                    data.push_back(e->Eval(nullptr));
-                } 
-                Tuple* t = new Tuple(data);
-                result->tuples.push_back(t);
-            }
-
-            int limit = limit_->Eval(nullptr).AsInt();
-            if (limit != -1 && limit < result->tuples.size()) {
-                result->tuples.resize(limit);
-            }
-            
-
-            return Status(true, "(" + std::to_string(result->tuples.size()) + " rows)", result);
-        }
-
+        /*
+        //if range is used
 
         Token target_relation_ = target_ranges_.at(0)->GetToken(); //ugly
         RowSet* tupleset = new RowSet();
@@ -312,13 +387,6 @@ public:
                 break;
             }
         }
-        /* //TODO: uncomment after adding 'having' clause
-        for (Expr* e: having_cols_) {
-            if (e->ContainsAggregateFunctions()) {
-                use_groups = true;
-                break;
-            }
-        }*/
 
         //make vector of all column indexes NOT grouped
         //need to use these to check if aggregates are required for certain columns
@@ -342,12 +410,6 @@ public:
                     return Status(false, "Error: Column '" + oc.col->ToString() + "' needs to be an argument to an aggregate function or a 'group by' column");
                 }
             }
-            /* //TODO: uncomment after adding 'having' clause
-            for (Expr* e: having_cols_) {
-                if (e->ContainsNonAggregatedColRef(nongroup_cols)) {
-                    //TODO: report error
-                }
-            }*/
         }
 
         TupleGroup* group = new TupleGroup();
@@ -423,24 +485,24 @@ public:
             result->tuples.resize(limit);
         }
 
-        return Status(true, "(" + std::to_string(tupleset->tuples.size()) + " rows)", result);
+        return Status(true, "(" + std::to_string(tupleset->tuples.size()) + " rows)", result);*/
+        return Status(true, "ok");
     }
     std::string ToString() override {
         return "select";
     }
 private:
-    std::vector<Range*> target_ranges_;
-    std::vector<Expr*> target_cols_;
+    std::vector<Expr*> ranges_;
+    std::vector<Expr*> projs_;
     Expr* where_clause_;
-    std::vector<Expr*> group_cols_;
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
 };
 
 class UpdateStmt: public Stmt {
 public:
-    UpdateStmt(Token target_relation, std::vector<Expr*> assignments, Expr* where_clause):
-        target_relation_(target_relation), assignments_(std::move(assignments)), where_clause_(where_clause) {}
+    UpdateStmt(Token target_relation, std::vector<ColRef*> cols, std::vector<Expr*> values, Expr* where_clause):
+        target_relation_(target_relation), cols_(std::move(cols)), values_(std::move(values)), where_clause_(where_clause) {}
     Status Analyze(DB* db) override {
         std::string serialized_schema;
         if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
@@ -454,7 +516,7 @@ public:
             return status;
         }
 
-        for (Expr* e: assignments_) {
+        for (Expr* e: values_) {
             TokenType type;
             Status status = e->Analyze(&schema, &type);
             if (!status.Ok()) {
@@ -472,29 +534,49 @@ public:
         rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
 
         //index scan
-        int update_count = 0;
+        RowSet* rs = new RowSet();
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
             std::string value = it->value().ToString();
             std::string old_key = it->key().ToString();
 
-            //selection
-            Tuple tuple(schema.DeserializeData(value));
-            if (!where_clause_->Eval(&tuple).AsBool())
-                continue;
+            rs->rows_.push_back(new Row(schema.DeserializeData(value)));
+        }
 
-            update_count++;
-
-            for (Expr* e: assignments_) {
-                e->Eval(&tuple);  //return Datum is not used
+        //filtering rows based on where clause
+        std::vector<Datum> filter = where_clause_->Eval(rs);
+        RowSet* filtered_rs = new RowSet();
+        for (int i = 0; i < filter.size(); i++) {
+            if (filter.at(i).AsBool()) {
+                filtered_rs->rows_.push_back(rs->rows_.at(i));
             }
+        }
 
-            std::string updated_value = schema.SerializeData(tuple.Data());
-            std::string updated_key = schema.GetKeyFromData(tuple.Data());
+        //cache old keys to compare against updated keys later
+        std::vector<std::string> old_keys;
+        for (Row* r: filtered_rs->rows_) {
+            old_keys.push_back(schema.GetKeyFromData(r->data_));
+        }
+
+        //applying updates to filtered rows
+        for (int i = 0; i < cols_.size(); i++) {
+            int col_idx =  cols_.at(i)->ColIdx();
+            std::vector<Datum> values = values_.at(i)->Eval(filtered_rs);
+
+            for (int j = 0; j < filtered_rs->rows_.size(); j++) {
+                filtered_rs->rows_.at(j)->data_.at(col_idx) = values.at(j);
+            }
+        }
+
+        //write updated record to disk
+        int update_count = 0;
+        for (int i = 0; i < filtered_rs->rows_.size(); i++) {
+            std::string old_key = old_keys.at(i);
+            std::string new_key = schema.GetKeyFromData(filtered_rs->rows_.at(i)->data_);
 
             //if updated key is different
-            if (updated_key.compare(old_key) != 0) {
+            if (new_key.compare(old_key) != 0) {
                 std::string test_value;
-                rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), updated_key, &test_value);
+                rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), new_key, &test_value);
                 if (status.ok()) {
                     return Status(false, "Error: A record with the same primary key already exists");
                 }
@@ -502,8 +584,10 @@ public:
                 tab_handle->Delete(rocksdb::WriteOptions(), old_key);
             }
 
-            tab_handle->Put(rocksdb::WriteOptions(), updated_key, updated_value);
+            tab_handle->Put(rocksdb::WriteOptions(), new_key, schema.SerializeData(filtered_rs->rows_.at(i)->data_));
+            update_count++;
         }
+
         return Status(true, "(" + std::to_string(update_count) + " updates)");
     }
     std::string ToString() override {
@@ -511,7 +595,8 @@ public:
     }
 private:
     Token target_relation_;
-    std::vector<Expr*> assignments_;
+    std::vector<Expr*> values_;
+    std::vector<ColRef*> cols_;
     Expr* where_clause_;
 };
 
@@ -543,18 +628,24 @@ public:
 
         //index scan
         int delete_count = 0;
+
+        RowSet* rs = new RowSet();
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
             std::string value = it->value().ToString();
 
-            //selection
-            Tuple tuple(schema.DeserializeData(value));
-            if (!where_clause_->Eval(&tuple).AsBool())
-                continue;
-
-            delete_count++;
-
-            tab_handle->Delete(rocksdb::WriteOptions(), it->key().ToString());
+            rs->rows_.push_back(new Row(schema.DeserializeData(value)));
         }
+
+        std::vector<Datum> filter = where_clause_->Eval(rs);
+
+        for (int i = 0; i < filter.size(); i++) {
+            if (filter.at(i).AsBool()) {
+                delete_count++;
+                std::string key = schema.GetKeyFromData(rs->rows_.at(i)->data_);
+                tab_handle->Delete(rocksdb::WriteOptions(), key);
+            }
+        }
+
         return Status(true, "(" + std::to_string(delete_count) + " deletes)");
     }
     std::string ToString() override {
@@ -613,11 +704,11 @@ public:
         std::vector<std::string> tuplefields = std::vector<std::string>();
         tuplefields.push_back("Column");
         tuplefields.push_back("Type");
-        RowSet* tupleset = new RowSet();
+        RowSet* rowset = new RowSet();
 
         for (int i = 0; i < schema.FieldCount(); i++) {
             std::vector<Datum> data = {Datum(schema.Name(i)), Datum(TokenTypeToString(schema.Type(i)))};
-            tupleset->tuples.push_back(new Tuple(data));
+            rowset->rows_.push_back(new Row(data));
         }
 
         std::vector<Datum> pk_data;
@@ -626,9 +717,9 @@ public:
         for (int i = 0; i < schema.PrimaryKeyCount(); i++) {
             pk_data.push_back(schema.Name(schema.PrimaryKey(i)));
         }
-        tupleset->tuples.push_back(new Tuple(pk_data));
+        rowset->rows_.push_back(new Row(pk_data));
 
-        return Status(true, "table '" + target_relation_.lexeme + "'", tupleset);
+        return Status(true, "table '" + target_relation_.lexeme + "'", rowset);
     }
     std::string ToString() override {
         return "describe table";
