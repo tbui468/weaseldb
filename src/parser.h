@@ -21,7 +21,7 @@ private:
     Expr* ParseAnd();
     Expr* ParseOr();
     Expr* ParseExpr();
-    Expr* ParseAssignment();
+    Expr* ParseTableRef();
     std::vector<Expr*> ParseTuple();
 
     inline Token PeekToken() {

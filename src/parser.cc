@@ -130,6 +130,10 @@ Expr* Parser::ParseExpr() {
     return ParseOr();
 }
 
+Expr* Parser::ParseTableRef() {
+    return new TableRef(NextToken());
+}
+
 std::vector<Expr*> Parser::ParseTuple() {
     NextToken(); //(
     std::vector<Expr*> exprs = std::vector<Expr*>();
@@ -278,12 +282,12 @@ Stmt* Parser::ParseStmt() {
         case TokenType::Update: {
             Token target = NextToken();
             NextToken(); //set
-            std::vector<ColRef*> cols;
-            std::vector<Expr*> values;
+
+            std::vector<Expr*> assigns;
             while (!(PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Where)) {
-                cols.push_back(new ColRef(NextToken()));
-                NextToken(); //=
-                values.push_back(ParseExpr());
+                Token col = NextToken();
+                NextToken();
+                assigns.push_back(new ColAssign(col, ParseExpr()));
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken(); //,
                 }
@@ -298,7 +302,7 @@ Stmt* Parser::ParseStmt() {
             }
             NextToken(); //;
 
-            return new UpdateStmt(target, cols, values, where_clause);
+            return new UpdateStmt(target, assigns, where_clause);
         }
         case TokenType::Delete: {
             NextToken(); //from

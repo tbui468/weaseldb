@@ -50,6 +50,8 @@ Token Tokenizer::NextToken() {
             return MakeToken(TokenType::Star, 1);
         case '/':
             return MakeToken(TokenType::Slash, 1);
+        case '.':
+            return MakeToken(TokenType::Dot, 1);
         default:
             return MakeToken(TokenType::Error, 1);
     }
@@ -165,6 +167,8 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Min;
     } else if (len == 8 && strncmp(&query_.at(idx), "distinct", len) == 0) {
         type = TokenType::Distinct;
+    } else if (len == 2 && strncmp(&query_.at(idx), "as", len) == 0) {
+        type = TokenType::As;
     } else {
         type = TokenType::Identifier;
     }

@@ -45,6 +45,7 @@ enum class TokenType {
     Min,
     Max,
     Distinct,
+    As,
 
     /* user-defined identifier */
     Identifier,
@@ -73,6 +74,7 @@ enum class TokenType {
     Minus,
     Star,
     Slash,
+    Dot,
 
     /* error */
     Error

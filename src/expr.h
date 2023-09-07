@@ -189,6 +189,32 @@ private:
     Token op_;
 };
 
+class TableRef: public Expr {
+public:
+    TableRef(Token t): t_(t) {}
+    std::vector<Datum> Eval(RowSet* rs) override {
+        std::vector<Datum> output;
+
+        for (Row* r: rs->rows_) {
+            output.push_back(Eval(r));
+        }
+
+        return output;
+    }
+    inline Datum Eval(Row* r) override {
+        return Datum(t_.lexeme);
+    }
+    std::string ToString() override {
+        return "table ref";
+    }
+    Status Analyze(Schema* schema, TokenType* evaluated_type) {
+        return Status(true, "ok");
+    }
+private:
+    Token t_;
+};
+
+
 class ColRef: public Expr {
 public:
     ColRef(Token t): t_(t), idx_(-1) {}
@@ -222,11 +248,11 @@ private:
     int idx_;
 };
 
-class AssignCol: public Expr {
+
+class ColAssign: public Expr {
 public:
-    AssignCol(Token col, Expr* right): col_(col), right_(right) {}
+    ColAssign(Token col, Expr* right): col_(col), right_(right) {}
     std::vector<Datum> Eval(RowSet* rs) override {
-        std::vector<Datum> right_values = right_->Eval(rs);
         for (Row* r: rs->rows_) {
             Eval(r);
         } 
@@ -338,31 +364,5 @@ private:
     Token fcn_;
     Expr* arg_;
 };
-
-class TableRef: public Expr {
-public:
-    TableRef(Token t): t_(t) {}
-    std::vector<Datum> Eval(RowSet* rs) override {
-        std::vector<Datum> output;
-
-        for (Row* r: rs->rows_) {
-            output.push_back(Eval(r));
-        }
-
-        return output;
-    }
-    inline Datum Eval(Row* r) override {
-        return Datum(t_.lexeme);
-    }
-    std::string ToString() override {
-        return "table ref";
-    }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) {
-        return Status(true, "ok");
-    }
-private:
-    Token t_;
-};
-
 
 }

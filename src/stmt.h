@@ -342,8 +342,8 @@ private:
 
 class UpdateStmt: public Stmt {
 public:
-    UpdateStmt(Token target_relation, std::vector<ColRef*> cols, std::vector<Expr*> values, Expr* where_clause):
-        target_relation_(target_relation), cols_(std::move(cols)), values_(std::move(values)), where_clause_(where_clause) {}
+    UpdateStmt(Token target_relation, std::vector<Expr*> assigns, Expr* where_clause):
+        target_relation_(target_relation), assigns_(std::move(assigns)), where_clause_(where_clause) {}
     Status Analyze(DB* db) override {
         std::string serialized_schema;
         if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
@@ -357,21 +357,14 @@ public:
             return status;
         }
 
-        for (ColRef* c: cols_) {
-            TokenType type;
-            Status status = c->Analyze(&schema, &type);
-            if (!status.Ok()) {
-                return status;
-            }
-        }
-
-        for (Expr* e: values_) {
+        for (Expr* e: assigns_) {
             TokenType type;
             Status status = e->Analyze(&schema, &type);
             if (!status.Ok()) {
                 return status;
             }
         }
+
         return Status(true, "ok");
     }
     Status Execute(DB* db) override {
@@ -390,11 +383,10 @@ public:
 
             Row row(schema.DeserializeData(value));
             if (where_clause_->Eval(&row).AsBool()) {
-                for (int i = 0; i < cols_.size(); i++) {
-                    int col_idx = cols_.at(i)->ColIdx();
-                    Datum v = values_.at(i)->Eval(&row);
-                    row.data_.at(col_idx) = v;
+                for (Expr* e: assigns_) {
+                    e->Eval(&row);
                 }
+
                 std::string new_key = schema.GetKeyFromData(row.data_);
                 //if updated key is different
                 if (new_key.compare(old_key) != 0) {
@@ -421,8 +413,7 @@ public:
     }
 private:
     Token target_relation_;
-    std::vector<Expr*> values_;
-    std::vector<ColRef*> cols_;
+    std::vector<Expr*> assigns_;
     Expr* where_clause_;
 };
 

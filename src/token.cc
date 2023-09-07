@@ -125,6 +125,10 @@ std::string TokenTypeToString(TokenType type) {
             return "Min";
         case TokenType::Distinct:
             return "Distinct";
+        case TokenType::As:
+            return "As";
+        case TokenType::Dot:
+            return "Dot";
         default:
             return "Unrecognized token";
     }
