@@ -118,8 +118,12 @@ public:
         Row dummy_row({});
         for (std::vector<Expr*> exprs: values_) {
             std::vector<Datum> data = std::vector<Datum>();
+            Datum d;
             for (Expr* e: exprs) {
-                data.push_back(e->Eval(&dummy_row));
+                Status s = e->Eval(&dummy_row, &d);
+                if (!s.Ok()) return s;
+
+                data.push_back(d);
             }
             std::string value = schema.SerializeData(data);
             std::string key = schema.GetKeyFromData(data);
@@ -164,9 +168,13 @@ public:
         if (!ranges_.empty()) {
             std::string serialized_schema;
             Row dummy_row({});
+            Datum d;
             for (WorkTable wt: ranges_) {
                 Expr* e = wt.table;
-                std::string target_relation = e->Eval(&dummy_row).AsString();
+                Status s = e->Eval(&dummy_row, &d);
+                if (!s.Ok()) return s;
+
+                std::string target_relation = d.AsString();
                 if (!db->TableSchema(target_relation, &serialized_schema)) {
                     return Status(false, "Error: Table '" + target_relation + "' does not exist");
                 }
@@ -232,7 +240,10 @@ public:
         for (WorkTable wt: ranges_) {
             Row dummy_row({});
             std::string serialized_schema;
-            std::string target_relation = wt.table->Eval(&dummy_row).AsString();
+            Datum d;
+            Status s = wt.table->Eval(&dummy_row, &d);
+            if (!s.Ok()) return s;
+            std::string target_relation = d.AsString();
             db->TableSchema(target_relation, &serialized_schema);
             Schema schema(wt.alias.lexeme, serialized_schema);
 
@@ -260,7 +271,9 @@ public:
         Expr* where = where_clause_;
         rs->rows_.erase(std::remove_if(rs->rows_.begin(), rs->rows_.end(),
                     [where](Row* r) -> bool {
-                        return !where->Eval(r).AsBool();
+                        Datum d;
+                        where->Eval(r, &d);
+                        return !d.AsBool();
                     }), rs->rows_.end());
 
         //sort filtered rows in-place
@@ -268,15 +281,20 @@ public:
             std::vector<OrderCol>& order_cols = order_cols_; //lambdas can only capture non-member variable
 
             std::sort(rs->rows_.begin(), rs->rows_.end(), 
+                        //No error checking in lambda...
                         [order_cols](Row* t1, Row* t2) -> bool { 
                             for (OrderCol oc: order_cols) {
-                                Datum d1 = oc.col->Eval(t1);
-                                Datum d2 = oc.col->Eval(t2);
+                                Datum d1;
+                                oc.col->Eval(t1, &d1);
+                                Datum d2;
+                                oc.col->Eval(t2, &d2);
                                 if (d1 == d2)
                                     continue;
 
                                 Row* r = nullptr;
-                                if (oc.asc->Eval(r).AsBool()) {
+                                Datum d;
+                                oc.asc->Eval(r, &d);
+                                if (d.AsBool()) {
                                     return d1 < d2;
                                 }
                                 return d1 > d2;
@@ -326,7 +344,11 @@ public:
 
         //limit in-place
         Row dummy_row({});
-        int limit = limit_->Eval(&dummy_row).AsInt4();
+        Datum d;
+        Status s = limit_->Eval(&dummy_row, &d);
+        if (!s.Ok()) return s;
+
+        int limit = d.AsInt4();
         if (limit != -1 && limit < final_rs->rows_.size()) {
             final_rs->rows_.resize(limit);
         }
@@ -382,14 +404,19 @@ public:
 
         //index scan
         int update_count = 0;
+        Datum d;
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
             std::string value = it->value().ToString();
             std::string old_key = it->key().ToString();
 
             Row row(schema.DeserializeData(value));
-            if (where_clause_->Eval(&row).AsBool()) {
+            Status s = where_clause_->Eval(&row, &d);
+            if (!s.Ok()) return s;
+
+            if (d.AsBool()) {
                 for (Expr* e: assigns_) {
-                    e->Eval(&row);
+                    Status s = e->Eval(&row, &d);
+                    if (!s.Ok()) return s;
                 }
 
                 std::string new_key = schema.GetKeyFromData(row.data_);
@@ -449,12 +476,15 @@ public:
         rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
 
         int delete_count = 0;
-
+        Datum d;
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
             std::string value = it->value().ToString();
 
             Row row(schema.DeserializeData(value));
-            if (where_clause_->Eval(&row).AsBool()) {
+            Status s = where_clause_->Eval(&row, &d);
+            if (!s.Ok()) return s;
+
+            if (d.AsBool()) {
                 delete_count++;
                 std::string key = schema.GetKeyFromData(row.data_);
                 tab_handle->Delete(rocksdb::WriteOptions(), key);

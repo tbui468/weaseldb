@@ -15,7 +15,7 @@ namespace wsldb {
 class Expr {
 public:
     virtual Status Eval(RowSet* rs, std::vector<Datum>& output) = 0;
-    virtual inline Datum Eval(Row* r) = 0;
+    virtual inline Status Eval(Row* r, Datum* result) = 0;
     virtual std::string ToString() = 0;
     virtual Status Analyze(Schema* schema, TokenType* evaluated_type) = 0;
 };
@@ -26,13 +26,18 @@ public:
     Literal(bool b): t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
     Literal(int i): t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
     Status Eval(RowSet* rs, std::vector<Datum>& output) override {
+        Datum d;
         for (Row* r: rs->rows_) {
-            output.push_back(Eval(r));
+            Status s = Eval(r, &d);
+            if (!s.Ok()) return s;
+
+            output.push_back(d);
         }
         return Status(true, "ok");
     }
-    inline Datum Eval(Row* r) override {
-        return Datum(t_);
+    inline Status Eval(Row* r, Datum* result) override {
+        *result = Datum(t_);
+        return Status(true, "ok");
     }
     std::string ToString() override {
         return t_.lexeme;
@@ -51,30 +56,41 @@ public:
         op_(op), left_(left), right_(right) {}
 
     Status Eval(RowSet* rs, std::vector<Datum>& output) override {
+        Datum d;
         for (Row* r: rs->rows_) {
-            output.push_back(Eval(r));
+            Status s = Eval(r, &d);
+            if (!s.Ok()) return s;
+
+            output.push_back(d);
         }
 
         return Status(true, "ok");
     }
-    inline Datum Eval(Row* row) override {
-        Datum l = left_->Eval(row);
-        Datum r = right_->Eval(row);
+    inline Status Eval(Row* row, Datum* result) override {
+        Datum l;
+        Status s1 = left_->Eval(row, &l);
+        if (!s1.Ok()) return s1;
+        Datum r;
+        Status s2 = right_->Eval(row, &r);
+        if (!s2.Ok()) return s2;
+
         switch (op_.type) {
-            case TokenType::Equal:          return Datum(l == r);
-            case TokenType::NotEqual:       return Datum(l != r);
-            case TokenType::Less:           return Datum(l < r);
-            case TokenType::LessEqual:      return Datum(l <= r);
-            case TokenType::Greater:        return Datum(l > r);
-            case TokenType::GreaterEqual:   return Datum(l >= r);
-            case TokenType::Plus:           return Datum(l + r);
-            case TokenType::Minus:          return Datum(l - r);
-            case TokenType::Star:           return Datum(l * r);
-            case TokenType::Slash:          return Datum(l / r);
-            case TokenType::Or:             return Datum(l || r);
-            case TokenType::And:            return Datum(l && r);
-            default:                        return Datum(0);
+            case TokenType::Equal:          *result = Datum(l == r); break;
+            case TokenType::NotEqual:       *result = Datum(l != r); break;
+            case TokenType::Less:           *result = Datum(l < r); break;
+            case TokenType::LessEqual:      *result = Datum(l <= r); break;
+            case TokenType::Greater:        *result = Datum(l > r); break;
+            case TokenType::GreaterEqual:   *result = Datum(l >= r); break;
+            case TokenType::Plus:           *result = Datum(l + r); break;
+            case TokenType::Minus:          *result = Datum(l - r); break;
+            case TokenType::Star:           *result = Datum(l * r); break;
+            case TokenType::Slash:          *result = Datum(l / r); break;
+            case TokenType::Or:             *result = Datum(l || r); break;
+            case TokenType::And:            *result = Datum(l && r);break;
+            default:                        return Status(false, "Error: Invalid binary operator");
         }
+
+        return Status(true, "ok");
     }
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
@@ -130,29 +146,36 @@ class Unary: public Expr {
 public:
     Unary(Token op, Expr* right): op_(op), right_(right) {}
     Status Eval(RowSet* rs, std::vector<Datum>& output) override {
+        Datum d;
         for (Row* r: rs->rows_) {
-            output.push_back(Eval(r));
+            Status s = Eval(r, &d);
+            if (!s.Ok()) return s;
+
+            output.push_back(d);
         }
 
         return Status(true, "ok");
     }
-    inline Datum Eval(Row* r) override {
-        Datum right = right_->Eval(r);
+    inline Status Eval(Row* r, Datum* result) override {
+        Datum right;
+        Status s = right_->Eval(r, &right);
+        if (!s.Ok()) return s;
+
         switch (op_.type) {
             case TokenType::Minus:
                 if (right.Type() == TokenType::Float4) {
-                    return Datum(-right.AsFloat4());
+                    *result = Datum(-right.AsFloat4());
                 } else if (right.Type() == TokenType::Int4) {
-                    return Datum(-right.AsInt4());
+                    *result = Datum(-right.AsInt4());
                 }
                 break;
             case TokenType::Not:
-                return Datum(!right.AsBool());
-            default:
-                //Analyze should prevent this branch ever running
+                *result = Datum(!right.AsBool());
                 break;
+            default:
+                return Status(false, "Error: Invalid unary operator");
         }
-        return Datum(0);
+        return Status(true, "ok");
     }
     std::string ToString() override {
         return "(" + op_.lexeme + " " + right_->ToString() + ")";
@@ -190,14 +213,19 @@ class TableRef: public Expr {
 public:
     TableRef(Token t): t_(t) {}
     Status Eval(RowSet* rs, std::vector<Datum>& output) override {
+        Datum d;
         for (Row* r: rs->rows_) {
-            output.push_back(Eval(r));
+            Status s = Eval(r, &d);
+            if (!s.Ok()) return s;
+
+            output.push_back(d);
         }
         
         return Status(true, "ok");
     }
-    inline Datum Eval(Row* r) override {
-        return Datum(t_.lexeme);
+    inline Status Eval(Row* r, Datum* result) override {
+        *result = Datum(t_.lexeme);
+        return Status(true, "ok");
     }
     std::string ToString() override {
         return "table ref";
@@ -223,14 +251,19 @@ public:
         if (rs->aliases_.find(table_alias_) == rs->aliases_.end()) {
             return Status(false, "Error: Table doesn't exist");
         }
+        Datum d;
         for (Row* r: rs->rows_) {
-            output.push_back(Eval(r));
+            Status s = Eval(r, &d);
+            if (!s.Ok()) return s;
+
+            output.push_back(d);
         }
 
         return Status(true, "ok");
     }
-    inline Datum Eval(Row* r) override {
-        return r->data_.at(idx_);
+    inline Status Eval(Row* r, Datum* result) override {
+        *result = r->data_.at(idx_);
+        return Status(true, "ok");
     }
     std::string ToString() override {
         return t_.lexeme;
@@ -256,16 +289,23 @@ class ColAssign: public Expr {
 public:
     ColAssign(Token col, Expr* right): col_(col), right_(right) {}
     Status Eval(RowSet* rs, std::vector<Datum>& output) override {
+        Datum d; //result of Eval(Row*) not used
         for (Row* r: rs->rows_) {
-            Eval(r);
+            Status s = Eval(r, &d);
+            if (!s.Ok()) return s;
         } 
 
         return Status(true, "ok");
     }
-    inline Datum Eval(Row* r) override {
-        Datum right = right_->Eval(r);
+    inline Status Eval(Row* r, Datum* result) override {
+        Datum right;
+        Status s = right_->Eval(r, &right);
+        if (!s.Ok()) return s;
+
         r->data_.at(idx_) = right;
-        return Datum(0);
+
+        *result = right; //result not used
+        return Status(true, "ok");
     }
     std::string ToString() override {
         return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
@@ -355,9 +395,8 @@ public:
         }
         return Status(true, "ok");
     }
-    inline Datum Eval(Row* r) override {
-        std::cout << "should report error: cannot call aggregate function on single row" << std::endl;
-        return Datum(0);
+    inline Status Eval(Row* r, Datum* result) override {
+        return Status(false, "Error: Cannot call aggregate function on single row");
     }
     std::string ToString() override {
         return fcn_.lexeme + arg_->ToString();
