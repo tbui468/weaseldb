@@ -5,7 +5,8 @@
 namespace wsldb {
 
 
-Schema::Schema(std::vector<Attribute*> attributes, std::vector<Token> primary_keys) {
+Schema::Schema(std::string table_name, std::vector<Attribute*> attributes, std::vector<Token> primary_keys) {
+    table_name_ = table_name;
     for (Attribute* a: attributes) {
         attr_names_.push_back(a->name.lexeme);
         attr_types_.push_back(a->type.type);
@@ -16,9 +17,10 @@ Schema::Schema(std::vector<Attribute*> attributes, std::vector<Token> primary_ke
     }
 }
 
-Schema::Schema(const std::string& buf) {
-    int off = 0; 
+Schema::Schema(std::string table_name, const std::string& buf) {
+    table_name_ = table_name;
 
+    int off = 0; 
     //attributes
     int count = *((int*)(buf.data() + off));
     off += sizeof(int);

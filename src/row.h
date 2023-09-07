@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <unordered_map>
 
 #include "datum.h"
 #include "schema.h"
@@ -47,6 +48,7 @@ public:
 
 public:
     std::vector<Row*> rows_;
+    std::unordered_map<std::string, int> aliases_;
 };
 
 

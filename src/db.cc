@@ -47,7 +47,6 @@ std::vector<Token> DB::tokenize(const std::string& query) {
         tokens.push_back(tokenizer.NextToken());
     } while (tokens.back().type != TokenType::Eof);
 
-    //tokenizer.DebugPrintTokens(tokens);
 
     return tokens;
 }
@@ -97,6 +96,9 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
     }
     script.close();
 
+
+    //Tokenizer::DebugPrintTokens(tokens);
+
     std::vector<Stmt*> ptree = parse(tokens);
 
     for (Stmt* s: ptree) {
@@ -113,7 +115,7 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
         }
 
         //disabling status messages for tests
-        //std::cout << status.Msg() << std::endl;
+//        std::cout << status.Msg() << std::endl;
     }
 
     return Status(true, "ok");

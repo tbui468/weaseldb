@@ -152,7 +152,7 @@ public:
             case TokenType::Not:
                 return Datum(!right.AsBool());
             default:
-                std::cout << "invalid op\n";
+                //Analyze should prevent this branch ever running
                 break;
         }
         return Datum(0);
@@ -214,11 +214,20 @@ private:
     Token t_;
 };
 
+struct WorkTable {
+    Expr* table; //either TableRef or Subquery
+    Token alias;
+};
+
 
 class ColRef: public Expr {
 public:
-    ColRef(Token t): t_(t), idx_(-1) {}
+    ColRef(Token t): t_(t), idx_(-1), table_alias_("") {}
+    ColRef(Token t, Token table_ref): t_(t), idx_(-1), table_alias_(table_ref.lexeme) {}
     std::vector<Datum> Eval(RowSet* rs) override {
+        if (rs->aliases_.find(table_alias_) == rs->aliases_.end()) {
+//            std::cout << "report error" << std::endl;
+        }
         std::vector<Datum> output;
         for (Row* r: rs->rows_) {
             output.push_back(Eval(r));
@@ -238,14 +247,14 @@ public:
             return Status(false, "Error: Column '" + t_.lexeme + "' does not exist");
         }
         *evaluated_type = schema->Type(idx_);
+        if (table_alias_ == "")  //replace with default table name only if alias not provided
+            table_alias_ = schema->TableName();
         return Status(true, "ok");
-    }
-    int ColIdx() {
-        return idx_;
     }
 private:
     Token t_;
     int idx_;
+    std::string table_alias_;
 };
 
 

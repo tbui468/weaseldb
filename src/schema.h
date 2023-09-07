@@ -27,8 +27,8 @@ private:
 
 class Schema {
 public:
-    Schema(std::vector<Attribute*> attributes, std::vector<Token> primary_keys);
-    Schema(const std::string& buf);
+    Schema(std::string table_name, std::vector<Attribute*> attributes, std::vector<Token> primary_keys);
+    Schema(std::string table_name, const std::string& buf);
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
     std::string SerializeData(const std::vector<Datum>& data);
@@ -50,7 +50,11 @@ public:
     inline int PrimaryKey(int i) {
         return pk_attr_idxs_.at(i);
     }
+    inline std::string TableName() {
+        return table_name_;
+    }
 private:
+    std::string table_name_;
     std::vector<std::string> attr_names_;
     std::vector<TokenType> attr_types_;
     std::vector<int> pk_attr_idxs_;

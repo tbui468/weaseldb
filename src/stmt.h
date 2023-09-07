@@ -39,7 +39,7 @@ public:
             }
         }
 
-        Schema schema(attributes_, primary_keys_);
+        Schema schema(target_.lexeme, attributes_, primary_keys_);
         for (Token t: primary_keys_) {
             if (schema.GetFieldIdx(t.lexeme) == -1) {
                 return Status(false, "Error: Column '" + t.lexeme + "' not declared in table '" + target_.lexeme + "'");
@@ -53,7 +53,7 @@ public:
     }
 
     Status Execute(DB* db) override {
-        Schema schema(attributes_, primary_keys_);
+        Schema schema(target_.lexeme, attributes_, primary_keys_);
         db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, schema.Serialize());
 
         rocksdb::Options options;
@@ -83,7 +83,7 @@ public:
         if (!db->TableSchema(target_.lexeme, &serialized_schema)) {
             return Status(false, "Error: Table '" + target_.lexeme + "' does not exist");
         }
-        Schema schema(serialized_schema);
+        Schema schema(target_.lexeme, serialized_schema);
 
         for (const std::vector<Expr*>& exprs: values_) {
             if (exprs.size() != schema.FieldCount()) {
@@ -110,17 +110,16 @@ public:
     }
 
     Status Execute(DB* db) override {
-        RowSet* dummy_rows = new RowSet();
-        dummy_rows->rows_.push_back(new Row({}));
         std::string serialized_schema;
         db->TableSchema(target_.lexeme, &serialized_schema);
-        Schema schema(serialized_schema);
+        Schema schema(target_.lexeme, serialized_schema);
 
         rocksdb::DB* tab_handle = db->GetTableHandle(target_.lexeme);
+        Row dummy_row({});
         for (std::vector<Expr*> exprs: values_) {
             std::vector<Datum> data = std::vector<Datum>();
             for (Expr* e: exprs) {
-                data.push_back(e->Eval(dummy_rows).at(0));
+                data.push_back(e->Eval(&dummy_row));
             }
             std::string value = schema.SerializeData(data);
             std::string key = schema.GetKeyFromData(data);
@@ -147,7 +146,7 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(std::vector<Expr*> ranges, 
+    SelectStmt(std::vector<WorkTable> ranges, 
                std::vector<Expr*> projs,
                Expr* where_clause, 
                std::vector<OrderCol> order_cols,
@@ -161,23 +160,20 @@ public:
                     remove_duplicates_(remove_duplicates) {}
 
     Status Analyze(DB* db) override {
-        //Expr::Eval(RowSet*) evaluates once for each row
-        //so making a dummy rowset for usage with Eval when input rows aren't available
-        RowSet* dummy_rs = new RowSet();
-        dummy_rs->rows_.push_back(new Row({}));
-
         Schema* schema = nullptr;
         if (!ranges_.empty()) {
             std::string serialized_schema;
-            for (Expr* e: ranges_) {
-                std::string target_relation = e->Eval(dummy_rs).at(0).AsString();
+            Row dummy_row({});
+            for (WorkTable wt: ranges_) {
+                Expr* e = wt.table;
+                std::string target_relation = e->Eval(&dummy_row).AsString();
                 if (!db->TableSchema(target_relation, &serialized_schema)) {
                     return Status(false, "Error: Table '" + target_relation + "' does not exist");
                 }
+                schema = new Schema(wt.alias.lexeme, serialized_schema); //alias is same as table name if not specified
             }
-            schema = new Schema(serialized_schema);
         } else {
-            schema = new Schema({}, {});
+            schema = new Schema("", {}, {});
         }
 
         //projection
@@ -231,20 +227,14 @@ public:
         return Status(true, "ok");
     }
     Status Execute(DB* db) override {
-        //Expr::Eval(RowSet*) evaluates once for each row
-        //so making a dummy rowset for usage with Eval when input rows aren't available
-        RowSet* dummy_rows = new RowSet();
-        dummy_rows->rows_.push_back(new Row({}));
-
         RowSet* rs = new RowSet();
-        if (!ranges_.empty()) {
-            //TODO: read in multiple tables
+
+        for (WorkTable wt: ranges_) {
+            Row dummy_row({});
             std::string serialized_schema;
-            std::string target_relation = ranges_.at(0)->Eval(dummy_rows).at(0).AsString();
-            if (!db->TableSchema(target_relation, &serialized_schema)) {
-                return Status(false, "Error: Table '" + target_relation + "' does not exist");
-            }
-            Schema schema(serialized_schema);
+            std::string target_relation = wt.table->Eval(&dummy_row).AsString();
+            db->TableSchema(target_relation, &serialized_schema);
+            Schema schema(wt.alias.lexeme, serialized_schema);
 
             rocksdb::DB* tab_handle = db->GetTableHandle(target_relation);
             rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
@@ -252,16 +242,26 @@ public:
             //index scan
             for (it->SeekToFirst(); it->Valid(); it->Next()) {
                 std::string value = it->value().ToString();
-
-                Row row(schema.DeserializeData(value));
-                if (where_clause_->Eval(&row).AsBool()) {
-                    rs->rows_.push_back(new Row(schema.DeserializeData(value)));
-                }
+                rs->rows_.push_back(new Row(schema.DeserializeData(value)));
             }
-        } else {
-            //no input rows, so putting in empty dummy row to Eval to output a single row
+
+            //put both table name and alias (which may be same as table name) since SQL can reference either
+            //if there is no ambiguity.  Need to report error if there is ambiguity.
+            rs->aliases_.insert({target_relation, 0});
+            rs->aliases_.insert({wt.alias.lexeme, 0});
+        }
+
+        //if no input tables are provided
+        if (ranges_.empty()) {
             rs->rows_.push_back(new Row({}));
         }
+
+        //apply where clause here to filter rs
+        Expr* where = where_clause_;
+        rs->rows_.erase(std::remove_if(rs->rows_.begin(), rs->rows_.end(),
+                    [where](Row* r) -> bool {
+                        return !where->Eval(r).AsBool();
+                    }), rs->rows_.end());
 
         //sort filtered rows in-place
         if (!order_cols_.empty()) {
@@ -321,7 +321,8 @@ public:
         }
 
         //limit in-place
-        int limit = limit_->Eval(dummy_rows).at(0).AsInt4();
+        Row dummy_row({});
+        int limit = limit_->Eval(&dummy_row).AsInt4();
         if (limit != -1 && limit < final_rs->rows_.size()) {
             final_rs->rows_.resize(limit);
         }
@@ -332,7 +333,7 @@ public:
         return "select";
     }
 private:
-    std::vector<Expr*> ranges_;
+    std::vector<WorkTable> ranges_;
     std::vector<Expr*> projs_;
     Expr* where_clause_;
     std::vector<OrderCol> order_cols_;
@@ -349,7 +350,7 @@ public:
         if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
             return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
         }
-        Schema schema(serialized_schema);
+        Schema schema(target_relation_.lexeme, serialized_schema);
 
         TokenType type;
         Status status = where_clause_->Analyze(&schema, &type);
@@ -370,7 +371,7 @@ public:
     Status Execute(DB* db) override {
         std::string serialized_schema;
         rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
-        Schema schema(serialized_schema);
+        Schema schema(target_relation_.lexeme, serialized_schema);
 
         rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
         rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
@@ -426,7 +427,7 @@ public:
         if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
             return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
         }
-        Schema schema(serialized_schema);
+        Schema schema(target_relation_.lexeme, serialized_schema);
 
         TokenType type;
         Status status = where_clause_->Analyze(&schema, &type);
@@ -438,7 +439,7 @@ public:
     Status Execute(DB* db) override {
         std::string serialized_schema;
         rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
-        Schema schema(serialized_schema);
+        Schema schema(target_relation_.lexeme, serialized_schema);
 
         rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
         rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
@@ -509,7 +510,7 @@ public:
     Status Execute(DB* db) override {
         std::string serialized_schema;
         rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
-        Schema schema(serialized_schema);
+        Schema schema(target_relation_.lexeme, serialized_schema);
 
         std::vector<std::string> tuplefields = std::vector<std::string>();
         tuplefields.push_back("Column");

@@ -23,8 +23,15 @@ Expr* Parser::ParsePrimary() {
         case TokenType::TrueLiteral:
         case TokenType::FalseLiteral:
             return new Literal(NextToken());
-        case TokenType::Identifier:
-            return new ColRef(NextToken());
+        case TokenType::Identifier: {
+            Token ref = NextToken();
+            if (PeekToken().type == TokenType::Dot) {
+                NextToken(); //.
+                Token col = NextToken();
+                return new ColRef(col, ref);
+            }
+            return new ColRef(ref);
+        }
         case TokenType::LParen: {
             NextToken(); //(
             Expr* expr = ParseExpr();
@@ -130,8 +137,14 @@ Expr* Parser::ParseExpr() {
     return ParseOr();
 }
 
-Expr* Parser::ParseTableRef() {
-    return new TableRef(NextToken());
+WorkTable Parser::ParseWorkTable() {
+    Token t = NextToken();
+    Expr* table = new TableRef(t);
+    if (PeekToken().type == TokenType::As) {
+        NextToken();
+        return { table, NextToken() };
+    }
+    return { table, t }; //alias is same as table name
 }
 
 std::vector<Expr*> Parser::ParseTuple() {
@@ -232,14 +245,14 @@ Stmt* Parser::ParseStmt() {
                 return new SelectStmt({}, target_cols, new Literal(true), {}, limit, remove_duplicates);
             }
 
-            std::vector<Expr*> target_ranges;
+            std::vector<WorkTable> target_ranges;
 
             NextToken(); //from
             //TODO: need to potentially parse a subquery here (and not just a table reference)
-            target_ranges.push_back(new TableRef(NextToken()));
+            target_ranges.push_back(ParseWorkTable());
             while (PeekToken().type == TokenType::Comma) {
                 NextToken(); //,
-                target_ranges.push_back(new TableRef(NextToken()));
+                target_ranges.push_back(ParseWorkTable());
             }
 
             Expr* where_clause = nullptr;

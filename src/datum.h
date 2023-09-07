@@ -76,6 +76,12 @@ public:
         } 
     }
 
+    Datum() {
+        //placeholders
+        type_ = TokenType::Int4;
+        data_ = "";
+    }
+
     Datum(int i) {
         type_ = TokenType::Int4;
         data_.append((char*)&i, sizeof(int));

@@ -10,7 +10,7 @@ Token Tokenizer::NextToken() {
     if (AtEnd()) return MakeToken(TokenType::Eof, 1);
 
     if (IsAlpha(query_.at(idx_))) return MakeIdentifier();
-    if (IsNumeric(query_.at(idx_)) || query_.at(idx_) == '.') return MakeNumber();
+    if (IsNumeric(query_.at(idx_)) || (query_.at(idx_) == '.' && IsNumeric(query_.at(idx_ + 1)))) return MakeNumber();
     if (query_.at(idx_) == '\'') return MakeString();
 
     switch (query_.at(idx_)) {
@@ -78,7 +78,7 @@ Token Tokenizer::MakeIdentifier() {
     int idx = idx_;
     int len = 0;
 
-    while (IsNumeric(query_.at(idx_)) || IsAlpha(query_.at(idx_))) {
+    while ((IsNumeric(query_.at(idx_)) || IsAlpha(query_.at(idx_))) && query_.at(idx_) != '.') {
         idx_++;
         len++;
     }

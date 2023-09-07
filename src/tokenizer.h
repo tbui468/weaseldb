@@ -10,7 +10,7 @@ class Tokenizer {
 public:
     Tokenizer(const std::string& query): query_(query), idx_(0) {}
     Token NextToken();
-    void DebugPrintTokens(const std::vector<Token>& tokens);
+    static void DebugPrintTokens(const std::vector<Token>& tokens);
 private:
     Token MakeIdentifier();
     Token MakeString();
@@ -35,7 +35,7 @@ private:
     }
 
     inline bool IsNumeric(char c) {
-        return ('0' <= c && c <= '9') || c == '.';
+        return '0' <= c && c <= '9';
     }
 
     inline bool AtEnd() {
