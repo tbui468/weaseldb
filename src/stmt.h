@@ -293,7 +293,11 @@ public:
         }
 
         for (Expr* e: projs_) {
-            std::vector<Datum> col = e->Eval(rs);
+            std::vector<Datum> col;
+            Status s = e->Eval(rs, col);
+            if (!s.Ok()) {
+                return s;
+            }
             if (col.size() < proj_rs->rows_.size()) {
                 proj_rs->rows_.resize(col.size());
             } else if (col.size() > proj_rs->rows_.size()) {

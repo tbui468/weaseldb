@@ -14,7 +14,7 @@ namespace wsldb {
 
 class Expr {
 public:
-    virtual std::vector<Datum> Eval(RowSet* rs) = 0;
+    virtual Status Eval(RowSet* rs, std::vector<Datum>& output) = 0;
     virtual inline Datum Eval(Row* r) = 0;
     virtual std::string ToString() = 0;
     virtual Status Analyze(Schema* schema, TokenType* evaluated_type) = 0;
@@ -25,12 +25,11 @@ public:
     Literal(Token t): t_(t) {}
     Literal(bool b): t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
     Literal(int i): t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
-    std::vector<Datum> Eval(RowSet* rs) override {
-        std::vector<Datum> output;
+    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
         for (Row* r: rs->rows_) {
             output.push_back(Eval(r));
         }
-        return output;
+        return Status(true, "ok");
     }
     inline Datum Eval(Row* r) override {
         return Datum(t_);
@@ -51,13 +50,12 @@ public:
     Binary(Token op, Expr* left, Expr* right):
         op_(op), left_(left), right_(right) {}
 
-    std::vector<Datum> Eval(RowSet* rs) override {
-        std::vector<Datum> output;
+    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
         for (Row* r: rs->rows_) {
             output.push_back(Eval(r));
         }
 
-        return output;
+        return Status(true, "ok");
     }
     inline Datum Eval(Row* row) override {
         Datum l = left_->Eval(row);
@@ -131,13 +129,12 @@ private:
 class Unary: public Expr {
 public:
     Unary(Token op, Expr* right): op_(op), right_(right) {}
-    std::vector<Datum> Eval(RowSet* rs) override {
-        std::vector<Datum> output;
+    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
         for (Row* r: rs->rows_) {
             output.push_back(Eval(r));
         }
 
-        return output;
+        return Status(true, "ok");
     }
     inline Datum Eval(Row* r) override {
         Datum right = right_->Eval(r);
@@ -192,14 +189,12 @@ private:
 class TableRef: public Expr {
 public:
     TableRef(Token t): t_(t) {}
-    std::vector<Datum> Eval(RowSet* rs) override {
-        std::vector<Datum> output;
-
+    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
         for (Row* r: rs->rows_) {
             output.push_back(Eval(r));
         }
-
-        return output;
+        
+        return Status(true, "ok");
     }
     inline Datum Eval(Row* r) override {
         return Datum(t_.lexeme);
@@ -224,16 +219,15 @@ class ColRef: public Expr {
 public:
     ColRef(Token t): t_(t), idx_(-1), table_alias_("") {}
     ColRef(Token t, Token table_ref): t_(t), idx_(-1), table_alias_(table_ref.lexeme) {}
-    std::vector<Datum> Eval(RowSet* rs) override {
+    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
         if (rs->aliases_.find(table_alias_) == rs->aliases_.end()) {
-//            std::cout << "report error" << std::endl;
+            return Status(false, "Error: Table doesn't exist");
         }
-        std::vector<Datum> output;
         for (Row* r: rs->rows_) {
             output.push_back(Eval(r));
         }
 
-        return output;
+        return Status(true, "ok");
     }
     inline Datum Eval(Row* r) override {
         return r->data_.at(idx_);
@@ -261,11 +255,12 @@ private:
 class ColAssign: public Expr {
 public:
     ColAssign(Token col, Expr* right): col_(col), right_(right) {}
-    std::vector<Datum> Eval(RowSet* rs) override {
+    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
         for (Row* r: rs->rows_) {
             Eval(r);
         } 
-        return {};
+
+        return Status(true, "ok");
     }
     inline Datum Eval(Row* r) override {
         Datum right = right_->Eval(r);
@@ -308,47 +303,57 @@ struct OrderCol {
 struct Call: public Expr {
 public:
     Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
-    std::vector<Datum> Eval(RowSet* rs) override {
+    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
         switch (fcn_.type) {
             case TokenType::Avg: {
-                std::vector<Datum> values = arg_->Eval(rs);
+                std::vector<Datum> values;
+                arg_->Eval(rs, values);
                 Datum s(0);
                 for (Datum d: values) {
                     s = s + d;
                 }
-                return { s / Datum(float(values.size())) };
+                output = { s / Datum(float(values.size())) };
+                break;
             }
-            case TokenType::Count:
-                return { Datum(int(rs->rows_.size())) };
+            case TokenType::Count: {
+                output = { Datum(int(rs->rows_.size())) };
+                break;
+            }
             case TokenType::Max: {
-                std::vector<Datum> values = arg_->Eval(rs);
+                std::vector<Datum> values;
+                arg_->Eval(rs, values);
                 std::vector<Datum>::iterator it = std::max_element(values.begin(), values.end(), 
                         [](Datum& left, Datum& right) -> bool {
                             return left < right;
                         });
-                return {*it};
+                output = {*it};
+                break;
             }
             case TokenType::Min: {
-                std::vector<Datum> values = arg_->Eval(rs);
+                std::vector<Datum> values;
+                arg_->Eval(rs, values);
                 std::vector<Datum>::iterator it = std::min_element(values.begin(), values.end(), 
                         [](Datum& left, Datum& right) -> bool {
                             return left < right;
                         });
-                return {*it};
+                output = {*it};
+                break;
             }
             case TokenType::Sum: {
-                std::vector<Datum> values = arg_->Eval(rs);
+                std::vector<Datum> values;
+                arg_->Eval(rs, values);
                 Datum s(0);
                 for (Datum d: values) {
                     s = s + d;
                 }
-                return {s};
+                output = {s};
+                break;
             }
             default:
                 //Error should have been reported before getting to this point
                 break;
         }
-        return {};
+        return Status(true, "ok");
     }
     inline Datum Eval(Row* r) override {
         std::cout << "should report error: cannot call aggregate function on single row" << std::endl;
