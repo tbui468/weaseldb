@@ -245,26 +245,12 @@ Stmt* Parser::ParseStmt() {
                 target_cols.push_back(ParseExpr());
             }
 
-            if (PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Limit) {
-                Expr* limit = nullptr;
-                if (PeekToken().type == TokenType::Limit) {
-                    NextToken(); //limit
-                    limit = ParseExpr();
-                } else {
-                    limit = new Literal(-1); //no limit
-                }
-                NextToken(); //semicolon
-                return new SelectStmt({}, target_cols, new Literal(true), {}, limit, remove_duplicates);
-            }
-
-            std::vector<WorkTableOld> target_ranges;
-
-            NextToken(); //from
-            //TODO: need to potentially parse a subquery here (and not just a table reference)
-            target_ranges.push_back(ParseWorkTableOld());
-            while (PeekToken().type == TokenType::Comma) {
-                NextToken(); //,
-                target_ranges.push_back(ParseWorkTableOld());
+            WorkTable* target = nullptr;
+            if (PeekToken().type == TokenType::From) {
+                NextToken(); //from
+                target = ParseWorkTable();
+            } else {
+                target = new ConstantTable(target_cols.size());
             }
 
             Expr* where_clause = nullptr;
@@ -277,8 +263,8 @@ Stmt* Parser::ParseStmt() {
 
             std::vector<OrderCol> order_cols;
             if (PeekToken().type == TokenType::Order) {
-                NextToken();
-                NextToken();
+                NextToken(); //order
+                NextToken(); //by
 
                 Expr* col = ParseExpr();
                 Token asc = NextToken();
@@ -301,7 +287,7 @@ Stmt* Parser::ParseStmt() {
             } 
 
             NextToken(); //;
-            return new SelectStmt(target_ranges, target_cols, where_clause, order_cols, limit, remove_duplicates);
+            return new SelectStmt(target, target_cols, where_clause, order_cols, limit, remove_duplicates);
         }
 
         case TokenType::Update: {

@@ -153,13 +153,13 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(std::vector<WorkTableOld> ranges, 
+    SelectStmt(WorkTable* target, 
                std::vector<Expr*> projs,
                Expr* where_clause, 
                std::vector<OrderCol> order_cols,
                Expr* limit,
                bool remove_duplicates):
-                    ranges_(std::move(ranges)),
+                    target_(target),
                     projs_(std::move(projs)),
                     where_clause_(where_clause),
                     order_cols_(std::move(order_cols)),
@@ -167,41 +167,27 @@ public:
                     remove_duplicates_(remove_duplicates) {}
 
     Status Analyze(DB* db) override {
-        Schema* schema = nullptr;
-        if (!ranges_.empty()) {
-            std::string serialized_schema;
-            Row dummy_row({});
-            Datum d;
-            for (WorkTableOld wt: ranges_) {
-                Expr* e = wt.table;
-                Status s = e->Eval(&dummy_row, &d);
-                if (!s.Ok()) return s;
-
-                std::string target_relation = d.AsString();
-                if (!db->TableSchema(target_relation, &serialized_schema)) {
-                    return Status(false, "Error: Table '" + target_relation + "' does not exist");
-                }
-                schema = new Schema(wt.alias.lexeme, serialized_schema); //alias is same as table name if not specified
-            }
-        } else {
-            schema = new Schema("", {}, {}, {});
+        {
+            Status s = target_->Analyze(db);
+            if (!s.Ok())
+                return s;
         }
 
         //projection
         for (Expr* e: projs_) {
             TokenType type;
-            Status status = e->Analyze(schema, &type);
-            if (!status.Ok()) {
-                return status;
+            Status s = e->Analyze(target_->GetAttributes(), &type);
+            if (!s.Ok()) {
+                return s;
             }
         }
 
         //where clause
         {
             TokenType type;
-            Status status = where_clause_->Analyze(schema, &type);
-            if (!status.Ok()) {
-                return status;
+            Status s = where_clause_->Analyze(target_->GetAttributes(), &type);
+            if (!s.Ok()) {
+                return s;
             }
 
             if (type != TokenType::Bool) {
@@ -211,23 +197,28 @@ public:
 
         //order cols
         for (OrderCol oc: order_cols_) {
-            TokenType type;
-            Status status = oc.col->Analyze(schema, &type);
-            if (!status.Ok())
-                return status;
+            {
+                TokenType type;
+                Status s = oc.col->Analyze(target_->GetAttributes(), &type);
+                if (!s.Ok())
+                    return s;
+            }
 
-            status = oc.asc->Analyze(schema, &type);
-            if (!status.Ok()) {
-                return status;
+            {
+                TokenType type;
+                Status s = oc.asc->Analyze(target_->GetAttributes(), &type);
+                if (!s.Ok()) {
+                    return s;
+                }
             }
         }
 
         //limit
         {
             TokenType type;
-            Status status = limit_->Analyze(schema, &type);
-            if (!status.Ok()) {
-                return status;     
+            Status s = limit_->Analyze(target_->GetAttributes(), &type);
+            if (!s.Ok()) {
+                return s;
             }
 
             if (type != TokenType::Int4) {
@@ -239,51 +230,22 @@ public:
     }
     Status Execute(DB* db) override {
         RowSet* rs = new RowSet();
-        int offset = 0;
-        for (WorkTableOld wt: ranges_) {
-            Row dummy_row({});
-            std::string serialized_schema;
+        target_->BeginScan(db);
+
+        Row* r;
+        while (target_->NextRow(db, &r).Ok()) {
             Datum d;
-            Status s = wt.table->Eval(&dummy_row, &d);
-            if (!s.Ok()) return s;
-            std::string target_relation = d.AsString();
-            db->TableSchema(target_relation, &serialized_schema);
-            Schema schema(wt.alias.lexeme, serialized_schema);
+            Status s = where_clause_->Eval(r, &d);
+            if (!s.Ok()) 
+                return s;
 
-            rocksdb::DB* tab_handle = db->GetTableHandle(target_relation);
-            rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
+            if (!d.AsBool())
+                continue;
 
-            //index scan
-            for (it->SeekToFirst(); it->Valid(); it->Next()) {
-                std::string value = it->value().ToString();
-                rs->rows_.push_back(new Row(schema.DeserializeData(value)));
-            }
-
-            std::vector<Attribute>* attrs = new std::vector<Attribute>();
-            for (int i = 0; i < schema.FieldCount(); i++) {
-                attrs->emplace_back(Attribute(schema.Name(i), schema.Type(i), offset));
-                offset++;
-            }
-
-            //put both table name and alias (which may be same as table name) since SQL can reference either
-            //if there is no ambiguity.  Need to report error if there is ambiguity.
-            rs->attrs_.insert({ target_relation, attrs });
-            rs->attrs_.insert({ wt.alias.lexeme, attrs });
+            rs->rows_.push_back(r);
         }
 
-        //if no input tables are provided
-        if (ranges_.empty()) {
-            rs->rows_.push_back(new Row({}));
-        }
-
-        //apply where clause here to filter rs
-        Expr* where = where_clause_;
-        rs->rows_.erase(std::remove_if(rs->rows_.begin(), rs->rows_.end(),
-                    [where](Row* r) -> bool {
-                        Datum d;
-                        where->Eval(r, &d);
-                        return !d.AsBool();
-                    }), rs->rows_.end());
+        target_->EndScan(db);
 
         //sort filtered rows in-place
         if (!order_cols_.empty()) {
@@ -368,7 +330,7 @@ public:
         return "select";
     }
 private:
-    std::vector<WorkTableOld> ranges_;
+    WorkTable* target_;
     std::vector<Expr*> projs_;
     Expr* where_clause_;
     std::vector<OrderCol> order_cols_;

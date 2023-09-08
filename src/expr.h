@@ -334,9 +334,6 @@ public:
     ColRef(Token t): t_(t), idx_(-1), table_ref_("") {}
     ColRef(Token t, Token table_ref): t_(t), idx_(-1), table_ref_(table_ref.lexeme) {}
     Status Eval(RowSet* rs, std::vector<Datum>& output) override {
-        if (rs->attrs_.find(table_ref_) == rs->attrs_.end()) {
-            return Status(false, "Error: Table doesn't exist");
-        }
         Datum d;
         for (Row* r: rs->rows_) {
             Status s = Eval(r, &d);
@@ -576,6 +573,46 @@ public:
     virtual const AttributeSet& GetAttributes() const = 0;
 };
 
+class ConstantTable: public WorkTable {
+public:
+    ConstantTable(int target_cols): target_cols_(target_cols), cur_(0) {}
+    Status Analyze(DB* db) override {
+        return Status(true, "ok");
+    }
+    Status BeginScan(DB* db) override {
+        return Status(true, "ok");
+    }
+    Status NextRow(DB* db, Row** r) override {
+        if (cur_ > 0)
+            return Status(false, "No more rows");
+
+        std::vector<Datum> data;
+        for (int i = 0; i < target_cols_; i++) {
+            data.emplace_back(0);
+        }
+        *r = new Row(data);
+        cur_++;
+        return Status(true, "ok");
+    }
+    Status DeletePrev(DB* db) override {
+        return Status(false, "Error: Cannot delete a constant table row");
+    }
+    Status UpdatePrev(DB* db, Row* r) override {
+        return Status(false, "Error: Cannot update a constant table row");
+    }
+    Status EndScan(DB* db) override {
+        return Status(true, "ok");
+    }
+    const AttributeSet& GetAttributes() const override {
+        return attr_set_;
+    }
+private:
+    int cur_;
+    AttributeSet attr_set_;
+    int target_cols_;
+};
+
+//TODO: should rename to PhysicalTable
 class Physical: public WorkTable {
 public:
     Physical(Token t, Token alias): table_(t), alias_(alias.lexeme) {}
