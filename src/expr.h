@@ -571,6 +571,7 @@ public:
     virtual Status BeginScan(DB* db) = 0;
     virtual Status NextRow(DB* db, Row** r) = 0;
     virtual Status DeletePrev(DB* db) = 0;
+    virtual Status UpdatePrev(DB* db, Row* r) = 0;
     virtual Status EndScan(DB* db) = 0;
     virtual const AttributeSet& GetAttributes() const = 0;
 };
@@ -610,8 +611,19 @@ public:
     Status DeletePrev(DB* db) override {
         it_->Prev();
         std::string key = it_->key().ToString();
-        it_->Next();
         db_handle_->Delete(rocksdb::WriteOptions(), key);
+        it_->Next();
+        return Status(true, "ok");
+    }
+    Status UpdatePrev(DB* db, Row* r) override {
+        it_->Prev();
+        std::string old_key = it_->key().ToString();
+        std::string new_key = schema_->GetKeyFromData(r->data_);
+        if (old_key.compare(new_key) != 0) {
+            db_handle_->Delete(rocksdb::WriteOptions(), old_key);
+        }
+        db_handle_->Put(rocksdb::WriteOptions(), new_key, Datum::SerializeData(r->data_));
+        it_->Next();
         return Status(true, "ok");
     }
     Status EndScan(DB* db) override {

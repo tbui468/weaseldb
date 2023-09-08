@@ -305,7 +305,7 @@ Stmt* Parser::ParseStmt() {
         }
 
         case TokenType::Update: {
-            Token target = NextToken();
+            WorkTable* target = ParseWorkTable();
             NextToken(); //set
 
             std::vector<Expr*> assigns;

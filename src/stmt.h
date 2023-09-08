@@ -378,82 +378,65 @@ private:
 
 class UpdateStmt: public Stmt {
 public:
-    UpdateStmt(Token target_relation, std::vector<Expr*> assigns, Expr* where_clause):
-        target_relation_(target_relation), assigns_(std::move(assigns)), where_clause_(where_clause) {}
+    UpdateStmt(WorkTable* target, std::vector<Expr*> assigns, Expr* where_clause):
+        target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
     Status Analyze(DB* db) override {
-        std::string serialized_schema;
-        if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
-            return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
+        {
+            Status s = target_->Analyze(db);
+            if (!s.Ok())
+                return s;
         }
-        Schema schema(target_relation_.lexeme, serialized_schema);
 
-        TokenType type;
-        Status status = where_clause_->Analyze(&schema, &type);
-        if (!status.Ok()) {
-            return status;
+        {
+            TokenType type;
+            Status s = where_clause_->Analyze(target_->GetAttributes(), &type);
+            if (!s.Ok())
+                return s;
+            if (type != TokenType::Bool)
+                return Status(false, "Error: 'where' clause must evaluated to a boolean value");
         }
 
         for (Expr* e: assigns_) {
             TokenType type;
-            Status status = e->Analyze(&schema, &type);
-            if (!status.Ok()) {
-                return status;
-            }
+            Status s = e->Analyze(target_->GetAttributes(), &type);
+            if (!s.Ok())
+                return s;
         }
-
+        
         return Status(true, "ok");
     }
     Status Execute(DB* db) override {
-        std::string serialized_schema;
-        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
-        Schema schema(target_relation_.lexeme, serialized_schema);
+        target_->BeginScan(db);
 
-        rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
-        rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
-
-        //index scan
+        Row* r;
         int update_count = 0;
         Datum d;
-        for (it->SeekToFirst(); it->Valid(); it->Next()) {
-            std::string value = it->value().ToString();
-            std::string old_key = it->key().ToString();
+        while (target_->NextRow(db, &r).Ok()) {
+            Status s = where_clause_->Eval(r, &d);
+            if (!s.Ok()) 
+                return s;
 
-            Row row(schema.DeserializeData(value));
-            Status s = where_clause_->Eval(&row, &d);
-            if (!s.Ok()) return s;
+            if (!d.AsBool())
+                continue;
 
-            if (d.AsBool()) {
-                for (Expr* e: assigns_) {
-                    Status s = e->Eval(&row, &d);
-                    if (!s.Ok()) return s;
-                }
-
-                std::string new_key = schema.GetKeyFromData(row.data_);
-                //if updated key is different
-                if (new_key.compare(old_key) != 0) {
-                    std::string test_value;
-                    rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), new_key, &test_value);
-                    if (status.ok()) {
-                        return Status(false, "Error: A record with the same primary key already exists");
-                    }
-
-                    tab_handle->Delete(rocksdb::WriteOptions(), old_key);
-                }
-
-                tab_handle->Put(rocksdb::WriteOptions(), new_key, schema.SerializeData(row.data_));
-                update_count++;
+            for (Expr* e: assigns_) {
+                Status s = e->Eval(r, &d); //returned Datum of ColAssign expressions are ignored
+                if (!s.Ok()) 
+                    return s;
             }
-
+            target_->UpdatePrev(db, r);
+            update_count++;
         }
 
+        target_->EndScan(db);
 
-        return Status(true, "(" + std::to_string(update_count) + " updates)");
+        return Status(true, "(" + std::to_string(update_count) + " deletes)");
     }
     std::string ToString() override {
         return "update";
     }
 private:
-    Token target_relation_;
+    WorkTable* target_;
     std::vector<Expr*> assigns_;
     Expr* where_clause_;
 };
@@ -463,17 +446,19 @@ public:
     DeleteStmt(WorkTable* target, Expr* where_clause): 
         target_(target), where_clause_(where_clause) {}
     Status Analyze(DB* db) override {
-        Status status1 = target_->Analyze(db);
-        if (!status1.Ok()) {
-            return status1;
+        {
+            Status s = target_->Analyze(db);
+            if (!s.Ok())
+                return s;
         }
 
-        //Physical* p = (Physical*)target_; //ugly
-        TokenType type;
-        //Status status = where_clause_->Analyze(p->schema_, &type);
-        Status status = where_clause_->Analyze(target_->GetAttributes(), &type);
-        if (!status.Ok()) {
-            return status;
+        {
+            TokenType type;
+            Status s = where_clause_->Analyze(target_->GetAttributes(), &type);
+            if (!s.Ok())
+                return s;
+            if (type != TokenType::Bool)
+                return Status(false, "Error: 'where' clause must evaluated to a boolean value");
         }
 
         return Status(true, "ok");
@@ -486,39 +471,17 @@ public:
         Datum d;
         while (target_->NextRow(db, &r).Ok()) {
             Status s = where_clause_->Eval(r, &d);
-            if (!s.Ok()) return s;
+            if (!s.Ok()) 
+                return s;
 
-            if (d.AsBool()) {
-                delete_count++;
-                target_->DeletePrev(db);
-            }
+            if (!d.AsBool())
+                continue;
+
+            target_->DeletePrev(db);
+            delete_count++;
         }
 
         target_->EndScan(db);
-        /*
-        std::string serialized_schema;
-        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
-        Schema schema(target_relation_.lexeme, serialized_schema);
-
-        rocksdb::DB* tab_handle = db->GetTableHandle(target_relation_.lexeme);
-        rocksdb::Iterator* it = tab_handle->NewIterator(rocksdb::ReadOptions());
-
-        int delete_count = 0;
-        Datum d;
-        for (it->SeekToFirst(); it->Valid(); it->Next()) {
-            std::string value = it->value().ToString();
-
-            Row row(schema.DeserializeData(value));
-            Status s = where_clause_->Eval(&row, &d);
-            if (!s.Ok()) return s;
-
-            if (d.AsBool()) {
-                delete_count++;
-                std::string key = schema.GetKeyFromData(row.data_);
-                tab_handle->Delete(rocksdb::WriteOptions(), key);
-            }
-        }*/
-
 
         return Status(true, "(" + std::to_string(delete_count) + " deletes)");
     }
