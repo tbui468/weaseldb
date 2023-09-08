@@ -5,12 +5,15 @@
 namespace wsldb {
 
 
-Schema::Schema(std::string table_name, std::vector<Attribute*> attributes, std::vector<Token> primary_keys) {
+Schema::Schema(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<Token> primary_keys) {
     table_name_ = table_name;
-    for (Attribute* a: attributes) {
-        attr_names_.push_back(a->name.lexeme);
-        attr_types_.push_back(a->type.type);
-    } 
+    for (Token name: names) {
+        attr_names_.push_back(name.lexeme);
+    }
+
+    for (Token type: types) {
+        attr_types_.push_back(type.type);
+    }
 
     for (Token t: primary_keys) {
         pk_attr_idxs_.push_back(GetFieldIdx(t.lexeme));

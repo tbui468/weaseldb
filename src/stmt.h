@@ -21,8 +21,8 @@ public:
 
 class CreateStmt: public Stmt {
 public:
-    CreateStmt(Token target, std::vector<Attribute*> attributes, std::vector<Token> primary_keys):
-        target_(target), attributes_(std::move(attributes)), primary_keys_(std::move(primary_keys)) {}
+    CreateStmt(Token target, std::vector<Token> names, std::vector<Token> types, std::vector<Token> primary_keys):
+        target_(target), names_(std::move(names)), types_(std::move(types)), primary_keys_(std::move(primary_keys)) {}
 
     Status Analyze(DB* db) override {
         std::string serialized_schema;
@@ -30,16 +30,18 @@ public:
             return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
         }
 
-        for (Attribute* a: attributes_) {
-            if (a->name.type != TokenType::Identifier) {
-                return Status(false, "Error: '" + a->name.lexeme + "' is not allowed as column name");
+        for (int i = 0; i < names_.size(); i++) {
+            Token name = names_.at(i);
+            Token type = types_.at(i);
+            if (name.type != TokenType::Identifier) {
+                return Status(false, "Error: '" + name.lexeme + "' is not allowed as column name");
             }
-            if (!TokenTypeValidDataType(a->type.type)) {
-                return Status(false, "Error: '" + a->type.lexeme + "' is not a valid data type");
+            if (!TokenTypeValidDataType(type.type)) {
+                return Status(false, "Error: '" + type.lexeme + "' is not a valid data type");
             }
         }
 
-        Schema schema(target_.lexeme, attributes_, primary_keys_);
+        Schema schema(target_.lexeme, names_, types_, primary_keys_);
         for (Token t: primary_keys_) {
             if (schema.GetFieldIdx(t.lexeme) == -1) {
                 return Status(false, "Error: Column '" + t.lexeme + "' not declared in table '" + target_.lexeme + "'");
@@ -53,7 +55,7 @@ public:
     }
 
     Status Execute(DB* db) override {
-        Schema schema(target_.lexeme, attributes_, primary_keys_);
+        Schema schema(target_.lexeme, names_, types_, primary_keys_);
         db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, schema.Serialize());
 
         rocksdb::Options options;
@@ -69,7 +71,8 @@ public:
     }
 private:
     Token target_;
-    std::vector<Attribute*> attributes_;
+    std::vector<Token> names_;
+    std::vector<Token> types_;
     std::vector<Token> primary_keys_;
 };
 
@@ -150,7 +153,7 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(std::vector<WorkTable> ranges, 
+    SelectStmt(std::vector<WorkTableOld> ranges, 
                std::vector<Expr*> projs,
                Expr* where_clause, 
                std::vector<OrderCol> order_cols,
@@ -169,7 +172,7 @@ public:
             std::string serialized_schema;
             Row dummy_row({});
             Datum d;
-            for (WorkTable wt: ranges_) {
+            for (WorkTableOld wt: ranges_) {
                 Expr* e = wt.table;
                 Status s = e->Eval(&dummy_row, &d);
                 if (!s.Ok()) return s;
@@ -181,7 +184,7 @@ public:
                 schema = new Schema(wt.alias.lexeme, serialized_schema); //alias is same as table name if not specified
             }
         } else {
-            schema = new Schema("", {}, {});
+            schema = new Schema("", {}, {}, {});
         }
 
         //projection
@@ -236,8 +239,8 @@ public:
     }
     Status Execute(DB* db) override {
         RowSet* rs = new RowSet();
-
-        for (WorkTable wt: ranges_) {
+        int offset = 0;
+        for (WorkTableOld wt: ranges_) {
             Row dummy_row({});
             std::string serialized_schema;
             Datum d;
@@ -256,10 +259,16 @@ public:
                 rs->rows_.push_back(new Row(schema.DeserializeData(value)));
             }
 
+            std::vector<Attribute>* attrs = new std::vector<Attribute>();
+            for (int i = 0; i < schema.FieldCount(); i++) {
+                attrs->emplace_back(Attribute(schema.Name(i), schema.Type(i), offset));
+                offset++;
+            }
+
             //put both table name and alias (which may be same as table name) since SQL can reference either
             //if there is no ambiguity.  Need to report error if there is ambiguity.
-            rs->aliases_.insert({target_relation, 0});
-            rs->aliases_.insert({wt.alias.lexeme, 0});
+            rs->attrs_.insert({ target_relation, attrs });
+            rs->attrs_.insert({ wt.alias.lexeme, attrs });
         }
 
         //if no input tables are provided
@@ -359,7 +368,7 @@ public:
         return "select";
     }
 private:
-    std::vector<WorkTable> ranges_;
+    std::vector<WorkTableOld> ranges_;
     std::vector<Expr*> projs_;
     Expr* where_clause_;
     std::vector<OrderCol> order_cols_;
@@ -451,23 +460,42 @@ private:
 
 class DeleteStmt: public Stmt {
 public:
-    DeleteStmt(Token target_relation, Expr* where_clause): 
-        target_relation_(target_relation), where_clause_(where_clause) {}
+    DeleteStmt(WorkTable* target, Expr* where_clause): 
+        target_(target), where_clause_(where_clause) {}
     Status Analyze(DB* db) override {
-        std::string serialized_schema;
-        if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
-            return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
+        Status status1 = target_->Analyze(db);
+        if (!status1.Ok()) {
+            return status1;
         }
-        Schema schema(target_relation_.lexeme, serialized_schema);
 
+        //Physical* p = (Physical*)target_; //ugly
         TokenType type;
-        Status status = where_clause_->Analyze(&schema, &type);
+        //Status status = where_clause_->Analyze(p->schema_, &type);
+        Status status = where_clause_->Analyze(target_->GetAttributes(), &type);
         if (!status.Ok()) {
             return status;
         }
+
         return Status(true, "ok");
     }
     Status Execute(DB* db) override {
+        target_->BeginScan(db);
+
+        Row* r;
+        int delete_count = 0;
+        Datum d;
+        while (target_->NextRow(db, &r).Ok()) {
+            Status s = where_clause_->Eval(r, &d);
+            if (!s.Ok()) return s;
+
+            if (d.AsBool()) {
+                delete_count++;
+                target_->DeletePrev(db);
+            }
+        }
+
+        target_->EndScan(db);
+        /*
         std::string serialized_schema;
         rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
         Schema schema(target_relation_.lexeme, serialized_schema);
@@ -489,7 +517,8 @@ public:
                 std::string key = schema.GetKeyFromData(row.data_);
                 tab_handle->Delete(rocksdb::WriteOptions(), key);
             }
-        }
+        }*/
+
 
         return Status(true, "(" + std::to_string(delete_count) + " deletes)");
     }
@@ -497,7 +526,7 @@ public:
         return "delete";
     }
 private:
-    Token target_relation_;
+    WorkTable* target_;
     Expr* where_clause_;
 };
 

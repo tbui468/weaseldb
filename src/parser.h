@@ -21,7 +21,8 @@ private:
     Expr* ParseAnd();
     Expr* ParseOr();
     Expr* ParseExpr();
-    WorkTable ParseWorkTable();
+    WorkTableOld ParseWorkTableOld(); //TODO: remove later
+    WorkTable* ParseWorkTable();
     std::vector<Expr*> ParseTuple();
 
     inline Token PeekToken() {

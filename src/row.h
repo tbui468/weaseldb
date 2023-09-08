@@ -48,7 +48,7 @@ public:
 
 public:
     std::vector<Row*> rows_;
-    std::unordered_map<std::string, int> aliases_;
+    std::unordered_map<std::string, std::vector<Attribute>*> attrs_;
 };
 
 

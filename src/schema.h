@@ -2,17 +2,11 @@
 
 #include <vector>
 #include <string>
+#include <cassert>
 #include "token.h"
 #include "datum.h"
 
 namespace wsldb {
-
-class Attribute {
-public:
-    Attribute(Token name, Token type): name(name), type(type) {}
-    Token name;
-    Token type;
-};
 
 /*
 class ForeignKey: public Constraint {
@@ -27,7 +21,7 @@ private:
 
 class Schema {
 public:
-    Schema(std::string table_name, std::vector<Attribute*> attributes, std::vector<Token> primary_keys);
+    Schema(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<Token> primary_keys);
     Schema(std::string table_name, const std::string& buf);
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
@@ -60,6 +54,85 @@ private:
     std::vector<int> pk_attr_idxs_;
     //std::vector<int> fk_attr_idxs_;
     //std::string fk_ref_;
+};
+
+struct Attribute {
+    Attribute(std::string name, TokenType type, int idx): name(name), type(type), idx(idx) {}
+    std::string name;
+    TokenType type;
+    int idx;
+};
+
+class AttributeSet {
+public:
+    void AppendSchema(Schema* schema, const std::string& table_alias) {
+        std::vector<Attribute>* attrs_vector = new std::vector<Attribute>();
+        for (int i = 0; i < schema->FieldCount(); i++) {
+            attrs_vector->emplace_back(schema->Name(i), schema->Type(i), i + offset_);
+        }
+        attrs_.insert({schema->TableName(), attrs_vector});
+
+        //mapping both alias and physical table name to physical table name
+        //so we don't have to check for existence of key translating
+        //eg, both of the following mappings work:
+        //  alias->physical
+        //  physical->physical
+        aliases_.insert({ table_alias, schema->TableName() });
+        aliases_.insert({ schema->TableName(), schema->TableName() });
+
+        offset_ += schema->FieldCount();
+    }
+
+    void AppendSchema(Schema* schema) {
+        AppendSchema(schema, schema->TableName());
+    }
+
+    bool Contains(const std::string& table, const std::string& col) const {
+        if (attrs_.find(table) == attrs_.end())
+            return false;
+
+        for (const Attribute& a: *(attrs_.at(table))) {
+            if (a.name.compare(col) == 0)
+                return true;
+        }
+
+        return false;
+    }
+
+    Attribute GetAttribute(const std::string& table, const std::string& col) const {
+        assert(Contains(AliasToTable(table), col) && "check that attribute exists before retreiving it");
+
+        std::vector<Attribute>* v = attrs_.at(AliasToTable(table));
+        for (Attribute a: *v) {
+            if (a.name.compare(col) == 0)
+                return a;
+        }
+
+        return {"", TokenType::Int4, 0}; //keep compiler quiet
+    }
+
+    std::vector<std::string> FindUniqueTablesWithCol(const std::string& col) const {
+        std::vector<std::string> result;
+
+        for (const std::pair<const std::string, std::vector<Attribute>*>& p: attrs_) {
+            for (Attribute a: *(p.second)) {
+                if (a.name.compare(col) == 0)
+                    result.push_back(p.first);
+            }
+        }
+
+        return result;
+    }
+
+private:
+    inline std::string AliasToTable(const std::string& alias) const {
+        return aliases_.at(alias);
+    }
+
+private:
+    std::unordered_map<std::string, std::vector<Attribute>*> attrs_;
+    std::unordered_map<std::string, std::string> aliases_;
+    int offset_ = 0;
 };
 
 }

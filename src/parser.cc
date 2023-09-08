@@ -137,7 +137,8 @@ Expr* Parser::ParseExpr() {
     return ParseOr();
 }
 
-WorkTable Parser::ParseWorkTable() {
+//TODO: remove later
+WorkTableOld Parser::ParseWorkTableOld() {
     Token t = NextToken();
     Expr* table = new TableRef(t);
     if (PeekToken().type == TokenType::As) {
@@ -145,6 +146,17 @@ WorkTable Parser::ParseWorkTable() {
         return { table, NextToken() };
     }
     return { table, t }; //alias is same as table name
+}
+
+WorkTable* Parser::ParseWorkTable() {
+    Token t = NextToken();
+    if (PeekToken().type == TokenType::As) {
+        NextToken(); //as
+        Token alias = NextToken();
+        return new Physical(t, alias);
+    }
+
+    return new Physical(t);
 }
 
 std::vector<Expr*> Parser::ParseTuple() {
@@ -167,7 +179,8 @@ Stmt* Parser::ParseStmt() {
             Token target = NextToken();
             NextToken(); //(
 
-            std::vector<Attribute*> attributes;
+            std::vector<Token> names;
+            std::vector<Token> types;
             std::vector<Token> pks;
             while (PeekToken().type != TokenType::RParen) {
                 if (PeekToken().type == TokenType::Primary) {
@@ -191,9 +204,8 @@ Stmt* Parser::ParseStmt() {
                     std::vector<Expr*> foreign_cols = ParseTuple();
                     constraints.push_back(new ForeignKey(cols, foreign_target, foreign_cols));*/
                 } else {
-                    Token name = NextToken();
-                    Token type = NextToken();
-                    attributes.push_back(new Attribute(name, type));
+                    names.push_back(NextToken());
+                    types.push_back(NextToken());
                 }
 
                 if (PeekToken().type == TokenType::Comma) {
@@ -203,7 +215,7 @@ Stmt* Parser::ParseStmt() {
 
             NextToken();//)
             NextToken();//;
-            return new CreateStmt(target, attributes, pks);
+            return new CreateStmt(target, names, types, pks);
         }
         case TokenType::Insert: {
             NextToken(); //into
@@ -245,14 +257,14 @@ Stmt* Parser::ParseStmt() {
                 return new SelectStmt({}, target_cols, new Literal(true), {}, limit, remove_duplicates);
             }
 
-            std::vector<WorkTable> target_ranges;
+            std::vector<WorkTableOld> target_ranges;
 
             NextToken(); //from
             //TODO: need to potentially parse a subquery here (and not just a table reference)
-            target_ranges.push_back(ParseWorkTable());
+            target_ranges.push_back(ParseWorkTableOld());
             while (PeekToken().type == TokenType::Comma) {
                 NextToken(); //,
-                target_ranges.push_back(ParseWorkTable());
+                target_ranges.push_back(ParseWorkTableOld());
             }
 
             Expr* where_clause = nullptr;
@@ -319,7 +331,7 @@ Stmt* Parser::ParseStmt() {
         }
         case TokenType::Delete: {
             NextToken(); //from
-            Token target = NextToken();
+            WorkTable* target = ParseWorkTable();
 
             Expr* where_clause = nullptr;
             if (PeekToken().type == TokenType::Where) {
