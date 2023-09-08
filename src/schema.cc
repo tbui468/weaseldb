@@ -84,14 +84,6 @@ std::vector<Datum> Schema::DeserializeData(const std::string& value) {
     return data;
 }
 
-std::string Schema::SerializeData(const std::vector<Datum>& data) {
-    std::string value;
-    for (Datum d: data) {
-        value += d.Serialize();
-    }
-    return value;
-}
-
 std::string Schema::GetKeyFromData(const std::vector<Datum>& data) {
     std::string primary_key;
     for (int i: pk_attr_idxs_) {

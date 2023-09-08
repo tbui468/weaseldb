@@ -25,7 +25,6 @@ public:
     Schema(std::string table_name, const std::string& buf);
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
-    std::string SerializeData(const std::vector<Datum>& data);
     std::string GetKeyFromData(const std::vector<Datum>& data);
     int GetFieldIdx(const std::string& name);
     inline int FieldCount() {

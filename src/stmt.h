@@ -128,7 +128,7 @@ public:
 
                 data.push_back(d);
             }
-            std::string value = schema.SerializeData(data);
+            std::string value = Datum::SerializeData(data);
             std::string key = schema.GetKeyFromData(data);
 
             std::string test_value;
