@@ -17,7 +17,6 @@ public:
     virtual Status Eval(RowSet* rs, std::vector<Datum>& output) = 0;
     virtual inline Status Eval(Row* r, Datum* result) = 0;
     virtual std::string ToString() = 0;
-    virtual Status Analyze(Schema* schema, TokenType* evaluated_type) = 0;
     virtual Status Analyze(const AttributeSet& as, TokenType* evaluated_type) = 0;
 };
 
@@ -44,10 +43,6 @@ public:
         return t_.lexeme;
     }
     Status Analyze(const AttributeSet& as, TokenType* evaluated_type) override {
-        *evaluated_type = Datum(t_).Type();
-        return Status(true, "ok");
-    }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) override {
         *evaluated_type = Datum(t_).Type();
         return Status(true, "ok");
     }
@@ -114,47 +109,6 @@ public:
                 return s;
         }
 
-        switch (op_.type) {
-            case TokenType::Equal:
-            case TokenType::NotEqual:
-            case TokenType::Less:
-            case TokenType::LessEqual:
-            case TokenType::Greater:
-            case TokenType::GreaterEqual:
-                if (left_type != right_type) {
-                    return Status(false, "Error: Equality and relational operands must be same data types");
-                }
-                *evaluated_type = TokenType::Bool;
-                break;
-            case TokenType::Or:
-            case TokenType::And:
-                if (!(left_type == TokenType::Bool && right_type == TokenType::Bool)) {
-                    return Status(false, "Error: Logical operator operands must be boolean types");
-                }
-                *evaluated_type = TokenType::Bool;
-                break;
-            case TokenType::Plus:
-            case TokenType::Minus:
-            case TokenType::Star:
-            case TokenType::Slash:
-                if (!(TokenTypeIsNumeric(left_type) && TokenTypeIsNumeric(right_type))) {
-                    return Status(false, "Error: The '" + op_.lexeme + "' operator operands must both be a numeric type");
-                } 
-                *evaluated_type = left_type;
-                break;
-            default:
-                return Status(false, "Implementation Error: op type not implemented in Binary expr!");
-                break;
-        }
-
-        return Status(true, "ok");
-    }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) override {
-        TokenType left_type;
-        TokenType right_type;
-        left_->Analyze(schema, &left_type);
-        right_->Analyze(schema, &right_type);
-        
         switch (op_.type) {
             case TokenType::Equal:
             case TokenType::NotEqual:
@@ -261,71 +215,9 @@ public:
 
         return Status(true, "ok");
     }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) override {
-        TokenType type;
-        right_->Analyze(schema, &type);
-        
-        switch (op_.type) {
-            case TokenType::Not:
-                if (type != TokenType::Bool) {
-                    return Status(false, "Error: 'not' operand must be a boolean type.");
-                }
-                *evaluated_type = TokenType::Bool;
-                break;
-            case TokenType::Minus:
-                if (!TokenTypeIsNumeric(type)) {
-                    return Status(false, "Error: '-' operator operand must be numeric type");
-                }
-                *evaluated_type = type;
-                break;
-            default:
-                return Status(false, "Implementation Error: op type not implemented in Binary expr!");
-                break;
-        }
-
-        return Status(true, "ok");
-    }
 private:
     Expr* right_;
     Token op_;
-};
-
-//TODO: remove later
-class TableRef: public Expr {
-public:
-    TableRef(Token t): t_(t) {}
-    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
-        Datum d;
-        for (Row* r: rs->rows_) {
-            Status s = Eval(r, &d);
-            if (!s.Ok()) return s;
-
-            output.push_back(d);
-        }
-        
-        return Status(true, "ok");
-    }
-    inline Status Eval(Row* r, Datum* result) override {
-        *result = Datum(t_.lexeme);
-        return Status(true, "ok");
-    }
-    std::string ToString() override {
-        return "table ref";
-    }
-    Status Analyze(const AttributeSet& as, TokenType* evaluated_type) override {
-        return Status(true, "ok");
-    }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) {
-        return Status(true, "ok");
-    }
-private:
-    Token t_;
-};
-
-//TODO: remove later
-struct WorkTableOld {
-    Expr* table; //either TableRef or Subquery
-    Token alias;
 };
 
 
@@ -371,16 +263,6 @@ public:
         idx_ = a.idx;
         *evaluated_type = a.type;
 
-        return Status(true, "ok");
-    }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) {
-        idx_ = schema->GetFieldIdx(t_.lexeme);
-        if (idx_ == -1) {
-            return Status(false, "Error: Column '" + t_.lexeme + "' does not exist");
-        }
-        *evaluated_type = schema->Type(idx_);
-        if (table_ref_ == "")  //replace with default table name only if explicit table reference not provided
-            table_ref_ = schema->TableName();
         return Status(true, "ok");
     }
 private:
@@ -440,25 +322,6 @@ public:
         idx_ = a.idx;
         *evaluated_type = a.type;
 
-        return Status(true, "ok");
-    }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) {
-        TokenType type;
-        Status status = right_->Analyze(schema, &type);
-        if (!status.Ok()) {
-            return status;
-        }
-
-        idx_ = schema->GetFieldIdx(col_.lexeme);
-        if (idx_ == -1) {
-            return Status(false, "Error: Column '" + col_.lexeme + "' does not exist");
-        }
-
-        if (schema->Type(idx_) != type) {
-            return Status(false, "Error: Value type does not match type in schema");
-        }
-
-        *evaluated_type = schema->Type(idx_);
         return Status(true, "ok");
     }
 private:
@@ -545,18 +408,6 @@ public:
         }
         return Status(true, "ok");
     }
-    Status Analyze(Schema* schema, TokenType* evaluated_type) override {
-        Status status = arg_->Analyze(schema, evaluated_type);
-        if (!status.Ok()) {
-            return status;
-        }
-
-        if (!TokenTypeIsAggregateFunction(fcn_.type)) {
-            return Status(false, "Error: Function '" + fcn_.lexeme + "' does not exist");
-        }
-
-        return Status(true, "ok");
-    }
 private:
     Token fcn_;
     Expr* arg_;
@@ -571,6 +422,7 @@ public:
     virtual Status UpdatePrev(DB* db, Row* r) = 0;
     virtual Status EndScan(DB* db) = 0;
     virtual const AttributeSet& GetAttributes() const = 0;
+    virtual Status Insert(DB* db, const std::vector<Datum>& data) = 0;
 };
 
 class ConstantTable: public WorkTable {
@@ -605,6 +457,9 @@ public:
     }
     const AttributeSet& GetAttributes() const override {
         return attr_set_;
+    }
+    Status Insert(DB* db, const std::vector<Datum>& data) override {
+        return Status(false, "Error: Cannot insert value into a constant table row");
     }
 private:
     int cur_;
@@ -668,6 +523,20 @@ public:
     }
     const AttributeSet& GetAttributes() const override {
         return attr_set_;
+    }
+    Status Insert(DB* db, const std::vector<Datum>& data) override {
+        rocksdb::DB* tab_handle = db->GetTableHandle(table_.lexeme);
+        std::string value = Datum::SerializeData(data);
+        std::string key = schema_->GetKeyFromData(data);
+
+        std::string test_value;
+        rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), key, &test_value);
+        if (status.ok()) {
+            return Status(false, "Error: A record with the same primary key already exists");
+        }
+
+        tab_handle->Put(rocksdb::WriteOptions(), key, value);
+        return Status(true, "ok");
     }
 private:
     Token table_;

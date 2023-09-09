@@ -69,7 +69,7 @@ public:
         for (int i = 0; i < schema->FieldCount(); i++) {
             attrs_vector->emplace_back(schema->Name(i), schema->Type(i), i + offset_);
         }
-        attrs_.insert({schema->TableName(), attrs_vector});
+        attrs_.insert({ schema->TableName(), attrs_vector });
 
         //mapping both alias and physical table name to physical table name
         //so we don't have to check for existence of key translating
@@ -110,6 +110,8 @@ public:
         return {"", TokenType::Int4, 0}; //keep compiler quiet
     }
 
+    //TODO: caller can just get list of tables with 'TableNames', and use 'Contains' function to check for uniqueness
+    //This is really a composite of those two functions and can be removed
     std::vector<std::string> FindUniqueTablesWithCol(const std::string& col) const {
         std::vector<std::string> result;
 
@@ -123,6 +125,20 @@ public:
         return result;
     }
 
+    std::vector<std::string> TableNames() const {
+        std::vector<std::string> result;
+
+        for (const std::pair<const std::string, std::vector<Attribute>*>& p: attrs_) {
+            result.push_back(p.first);
+        }
+
+        return result;
+    }
+
+    std::vector<Attribute>* TableAttributes(const std::string& table) const {
+        return attrs_.at(table);
+    }
+
 private:
     inline std::string AliasToTable(const std::string& alias) const {
         return aliases_.at(alias);
@@ -130,6 +146,9 @@ private:
 
 private:
     std::unordered_map<std::string, std::vector<Attribute>*> attrs_;
+    //mapping of aliases -> physical table names
+    //includes mapping of physical table name -> physical table name
+    //see AppendSchema function
     std::unordered_map<std::string, std::string> aliases_;
     int offset_ = 0;
 };

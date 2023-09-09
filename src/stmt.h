@@ -78,34 +78,37 @@ private:
 
 class InsertStmt: public Stmt {
 public:
-    InsertStmt(Token target, std::vector<std::vector<Expr*>> values):
+    InsertStmt(WorkTable* target, std::vector<std::vector<Expr*>> values):
         target_(target), values_(std::move(values)) {}
 
     Status Analyze(DB* db) override {
-        std::string serialized_schema;
-        if (!db->TableSchema(target_.lexeme, &serialized_schema)) {
-            return Status(false, "Error: Table '" + target_.lexeme + "' does not exist");
+        {
+            Status s = target_->Analyze(db);
+            if (!s.Ok())
+                return s;
         }
-        Schema schema(target_.lexeme, serialized_schema);
+
+        std::vector<std::string> tables = target_->GetAttributes().TableNames();
+        if (tables.size() != 1)
+            return Status(false, "Error: Cannot insert into more than one table");
+
+        std::string table = tables.at(0);
+        std::vector<Attribute>* attrs = target_->GetAttributes().TableAttributes(table);
 
         for (const std::vector<Expr*>& exprs: values_) {
-            if (exprs.size() != schema.FieldCount()) {
-                return Status(false, "Error: Value count does not match field count in schema on record");
+            if (exprs.size() != attrs->size()) {
+                return Status(false, "Error: Value count does not match attribute count in schema on record");
             }
-            int i = 0;
-            for (Expr* e: exprs) {
+
+            for (int i = 0; i < exprs.size(); i++) {
+                Expr* e = exprs.at(i);
                 TokenType type;
-                Status status = e->Analyze(&schema, &type);
-
-                if (!status.Ok()) {
-                    return status;
-                }
-
-                if (type != schema.Type(i)) {
+                Status s = e->Analyze(target_->GetAttributes(), &type);
+                if (!s.Ok())
+                    return s;
+                Attribute a = attrs->at(i);
+                if (attrs->at(i).type != type)
                     return Status(false, "Error: Value type does not match type in schema on record");
-                }
-
-                i++;
             }
         }
 
@@ -113,31 +116,19 @@ public:
     }
 
     Status Execute(DB* db) override {
-        std::string serialized_schema;
-        db->TableSchema(target_.lexeme, &serialized_schema);
-        Schema schema(target_.lexeme, serialized_schema);
-
-        rocksdb::DB* tab_handle = db->GetTableHandle(target_.lexeme);
         Row dummy_row({});
         for (std::vector<Expr*> exprs: values_) {
             std::vector<Datum> data = std::vector<Datum>();
-            Datum d;
             for (Expr* e: exprs) {
+                Datum d;
                 Status s = e->Eval(&dummy_row, &d);
                 if (!s.Ok()) return s;
 
                 data.push_back(d);
             }
-            std::string value = Datum::SerializeData(data);
-            std::string key = schema.GetKeyFromData(data);
-
-            std::string test_value;
-            rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), key, &test_value);
-            if (status.ok()) {
-                return Status(false, "Error: A record with the same primary key already exists");
-            }
-
-            tab_handle->Put(rocksdb::WriteOptions(), key, value);
+            Status s = target_->Insert(db, data);
+            if (!s.Ok())
+                return s;
         }
 
         return Status(true, "INSERT " + std::to_string(values_.size()));
@@ -147,7 +138,7 @@ public:
         return "insert";
     }
 private:
-    Token target_;
+    WorkTable* target_;
     std::vector<std::vector<Expr*>> values_;
 };
 

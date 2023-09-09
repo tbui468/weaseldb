@@ -21,7 +21,6 @@ private:
     Expr* ParseAnd();
     Expr* ParseOr();
     Expr* ParseExpr();
-    WorkTableOld ParseWorkTableOld(); //TODO: remove later
     WorkTable* ParseWorkTable();
     std::vector<Expr*> ParseTuple();
 

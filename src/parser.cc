@@ -137,17 +137,6 @@ Expr* Parser::ParseExpr() {
     return ParseOr();
 }
 
-//TODO: remove later
-WorkTableOld Parser::ParseWorkTableOld() {
-    Token t = NextToken();
-    Expr* table = new TableRef(t);
-    if (PeekToken().type == TokenType::As) {
-        NextToken();
-        return { table, NextToken() };
-    }
-    return { table, t }; //alias is same as table name
-}
-
 WorkTable* Parser::ParseWorkTable() {
     Token t = NextToken();
     if (PeekToken().type == TokenType::As) {
@@ -219,7 +208,7 @@ Stmt* Parser::ParseStmt() {
         }
         case TokenType::Insert: {
             NextToken(); //into
-            Token target = NextToken(); //table name
+            WorkTable* target = ParseWorkTable(); //table name
             NextToken(); //values
             std::vector<std::vector<Expr*>> values = std::vector<std::vector<Expr*>>();
             while (PeekToken().type == TokenType::LParen) {
