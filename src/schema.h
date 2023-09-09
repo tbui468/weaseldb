@@ -86,7 +86,8 @@ public:
         AppendSchema(schema, schema->TableName());
     }
 
-    bool Contains(const std::string& table, const std::string& col) const {
+    bool Contains(const std::string& name, const std::string& col) const {
+        std::string table = AliasToTable(name);
         if (attrs_.find(table) == attrs_.end())
             return false;
 
