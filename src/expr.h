@@ -421,8 +421,83 @@ public:
     virtual Status DeletePrev(DB* db) = 0;
     virtual Status UpdatePrev(DB* db, Row* r) = 0;
     virtual Status EndScan(DB* db) = 0;
-    virtual const AttributeSet& GetAttributes() const = 0;
     virtual Status Insert(DB* db, const std::vector<Datum>& data) = 0;
+    const AttributeSet& GetAttributes() const {
+        return attr_set_;
+    }
+protected:
+    AttributeSet attr_set_;
+};
+
+class CrossJoin: public WorkTable {
+public:
+    CrossJoin(WorkTable* left, WorkTable* right): left_(left), right_(right), left_row_(nullptr) {}
+    Status Analyze(DB* db) override {
+        {
+            Status s = left_->Analyze(db);
+            if (!s.Ok())
+                return s;
+        }
+        {
+            Status s = right_->Analyze(db);
+            if (!s.Ok())
+                return s;
+        }
+        attr_set_ = AttributeSet::Concatenate(left_->GetAttributes(), right_->GetAttributes());
+
+        return Status(true, "ok");
+    }
+    Status BeginScan(DB* db) override {
+        left_->BeginScan(db);
+        right_->BeginScan(db);
+
+        //initialize left row
+        Status s = left_->NextRow(db, &left_row_);
+        if (!s.Ok())
+            return Status(false, "No more rows");
+
+        return Status(true, "ok");
+    }
+    Status NextRow(DB* db, Row** r) override {
+        Row* right_row;
+        Status s = right_->NextRow(db, &right_row);
+        if (!s.Ok()) {
+            {
+                Status s = left_->NextRow(db, &left_row_);
+                if (!s.Ok())
+                    return Status(false, "No more rows");
+            }
+
+            {
+                right_->BeginScan(db);
+                Status s = right_->NextRow(db, &right_row);
+                if (!s.Ok())
+                    return Status(false, "No more rows");
+            } 
+        }
+
+        std::vector<Datum> result = left_row_->data_;
+        result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());
+        *r = new Row(result);
+
+        return Status(true, "ok");
+    }
+    Status EndScan(DB* db) override {
+        return Status(true, "ok");
+    }
+    Status DeletePrev(DB* db) override {
+        return Status(false, "Error: Cannot delete a row from a cross-joined table");
+    }
+    Status UpdatePrev(DB* db, Row* r) override {
+        return Status(false, "Error: Cannot update a row in a cross-joined table");
+    }
+    Status Insert(DB* db, const std::vector<Datum>& data) override {
+        return Status(false, "Error: Cannot insert value into a row in a cross-joined table");
+    }
+private:
+    Row* left_row_;
+    WorkTable* left_;
+    WorkTable* right_;
 };
 
 class ConstantTable: public WorkTable {
@@ -455,33 +530,30 @@ public:
     Status EndScan(DB* db) override {
         return Status(true, "ok");
     }
-    const AttributeSet& GetAttributes() const override {
-        return attr_set_;
-    }
     Status Insert(DB* db, const std::vector<Datum>& data) override {
         return Status(false, "Error: Cannot insert value into a constant table row");
     }
 private:
     int cur_;
-    AttributeSet attr_set_;
     int target_cols_;
 };
 
 //TODO: should rename to PhysicalTable
 class Physical: public WorkTable {
 public:
-    Physical(Token t, Token alias): table_(t), alias_(alias.lexeme) {}
-    Physical(Token t): table_(t), alias_(t.lexeme) {}
+    Physical(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
+    //if an alias is not provided, the reference name is the same as the physical table name
+    Physical(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
     Status Analyze(DB* db) override {
         std::string serialized_schema;
-        if (!db->TableSchema(table_.lexeme, &serialized_schema)) {
-            return Status(false, "Error: Table '" + table_.lexeme + "' does not exist");
+        if (!db->TableSchema(tab_name_, &serialized_schema)) {
+            return Status(false, "Error: Table '" + tab_name_ + "' does not exist");
         }
-        schema_ = new Schema(table_.lexeme, serialized_schema);
+        schema_ = new Schema(tab_name_, serialized_schema);
 
-        db_handle_ = db->GetTableHandle(table_.lexeme);
+        db_handle_ = db->GetTableHandle(tab_name_);
 
-        attr_set_.AppendSchema(schema_, alias_);
+        attr_set_.AppendSchema(schema_, ref_name_);
 
         return Status(true, "ok");
     }
@@ -521,11 +593,8 @@ public:
     Status EndScan(DB* db) override {
         return Status(true, "ok");
     }
-    const AttributeSet& GetAttributes() const override {
-        return attr_set_;
-    }
     Status Insert(DB* db, const std::vector<Datum>& data) override {
-        rocksdb::DB* tab_handle = db->GetTableHandle(table_.lexeme);
+        rocksdb::DB* tab_handle = db->GetTableHandle(tab_name_);
         std::string value = Datum::SerializeData(data);
         std::string key = schema_->GetKeyFromData(data);
 
@@ -539,12 +608,11 @@ public:
         return Status(true, "ok");
     }
 private:
-    Token table_;
-    std::string alias_;
+    std::string tab_name_;
+    std::string ref_name_;
     rocksdb::DB* db_handle_;
     rocksdb::Iterator* it_;
 public:
-    AttributeSet attr_set_;
     Schema* schema_;
 };
 

@@ -137,7 +137,7 @@ Expr* Parser::ParseExpr() {
     return ParseOr();
 }
 
-WorkTable* Parser::ParseWorkTable() {
+WorkTable* Parser::ParsePrimaryWorkTable() {
     Token t = NextToken();
     if (PeekToken().type == TokenType::As) {
         NextToken(); //as
@@ -146,6 +146,21 @@ WorkTable* Parser::ParseWorkTable() {
     }
 
     return new Physical(t);
+}
+
+WorkTable* Parser::ParseBinaryWorkTable() {
+    WorkTable* left = ParsePrimaryWorkTable();
+    while (PeekToken().type == TokenType::Cross) {
+        NextToken(); //cross
+        NextToken(); //join
+        left = new CrossJoin(left, ParsePrimaryWorkTable());
+    }
+
+    return left;
+}
+
+WorkTable* Parser::ParseWorkTable() {
+    return ParseBinaryWorkTable();
 }
 
 std::vector<Expr*> Parser::ParseTuple() {

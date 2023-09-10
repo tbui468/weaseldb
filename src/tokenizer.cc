@@ -169,6 +169,10 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Distinct;
     } else if (len == 2 && strncmp(&query_.at(idx), "as", len) == 0) {
         type = TokenType::As;
+    } else if (len == 5 && strncmp(&query_.at(idx), "cross", len) == 0) {
+        type = TokenType::Cross;
+    } else if (len == 4 && strncmp(&query_.at(idx), "join", len) == 0) {
+        type = TokenType::Join;
     } else {
         type = TokenType::Identifier;
     }

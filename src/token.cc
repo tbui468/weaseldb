@@ -129,6 +129,10 @@ std::string TokenTypeToString(TokenType type) {
             return "As";
         case TokenType::Dot:
             return "Dot";
+        case TokenType::Cross:
+            return "Cross";
+        case TokenType::Join:
+            return "Join";
         default:
             return "Unrecognized token";
     }

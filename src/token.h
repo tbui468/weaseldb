@@ -46,6 +46,8 @@ enum class TokenType {
     Max,
     Distinct,
     As,
+    Cross,
+    Join,
 
     /* user-defined identifier */
     Identifier,

@@ -64,20 +64,12 @@ struct Attribute {
 
 class AttributeSet {
 public:
-    void AppendSchema(Schema* schema, const std::string& table_alias) {
+    void AppendSchema(Schema* schema, const std::string& ref_name) {
         std::vector<Attribute>* attrs_vector = new std::vector<Attribute>();
         for (int i = 0; i < schema->FieldCount(); i++) {
             attrs_vector->emplace_back(schema->Name(i), schema->Type(i), i + offset_);
         }
-        attrs_.insert({ schema->TableName(), attrs_vector });
-
-        //mapping both alias and physical table name to physical table name
-        //so we don't have to check for existence of key translating
-        //eg, both of the following mappings work:
-        //  alias->physical
-        //  physical->physical
-        aliases_.insert({ table_alias, schema->TableName() });
-        aliases_.insert({ schema->TableName(), schema->TableName() });
+        attrs_.insert({ ref_name, attrs_vector });
 
         offset_ += schema->FieldCount();
     }
@@ -86,8 +78,7 @@ public:
         AppendSchema(schema, schema->TableName());
     }
 
-    bool Contains(const std::string& name, const std::string& col) const {
-        std::string table = AliasToTable(name);
+    bool Contains(const std::string& table, const std::string& col) const {
         if (attrs_.find(table) == attrs_.end())
             return false;
 
@@ -100,9 +91,7 @@ public:
     }
 
     Attribute GetAttribute(const std::string& table, const std::string& col) const {
-        assert(Contains(AliasToTable(table), col) && "check that attribute exists before retreiving it");
-
-        std::vector<Attribute>* v = attrs_.at(AliasToTable(table));
+        std::vector<Attribute>* v = attrs_.at(table);
         for (Attribute a: *v) {
             if (a.name.compare(col) == 0)
                 return a;
@@ -140,17 +129,23 @@ public:
         return attrs_.at(table);
     }
 
-private:
-    inline std::string AliasToTable(const std::string& alias) const {
-        return aliases_.at(alias);
-    }
+    static AttributeSet Concatenate(const AttributeSet& left, const AttributeSet& right) {
+        AttributeSet result;
+        result.attrs_.insert(left.attrs_.begin(), left.attrs_.end());
+        result.attrs_.insert(right.attrs_.begin(), right.attrs_.end());
 
-private:
+        //offset right attributes
+        for (const std::pair<const std::string, std::vector<Attribute>*>& p: right.attrs_) {
+            for (Attribute& a: *(p.second)) {
+                a.idx += left.offset_;
+            }
+        }
+
+        return result;
+    };
+
+public:
     std::unordered_map<std::string, std::vector<Attribute>*> attrs_;
-    //mapping of aliases -> physical table names
-    //includes mapping of physical table name -> physical table name
-    //see AppendSchema function
-    std::unordered_map<std::string, std::string> aliases_;
     int offset_ = 0;
 };
 
