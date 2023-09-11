@@ -236,8 +236,6 @@ public:
             rs->rows_.push_back(r);
         }
 
-        target_->EndScan(db);
-
         //sort filtered rows in-place
         if (!order_cols_.empty()) {
             std::vector<OrderCol>& order_cols = order_cols_; //lambdas can only capture non-member variable
@@ -381,8 +379,6 @@ public:
             update_count++;
         }
 
-        target_->EndScan(db);
-
         return Status(true, "(" + std::to_string(update_count) + " deletes)");
     }
     std::string ToString() override {
@@ -433,8 +429,6 @@ public:
             target_->DeletePrev(db);
             delete_count++;
         }
-
-        target_->EndScan(db);
 
         return Status(true, "(" + std::to_string(delete_count) + " deletes)");
     }

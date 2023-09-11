@@ -150,10 +150,23 @@ WorkTable* Parser::ParsePrimaryWorkTable() {
 
 WorkTable* Parser::ParseBinaryWorkTable() {
     WorkTable* left = ParsePrimaryWorkTable();
-    while (PeekToken().type == TokenType::Cross) {
-        NextToken(); //cross
-        NextToken(); //join
-        left = new CrossJoin(left, ParsePrimaryWorkTable());
+    while (PeekToken().type == TokenType::Cross || PeekToken().type == TokenType::Inner) {
+        switch (NextToken().type) {
+            case TokenType::Cross: {
+                NextToken(); //join
+                left = new CrossJoin(left, ParsePrimaryWorkTable());
+                break;
+            }
+            case TokenType::Inner: {
+                NextToken(); //join
+                WorkTable* right = ParsePrimaryWorkTable();
+                NextToken(); //on
+                left = new InnerJoin(left, right, ParseExpr());
+                break;
+            }
+            default:
+                break;
+        }
     }
 
     return left;

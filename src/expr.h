@@ -420,13 +420,103 @@ public:
     virtual Status NextRow(DB* db, Row** r) = 0;
     virtual Status DeletePrev(DB* db) = 0;
     virtual Status UpdatePrev(DB* db, Row* r) = 0;
-    virtual Status EndScan(DB* db) = 0;
     virtual Status Insert(DB* db, const std::vector<Datum>& data) = 0;
     const AttributeSet& GetAttributes() const {
         return attr_set_;
     }
 protected:
     AttributeSet attr_set_;
+};
+
+class InnerJoin: public WorkTable {
+public:
+    InnerJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
+    Status Analyze(DB* db) override {
+        {
+            Status s = left_->Analyze(db);
+            if (!s.Ok())
+                return s;
+        }
+        {
+            Status s = right_->Analyze(db);
+            if (!s.Ok())
+                return s;
+        }
+        attr_set_ = AttributeSet::Concatenate(left_->GetAttributes(), right_->GetAttributes());
+
+        {
+            TokenType type;
+            Status s = condition_->Analyze(attr_set_, &type);
+            if (!s.Ok())
+                return s;
+
+            if (type != TokenType::Bool) {
+                return Status(false, "Error: Inner join condition must evaluate to a boolean type");
+            }
+        }
+
+        return Status(true, "ok");
+    }
+    Status BeginScan(DB* db) override {
+        left_->BeginScan(db);
+        right_->BeginScan(db);
+
+        //initialize left row
+        Status s = left_->NextRow(db, &left_row_);
+        if (!s.Ok())
+            return Status(false, "No more rows");
+
+        return Status(true, "ok");
+    }
+    Status NextRow(DB* db, Row** r) override {
+        Row* right_row;
+
+        while (true) {
+            Status s = right_->NextRow(db, &right_row);
+            if (!s.Ok()) {
+                {
+                    Status s = left_->NextRow(db, &left_row_);
+                    if (!s.Ok())
+                        return Status(false, "No more rows");
+                }
+
+                {
+                    right_->BeginScan(db);
+                    Status s = right_->NextRow(db, &right_row);
+                    if (!s.Ok())
+                        return Status(false, "No more rows");
+                } 
+            }
+
+            {
+                std::vector<Datum> result = left_row_->data_;
+                result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());
+
+                *r = new Row(result);
+                Datum d;
+                Status s = condition_->Eval(*r, &d);
+                if (d.AsBool())
+                    return Status(true, "ok");
+
+            }
+        }
+
+        return Status(false, "Should never see this message");
+    }
+    Status DeletePrev(DB* db) override {
+        return Status(false, "Error: Cannot delete a row from a cross-joined table");
+    }
+    Status UpdatePrev(DB* db, Row* r) override {
+        return Status(false, "Error: Cannot update a row in a cross-joined table");
+    }
+    Status Insert(DB* db, const std::vector<Datum>& data) override {
+        return Status(false, "Error: Cannot insert value into a row in a cross-joined table");
+    }
+private:
+    Row* left_row_;
+    WorkTable* left_;
+    WorkTable* right_;
+    Expr* condition_;
 };
 
 class CrossJoin: public WorkTable {
@@ -482,9 +572,6 @@ public:
 
         return Status(true, "ok");
     }
-    Status EndScan(DB* db) override {
-        return Status(true, "ok");
-    }
     Status DeletePrev(DB* db) override {
         return Status(false, "Error: Cannot delete a row from a cross-joined table");
     }
@@ -526,9 +613,6 @@ public:
     }
     Status UpdatePrev(DB* db, Row* r) override {
         return Status(false, "Error: Cannot update a constant table row");
-    }
-    Status EndScan(DB* db) override {
-        return Status(true, "ok");
     }
     Status Insert(DB* db, const std::vector<Datum>& data) override {
         return Status(false, "Error: Cannot insert value into a constant table row");
@@ -588,9 +672,6 @@ public:
         }
         db_handle_->Put(rocksdb::WriteOptions(), new_key, Datum::SerializeData(r->data_));
         it_->Next();
-        return Status(true, "ok");
-    }
-    Status EndScan(DB* db) override {
         return Status(true, "ok");
     }
     Status Insert(DB* db, const std::vector<Datum>& data) override {

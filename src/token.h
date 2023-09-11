@@ -48,6 +48,8 @@ enum class TokenType {
     As,
     Cross,
     Join,
+    On,
+    Inner,
 
     /* user-defined identifier */
     Identifier,
