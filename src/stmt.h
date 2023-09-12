@@ -12,21 +12,30 @@
 
 namespace wsldb {
 
+    /*
+//Moved class Stmt declaration to expr.h since we need it there,
+//but including stmt.h would cause a circular dependency
 class Stmt {
 public:
-    virtual Status Analyze(DB* db) = 0;
-    virtual Status Execute(DB* db) = 0;
+    Stmt(QueryState* qs): query_state_(qs) {}
+    virtual Status Analyze() = 0;
+    virtual Status Execute() = 0;
     virtual std::string ToString() = 0;
-};
+    inline QueryState* GetQueryState() {
+        return query_state_;
+    }
+private:
+    QueryState* query_state_;
+};*/
 
 class CreateStmt: public Stmt {
 public:
-    CreateStmt(Token target, std::vector<Token> names, std::vector<Token> types, std::vector<Token> primary_keys):
-        target_(target), names_(std::move(names)), types_(std::move(types)), primary_keys_(std::move(primary_keys)) {}
+    CreateStmt(QueryState* qs, Token target, std::vector<Token> names, std::vector<Token> types, std::vector<Token> primary_keys):
+        Stmt(qs), target_(target), names_(std::move(names)), types_(std::move(types)), primary_keys_(std::move(primary_keys)) {}
 
-    Status Analyze(DB* db) override {
+    Status Analyze(std::vector<TokenType>& types) override {
         std::string serialized_schema;
-        if (db->TableSchema(target_.lexeme, &serialized_schema)) {
+        if (GetQueryState()->db->TableSchema(target_.lexeme, &serialized_schema)) {
             return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
         }
 
@@ -54,15 +63,15 @@ public:
         return Status(true, "ok");
     }
 
-    Status Execute(DB* db) override {
+    Status Execute() override {
         Schema schema(target_.lexeme, names_, types_, primary_keys_);
-        db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, schema.Serialize());
+        GetQueryState()->db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, schema.Serialize());
 
         rocksdb::Options options;
         options.create_if_missing = true;
         rocksdb::DB* rel_handle;
-        rocksdb::Status status = rocksdb::DB::Open(options, db->GetTablePath(target_.lexeme), &rel_handle);
-        db->AppendTableHandle(rel_handle);
+        rocksdb::Status status = rocksdb::DB::Open(options, GetQueryState()->db->GetTablePath(target_.lexeme), &rel_handle);
+        GetQueryState()->db->AppendTableHandle(rel_handle);
 
         return Status(true, "CREATE TABLE");
     }
@@ -78,22 +87,24 @@ private:
 
 class InsertStmt: public Stmt {
 public:
-    InsertStmt(WorkTable* target, std::vector<std::vector<Expr*>> values):
-        target_(target), values_(std::move(values)) {}
+    InsertStmt(QueryState* qd, WorkTable* target, std::vector<std::vector<Expr*>> values):
+        Stmt(qd), target_(target), values_(std::move(values)) {}
 
-    Status Analyze(DB* db) override {
+    Status Analyze(std::vector<TokenType>& types) override {
+        AttributeSet* working_attrs;
         {
-            Status s = target_->Analyze(db);
+            Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
                 return s;
+            GetQueryState()->PushAttributeSet(working_attrs);
         }
 
-        std::vector<std::string> tables = target_->GetAttributes().TableNames();
+        std::vector<std::string> tables = working_attrs->TableNames();
         if (tables.size() != 1)
             return Status(false, "Error: Cannot insert into more than one table");
 
         std::string table = tables.at(0);
-        std::vector<Attribute>* attrs = target_->GetAttributes().TableAttributes(table);
+        std::vector<Attribute>* attrs = working_attrs->TableAttributes(table);
 
         for (const std::vector<Expr*>& exprs: values_) {
             if (exprs.size() != attrs->size()) {
@@ -103,7 +114,7 @@ public:
             for (int i = 0; i < exprs.size(); i++) {
                 Expr* e = exprs.at(i);
                 TokenType type;
-                Status s = e->Analyze(target_->GetAttributes(), &type);
+                Status s = e->Analyze(GetQueryState(), &type);
                 if (!s.Ok())
                     return s;
                 Attribute a = attrs->at(i);
@@ -115,7 +126,7 @@ public:
         return Status(true, "ok");
     }
 
-    Status Execute(DB* db) override {
+    Status Execute() override {
         Row dummy_row({});
         for (std::vector<Expr*> exprs: values_) {
             std::vector<Datum> data = std::vector<Datum>();
@@ -126,7 +137,7 @@ public:
 
                 data.push_back(d);
             }
-            Status s = target_->Insert(db, data);
+            Status s = target_->Insert(GetQueryState()->db, data);
             if (!s.Ok())
                 return s;
         }
@@ -144,12 +155,13 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(WorkTable* target, 
+    SelectStmt(QueryState* qd, WorkTable* target, 
                std::vector<Expr*> projs,
                Expr* where_clause, 
                std::vector<OrderCol> order_cols,
                Expr* limit,
                bool remove_duplicates):
+                    Stmt(qd),
                     target_(target),
                     projs_(std::move(projs)),
                     where_clause_(where_clause),
@@ -157,26 +169,29 @@ public:
                     limit_(limit),
                     remove_duplicates_(remove_duplicates) {}
 
-    Status Analyze(DB* db) override {
+    Status Analyze(std::vector<TokenType>& types) override {
+        AttributeSet* working_attrs;
         {
-            Status s = target_->Analyze(db);
+            Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
                 return s;
+            GetQueryState()->PushAttributeSet(working_attrs);
         }
 
         //projection
         for (Expr* e: projs_) {
             TokenType type;
-            Status s = e->Analyze(target_->GetAttributes(), &type);
+            Status s = e->Analyze(GetQueryState(), &type);
             if (!s.Ok()) {
                 return s;
             }
+            types.push_back(type);
         }
 
         //where clause
         {
             TokenType type;
-            Status s = where_clause_->Analyze(target_->GetAttributes(), &type);
+            Status s = where_clause_->Analyze(GetQueryState(), &type);
             if (!s.Ok()) {
                 return s;
             }
@@ -190,14 +205,14 @@ public:
         for (OrderCol oc: order_cols_) {
             {
                 TokenType type;
-                Status s = oc.col->Analyze(target_->GetAttributes(), &type);
+                Status s = oc.col->Analyze(GetQueryState(), &type);
                 if (!s.Ok())
                     return s;
             }
 
             {
                 TokenType type;
-                Status s = oc.asc->Analyze(target_->GetAttributes(), &type);
+                Status s = oc.asc->Analyze(GetQueryState(), &type);
                 if (!s.Ok()) {
                     return s;
                 }
@@ -207,7 +222,7 @@ public:
         //limit
         {
             TokenType type;
-            Status s = limit_->Analyze(target_->GetAttributes(), &type);
+            Status s = limit_->Analyze(GetQueryState(), &type);
             if (!s.Ok()) {
                 return s;
             }
@@ -219,12 +234,12 @@ public:
 
         return Status(true, "ok");
     }
-    Status Execute(DB* db) override {
+    Status Execute() override {
         RowSet* rs = new RowSet();
-        target_->BeginScan(db);
+        target_->BeginScan(GetQueryState()->db);
 
         Row* r;
-        while (target_->NextRow(db, &r).Ok()) {
+        while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
             Datum d;
             Status s = where_clause_->Eval(r, &d);
             if (!s.Ok()) 
@@ -316,7 +331,12 @@ public:
         return Status(true, "(" + std::to_string(final_rs->rows_.size()) + " rows)", final_rs);
     }
     std::string ToString() override {
-        return "select";
+        std::string result = "select ";
+        for (Expr* e: projs_) {
+            result += e->ToString() + " ";
+        }
+        result += "from " + target_->ToString();
+        return result;
     }
 private:
     WorkTable* target_;
@@ -329,18 +349,20 @@ private:
 
 class UpdateStmt: public Stmt {
 public:
-    UpdateStmt(WorkTable* target, std::vector<Expr*> assigns, Expr* where_clause):
-        target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
-    Status Analyze(DB* db) override {
+    UpdateStmt(QueryState* qd, WorkTable* target, std::vector<Expr*> assigns, Expr* where_clause):
+        Stmt(qd), target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
+    Status Analyze(std::vector<TokenType>& types) override {
+        AttributeSet* working_attrs;
         {
-            Status s = target_->Analyze(db);
+            Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
                 return s;
+            GetQueryState()->PushAttributeSet(working_attrs);
         }
 
         {
             TokenType type;
-            Status s = where_clause_->Analyze(target_->GetAttributes(), &type);
+            Status s = where_clause_->Analyze(GetQueryState(), &type);
             if (!s.Ok())
                 return s;
             if (type != TokenType::Bool)
@@ -349,20 +371,20 @@ public:
 
         for (Expr* e: assigns_) {
             TokenType type;
-            Status s = e->Analyze(target_->GetAttributes(), &type);
+            Status s = e->Analyze(GetQueryState(), &type);
             if (!s.Ok())
                 return s;
         }
         
         return Status(true, "ok");
     }
-    Status Execute(DB* db) override {
-        target_->BeginScan(db);
+    Status Execute() override {
+        target_->BeginScan(GetQueryState()->db);
 
         Row* r;
         int update_count = 0;
         Datum d;
-        while (target_->NextRow(db, &r).Ok()) {
+        while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
             Status s = where_clause_->Eval(r, &d);
             if (!s.Ok()) 
                 return s;
@@ -375,7 +397,7 @@ public:
                 if (!s.Ok()) 
                     return s;
             }
-            target_->UpdatePrev(db, r);
+            target_->UpdatePrev(GetQueryState()->db, r);
             update_count++;
         }
 
@@ -392,18 +414,20 @@ private:
 
 class DeleteStmt: public Stmt {
 public:
-    DeleteStmt(WorkTable* target, Expr* where_clause): 
-        target_(target), where_clause_(where_clause) {}
-    Status Analyze(DB* db) override {
+    DeleteStmt(QueryState* qd, WorkTable* target, Expr* where_clause): 
+        Stmt(qd), target_(target), where_clause_(where_clause) {}
+    Status Analyze(std::vector<TokenType>& types) override {
+        AttributeSet* working_attrs;
         {
-            Status s = target_->Analyze(db);
+            Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
                 return s;
+            GetQueryState()->PushAttributeSet(working_attrs);
         }
 
         {
             TokenType type;
-            Status s = where_clause_->Analyze(target_->GetAttributes(), &type);
+            Status s = where_clause_->Analyze(GetQueryState(), &type);
             if (!s.Ok())
                 return s;
             if (type != TokenType::Bool)
@@ -412,13 +436,13 @@ public:
 
         return Status(true, "ok");
     }
-    Status Execute(DB* db) override {
-        target_->BeginScan(db);
+    Status Execute() override {
+        target_->BeginScan(GetQueryState()->db);
 
         Row* r;
         int delete_count = 0;
         Datum d;
-        while (target_->NextRow(db, &r).Ok()) {
+        while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
             Status s = where_clause_->Eval(r, &d);
             if (!s.Ok()) 
                 return s;
@@ -426,7 +450,7 @@ public:
             if (!d.AsBool())
                 continue;
 
-            target_->DeletePrev(db);
+            target_->DeletePrev(GetQueryState()->db);
             delete_count++;
         }
 
@@ -442,20 +466,20 @@ private:
 
 class DropTableStmt: public Stmt {
 public:
-    DropTableStmt(Token target_relation, bool has_if_exists):
-        target_relation_(target_relation), has_if_exists_(has_if_exists) {}
-    Status Analyze(DB* db) override {
+    DropTableStmt(QueryState* qd, Token target_relation, bool has_if_exists):
+        Stmt(qd), target_relation_(target_relation), has_if_exists_(has_if_exists) {}
+    Status Analyze(std::vector<TokenType>& types) override {
         if (!has_if_exists_) {
             std::string serialized_schema;
-            if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
+            if (!GetQueryState()->db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
                 return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
             }
         }
         return Status(true, "ok");
     }
-    Status Execute(DB* db) override {
-        db->Catalogue()->Delete(rocksdb::WriteOptions(), target_relation_.lexeme);
-        bool dropped = db->DropTable(target_relation_.lexeme);
+    Status Execute() override {
+        GetQueryState()->db->Catalogue()->Delete(rocksdb::WriteOptions(), target_relation_.lexeme);
+        bool dropped = GetQueryState()->db->DropTable(target_relation_.lexeme);
         if (dropped) {
             return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");
         } else {
@@ -472,17 +496,17 @@ private:
 
 class DescribeTableStmt: public Stmt {
 public:
-    DescribeTableStmt(Token target_relation): target_relation_(target_relation) {}
-    Status Analyze(DB* db) override {
+    DescribeTableStmt(QueryState* qd, Token target_relation): Stmt(qd), target_relation_(target_relation) {}
+    Status Analyze(std::vector<TokenType>& types) override {
         std::string serialized_schema;
-        if (!db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
+        if (!GetQueryState()->db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
             return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
         }
         return Status(true, "ok");
     }
-    Status Execute(DB* db) override {
+    Status Execute() override {
         std::string serialized_schema;
-        rocksdb::Status status = db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
+        rocksdb::Status status = GetQueryState()->db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
         Schema schema(target_relation_.lexeme, serialized_schema);
 
         std::vector<std::string> tuplefields = std::vector<std::string>();

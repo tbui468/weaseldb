@@ -53,9 +53,10 @@ std::vector<Token> DB::tokenize(const std::string& query) {
 
 std::vector<Stmt*> DB::parse(const std::vector<Token>& tokens) {
     Parser parser(tokens);
-    return parser.ParseStmts();
+    return parser.ParseStmts(this);
 }
 
+//TODO: need to reimplement this since we changed alot during the writing of ExecuteScript
 rocksdb::Status DB::execute(const std::string& query) {
     std::vector<Token> tokens = tokenize(query);
     std::vector<Stmt*> ptree = parse(tokens);
@@ -65,10 +66,11 @@ rocksdb::Status DB::execute(const std::string& query) {
     }*/
 
     for (Stmt* s: ptree) {
-        Status status = s->Analyze(this);
+        std::vector<TokenType> types;
+        Status status = s->Analyze(types);
 
         if (status.Ok())
-            status = s->Execute(this);
+            status = s->Execute();
            
         if (status.Ok()) { 
             RowSet* tupleset = status.Tuples();
@@ -102,10 +104,11 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
     std::vector<Stmt*> ptree = parse(tokens);
 
     for (Stmt* s: ptree) {
-        Status status = s->Analyze(this);
+        std::vector<TokenType> types;
+        Status status = s->Analyze(types);
 
         if (status.Ok()) 
-            status = s->Execute(this);
+            status = s->Execute();
        
         if (status.Ok()) { 
             RowSet* tupleset = status.Tuples();

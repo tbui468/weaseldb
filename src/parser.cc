@@ -5,10 +5,11 @@
 namespace wsldb {
 
 
-std::vector<Stmt*> Parser::ParseStmts() {
+std::vector<Stmt*> Parser::ParseStmts(DB* db) {
     std::vector<Stmt*> stmts = std::vector<Stmt*>();
 
     while (PeekToken().type != TokenType::Eof) {
+        query_state_ = new QueryState(db);
         stmts.push_back(ParseStmt());    
     }
     
@@ -134,6 +135,10 @@ Expr* Parser::ParseOr() {
 }
 
 Expr* Parser::ParseExpr() {
+    if (PeekToken().type == TokenType::Select) {
+        return new ScalarSubquery(ParseStmt());
+    }
+
     return ParseOr();
 }
 
@@ -232,7 +237,7 @@ Stmt* Parser::ParseStmt() {
 
             NextToken();//)
             NextToken();//;
-            return new CreateStmt(target, names, types, pks);
+            return new CreateStmt(query_state_, target, names, types, pks);
         }
         case TokenType::Insert: {
             NextToken(); //into
@@ -246,7 +251,7 @@ Stmt* Parser::ParseStmt() {
                 }
             }
             NextToken(); //;
-            return new InsertStmt(target, values);
+            return new InsertStmt(query_state_, target, values);
         }
         case TokenType::Select: {
             bool remove_duplicates = false;
@@ -267,7 +272,7 @@ Stmt* Parser::ParseStmt() {
                 NextToken(); //from
                 target = ParseWorkTable();
             } else {
-                target = new ConstantTable(target_cols.size());
+                target = new ConstantTable(target_cols);
             }
 
             Expr* where_clause = nullptr;
@@ -303,8 +308,10 @@ Stmt* Parser::ParseStmt() {
                 limit = new Literal(-1); //no limit
             } 
 
-            NextToken(); //;
-            return new SelectStmt(target, target_cols, where_clause, order_cols, limit, remove_duplicates);
+            //if the select statement is a subquery, it will not end with a semicolon
+            if (PeekToken().type == TokenType::SemiColon) 
+                NextToken(); //;
+            return new SelectStmt(query_state_, target, target_cols, where_clause, order_cols, limit, remove_duplicates);
         }
 
         case TokenType::Update: {
@@ -330,7 +337,7 @@ Stmt* Parser::ParseStmt() {
             }
             NextToken(); //;
 
-            return new UpdateStmt(target, assigns, where_clause);
+            return new UpdateStmt(query_state_, target, assigns, where_clause);
         }
         case TokenType::Delete: {
             NextToken(); //from
@@ -344,7 +351,7 @@ Stmt* Parser::ParseStmt() {
                 where_clause = new Literal(true);
             }
             NextToken(); //;
-            return new DeleteStmt(target, where_clause);
+            return new DeleteStmt(query_state_, target, where_clause);
         }
         case TokenType::Drop: {
             NextToken(); //table
@@ -356,13 +363,13 @@ Stmt* Parser::ParseStmt() {
             }
             Token target = NextToken();
             NextToken(); //;
-            return new DropTableStmt(target, has_if_exists);
+            return new DropTableStmt(query_state_, target, has_if_exists);
         }
         case TokenType::Describe: {
             NextToken(); //table
             Token target = NextToken();
             NextToken(); //;
-            return new DescribeTableStmt(target);
+            return new DescribeTableStmt(query_state_, target);
         }
     }
 

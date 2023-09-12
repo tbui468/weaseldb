@@ -64,6 +64,16 @@ struct Attribute {
 
 class AttributeSet {
 public:
+    void AppendAttributes(const std::string& ref_name, std::vector<std::string> names, std::vector<TokenType> types) {
+        std::vector<Attribute>* attrs_vector = new std::vector<Attribute>();
+        for (int i = 0; i < names.size(); i++) {
+            attrs_vector->emplace_back(names.at(i), types.at(i), i + offset_);
+        }
+        attrs_.insert({ ref_name, attrs_vector });
+
+        offset_ += names.size();
+    }
+
     void AppendSchema(Schema* schema, const std::string& ref_name) {
         std::vector<Attribute>* attrs_vector = new std::vector<Attribute>();
         for (int i = 0; i < schema->FieldCount(); i++) {
@@ -129,15 +139,15 @@ public:
         return attrs_.at(table);
     }
 
-    static AttributeSet Concatenate(const AttributeSet& left, const AttributeSet& right) {
-        AttributeSet result;
-        result.attrs_.insert(left.attrs_.begin(), left.attrs_.end());
-        result.attrs_.insert(right.attrs_.begin(), right.attrs_.end());
+    static AttributeSet* Concatenate(AttributeSet* left, AttributeSet* right) {
+        AttributeSet* result = new AttributeSet();
+        result->attrs_.insert(left->attrs_.begin(), left->attrs_.end());
+        result->attrs_.insert(right->attrs_.begin(), right->attrs_.end());
 
         //offset right attributes
-        for (const std::pair<const std::string, std::vector<Attribute>*>& p: right.attrs_) {
+        for (const std::pair<const std::string, std::vector<Attribute>*>& p: right->attrs_) {
             for (Attribute& a: *(p.second)) {
-                a.idx += left.offset_;
+                a.idx += left->offset_;
             }
         }
 

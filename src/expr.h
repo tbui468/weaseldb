@@ -12,12 +12,48 @@
 
 namespace wsldb {
 
+//each query (and any subqueries nested inside) is associated with a single QueryState object
+//this state holds the database handle, and also a stack of attributes for use during semantic analysis
+//in case an inner subquery accesses a column in the outer query.  Similarly, a stack of the outer row(s)
+//is stored during execution in case a subquery needs access to a column in the outer scope.
+struct QueryState {
+public:
+    QueryState(DB* db): db(db) {}
+    DB* db;
+    std::vector<AttributeSet*> attrs;
+    //std::vector<Row*> rows; //need to push rows onto stack when entering suqueries that access outer query data
+    
+public:
+    inline void PushAttributeSet(AttributeSet* as) {
+        attrs.push_back(as);
+    }
+    inline void PopAttributeSet() {
+        attrs.pop_back();
+    }
+};
+
+//Putting class Stmt here since we need it in Expr,
+//but putting it in stmt.h would cause a circular dependency
+class Stmt {
+public:
+    Stmt(QueryState* qs): query_state_(qs) {}
+    virtual Status Analyze(std::vector<TokenType>& types) = 0;
+    virtual Status Execute() = 0;
+    virtual std::string ToString() = 0;
+    inline QueryState* GetQueryState() {
+        return query_state_;
+    }
+private:
+    QueryState* query_state_;
+};
+
+
 class Expr {
 public:
     virtual Status Eval(RowSet* rs, std::vector<Datum>& output) = 0;
     virtual inline Status Eval(Row* r, Datum* result) = 0;
     virtual std::string ToString() = 0;
-    virtual Status Analyze(const AttributeSet& as, TokenType* evaluated_type) = 0;
+    virtual Status Analyze(QueryState* qs, TokenType* evaluated_type) = 0;
 };
 
 class Literal: public Expr {
@@ -42,7 +78,7 @@ public:
     std::string ToString() override {
         return t_.lexeme;
     }
-    Status Analyze(const AttributeSet& as, TokenType* evaluated_type) override {
+    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
         *evaluated_type = Datum(t_).Type();
         return Status(true, "ok");
     }
@@ -95,16 +131,16 @@ public:
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
     }
-    Status Analyze(const AttributeSet& as, TokenType* evaluated_type) override {
+    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
         TokenType left_type;
         {
-            Status s = left_->Analyze(as, &left_type);
+            Status s = left_->Analyze(qs, &left_type);
             if (!s.Ok())
                 return s;
         }
         TokenType right_type;
         {
-            Status s = right_->Analyze(as, &right_type);
+            Status s = right_->Analyze(qs, &right_type);
             if (!s.Ok())
                 return s;
         }
@@ -188,10 +224,10 @@ public:
     std::string ToString() override {
         return "(" + op_.lexeme + " " + right_->ToString() + ")";
     }
-    Status Analyze(const AttributeSet& as, TokenType* evaluated_type) override {
+    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
         TokenType type;
         {
-            Status s = right_->Analyze(as, &type);
+            Status s = right_->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
         }
@@ -243,9 +279,10 @@ public:
     std::string ToString() override {
         return t_.lexeme;
     }
-    Status Analyze(const AttributeSet& as, TokenType* evaluated_type) override {
+    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
         if (table_ref_ == "")  {//replace with default table name only if explicit table reference not provided
-            std::vector<std::string> tables = as.FindUniqueTablesWithCol(t_.lexeme);
+            //TODO: assuming reference is in top-most AttributeSet
+            std::vector<std::string> tables = qs->attrs.at(0)->FindUniqueTablesWithCol(t_.lexeme);
             if (tables.size() > 1) {
                 return Status(false, "Error: Column '" + t_.lexeme + "' can refer to columns in muliple tables.");
             } else if (tables.empty()) {
@@ -255,11 +292,14 @@ public:
             }
         }
 
-        if (!as.Contains(table_ref_, t_.lexeme)) {
+
+        //TODO: assuming reference is in top-most AttributeSet
+        if (!qs->attrs.at(0)->Contains(table_ref_, t_.lexeme)) {
             return Status(false, "Error: Column '" + t_.lexeme + "' does not exist");
         }
 
-        Attribute a = as.GetAttribute(table_ref_, t_.lexeme);
+        //TODO: assuming reference is in top-most AttributeSet
+        Attribute a = qs->attrs.at(0)->GetAttribute(table_ref_, t_.lexeme);
         idx_ = a.idx;
         *evaluated_type = a.type;
 
@@ -297,15 +337,16 @@ public:
     std::string ToString() override {
         return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
     }
-    Status Analyze(const AttributeSet& as, TokenType* evaluated_type) override {
+    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
         TokenType type;
         {
-            Status s = right_->Analyze(as, &type);
+            Status s = right_->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
         }
 
-        std::vector<std::string> tables = as.FindUniqueTablesWithCol(col_.lexeme);
+        //TODO: assuming reference is in top-most AttributeSet
+        std::vector<std::string> tables = qs->attrs.at(0)->FindUniqueTablesWithCol(col_.lexeme);
         if (tables.size() > 1) {
             return Status(false, "Error: Column '" + col_.lexeme + "' can refer to columns in muliple tables.");
         } else if (tables.empty()) {
@@ -314,11 +355,13 @@ public:
 
         std::string table_ref = tables.at(0);
 
-        if (!as.Contains(table_ref, col_.lexeme)) {
+        //TODO: assuming reference is in top-most AttributeSet
+        if (!qs->attrs.at(0)->Contains(table_ref, col_.lexeme)) {
             return Status(false, "Error: Column '" + col_.lexeme + "' does not exist");
         }
 
-        Attribute a = as.GetAttribute(table_ref, col_.lexeme);
+        //TODO: assuming reference is in top-most AttributeSet
+        Attribute a = qs->attrs.at(0)->GetAttribute(table_ref, col_.lexeme);
         idx_ = a.idx;
         *evaluated_type = a.type;
 
@@ -396,9 +439,9 @@ public:
     std::string ToString() override {
         return fcn_.lexeme + arg_->ToString();
     }
-    Status Analyze(const AttributeSet& as, TokenType* evaluated_type) override {
+    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
         {
-            Status s = arg_->Analyze(as, evaluated_type);
+            Status s = arg_->Analyze(qs, evaluated_type);
             if (!s.Ok()) {
                 return s;
             }
@@ -413,40 +456,107 @@ private:
     Expr* arg_;
 };
 
+class ScalarSubquery: public Expr {
+public:
+    ScalarSubquery(Stmt* stmt): stmt_(stmt) {}
+    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
+        //TODO: should run the subquery here rather than in Eval(Row*, Datum*)
+        //if it's not a correlated subquery to avoid unecessary evaluation
+        //The result can be cached and reused
+
+        Datum d;
+        for (Row* r: rs->rows_) {
+            Status s = Eval(r, &d);
+            if (!s.Ok()) return s;
+
+            output.push_back(d);
+        } 
+
+        return Status(true, "ok");
+    }
+    inline Status Eval(Row* r, Datum* result) override {
+        //run the stmt_ here if correlated subquery
+        Status s = stmt_->Execute();
+        if (!s.Ok())
+            return s;
+
+        RowSet* rs = s.Tuples();
+        if (rs->rows_.size() != 1)
+            return Status(false, "Error: Subquery must produce a single row");
+
+        if (rs->rows_.at(0)->data_.size() != 1)
+            return Status(false, "Error: Subquery row must contain a single column");
+
+        *result = rs->rows_.at(0)->data_.at(0);
+
+        return Status(true, "ok");
+    }
+    std::string ToString() override {
+        return "scalar subquery";
+    }
+    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+        std::vector<TokenType> types;
+        {
+            Status s = stmt_->Analyze(types);
+            if (!s.Ok())
+                return s;
+        }
+
+        //TODO: this should be taken from GetQueryState()->attrs
+        //at this point we don't know if the working table is a constant or physical or other table type
+        //so how can we set *evaluated_type for type checking?
+        if (types.size() != 1)
+            return Status(false, "Error: Scalar subquery must return a single value");
+
+        *evaluated_type = types.at(0);
+
+        return Status(true, "ok");
+    }
+private:
+    Stmt* stmt_;
+};
+
 class WorkTable {
 public:
-    virtual Status Analyze(DB* db) = 0;
+    virtual Status Analyze(QueryState* qs, AttributeSet** working_attrs) = 0;
     virtual Status BeginScan(DB* db) = 0;
     virtual Status NextRow(DB* db, Row** r) = 0;
+    //DeletePrev, UpdatePrev, Insert are really strange in this case
+    //since most WorkTables will not use them (only Physical Table will need it)
     virtual Status DeletePrev(DB* db) = 0;
     virtual Status UpdatePrev(DB* db, Row* r) = 0;
     virtual Status Insert(DB* db, const std::vector<Datum>& data) = 0;
-    const AttributeSet& GetAttributes() const {
-        return attr_set_;
-    }
-protected:
-    AttributeSet attr_set_;
+    virtual std::string ToString() const = 0;
 };
 
 class InnerJoin: public WorkTable {
 public:
     InnerJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    Status Analyze(DB* db) override {
+    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
+        AttributeSet* left_attrs;
         {
-            Status s = left_->Analyze(db);
+            Status s = left_->Analyze(qs, &left_attrs);
             if (!s.Ok())
                 return s;
         }
-        {
-            Status s = right_->Analyze(db);
-            if (!s.Ok())
-                return s;
-        }
-        attr_set_ = AttributeSet::Concatenate(left_->GetAttributes(), right_->GetAttributes());
 
+        AttributeSet* right_attrs;
+        {
+            Status s = right_->Analyze(qs, &right_attrs);
+            if (!s.Ok())
+                return s;
+        }
+
+        *working_attrs = AttributeSet::Concatenate(left_attrs, right_attrs);
+
+        //Need to put current attributeset into QueryState temporarily so that Expr::Analyze
+        //can use that data to perform semantic analysis for 'on' clause.  Normally Expr::Analyze is only
+        //called once entire WorkTable is Analyzed an at least a single AttributeSet is in QueryState,
+        //but InnerJoins have an Expr embedded as part of the WorkTable (the 'on' clause), so this is needed
+        qs->PushAttributeSet(*working_attrs);
         {
             TokenType type;
-            Status s = condition_->Analyze(attr_set_, &type);
+            Status s = condition_->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
 
@@ -454,6 +564,7 @@ public:
                 return Status(false, "Error: Inner join condition must evaluate to a boolean type");
             }
         }
+        qs->PopAttributeSet();
 
         return Status(true, "ok");
     }
@@ -512,6 +623,9 @@ public:
     Status Insert(DB* db, const std::vector<Datum>& data) override {
         return Status(false, "Error: Cannot insert value into a row in a cross-joined table");
     }
+    std::string ToString() const override {
+        return "inner join";
+    }
 private:
     Row* left_row_;
     WorkTable* left_;
@@ -522,18 +636,22 @@ private:
 class CrossJoin: public WorkTable {
 public:
     CrossJoin(WorkTable* left, WorkTable* right): left_(left), right_(right), left_row_(nullptr) {}
-    Status Analyze(DB* db) override {
+    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
+        AttributeSet* left_attrs;
         {
-            Status s = left_->Analyze(db);
+            Status s = left_->Analyze(qs, &left_attrs);
             if (!s.Ok())
                 return s;
         }
+
+        AttributeSet* right_attrs;
         {
-            Status s = right_->Analyze(db);
+            Status s = right_->Analyze(qs, &right_attrs);
             if (!s.Ok())
                 return s;
         }
-        attr_set_ = AttributeSet::Concatenate(left_->GetAttributes(), right_->GetAttributes());
+
+        *working_attrs = AttributeSet::Concatenate(left_attrs, right_attrs);
 
         return Status(true, "ok");
     }
@@ -581,6 +699,9 @@ public:
     Status Insert(DB* db, const std::vector<Datum>& data) override {
         return Status(false, "Error: Cannot insert value into a row in a cross-joined table");
     }
+    std::string ToString() const override {
+        return "cross join";
+    }
 private:
     Row* left_row_;
     WorkTable* left_;
@@ -589,11 +710,26 @@ private:
 
 class ConstantTable: public WorkTable {
 public:
-    ConstantTable(int target_cols): target_cols_(target_cols), cur_(0) {}
-    Status Analyze(DB* db) override {
+    ConstantTable(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
+    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
+        std::vector<std::string> names;
+        std::vector<TokenType> types;
+        for (Expr* e: target_cols_) {
+            TokenType type;
+            Status s = e->Analyze(qs, &type);      
+            if (!s.Ok())
+                return s;
+            names.push_back("?col?");
+            types.push_back(type);
+        }
+
+        *working_attrs = new AttributeSet();
+        (*working_attrs)->AppendAttributes("?table?", names, types);
+
         return Status(true, "ok");
     }
     Status BeginScan(DB* db) override {
+        cur_ = 0;
         return Status(true, "ok");
     }
     Status NextRow(DB* db, Row** r) override {
@@ -601,7 +737,7 @@ public:
             return Status(false, "No more rows");
 
         std::vector<Datum> data;
-        for (int i = 0; i < target_cols_; i++) {
+        for (int i = 0; i < target_cols_.size(); i++) {
             data.emplace_back(0);
         }
         *r = new Row(data);
@@ -617,9 +753,12 @@ public:
     Status Insert(DB* db, const std::vector<Datum>& data) override {
         return Status(false, "Error: Cannot insert value into a constant table row");
     }
+    std::string ToString() const override {
+        return "constant table";
+    }
 private:
     int cur_;
-    int target_cols_;
+    std::vector<Expr*> target_cols_;
 };
 
 //TODO: should rename to PhysicalTable
@@ -628,16 +767,17 @@ public:
     Physical(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
     //if an alias is not provided, the reference name is the same as the physical table name
     Physical(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
-    Status Analyze(DB* db) override {
+    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
         std::string serialized_schema;
-        if (!db->TableSchema(tab_name_, &serialized_schema)) {
+        if (!qs->db->TableSchema(tab_name_, &serialized_schema)) {
             return Status(false, "Error: Table '" + tab_name_ + "' does not exist");
         }
         schema_ = new Schema(tab_name_, serialized_schema);
 
-        db_handle_ = db->GetTableHandle(tab_name_);
+        db_handle_ = qs->db->GetTableHandle(tab_name_);
 
-        attr_set_.AppendSchema(schema_, ref_name_);
+        *working_attrs = new AttributeSet();
+        (*working_attrs)->AppendSchema(schema_, ref_name_);
 
         return Status(true, "ok");
     }
@@ -687,6 +827,9 @@ public:
 
         tab_handle->Put(rocksdb::WriteOptions(), key, value);
         return Status(true, "ok");
+    }
+    std::string ToString() const override {
+        return "physical table";
     }
 private:
     std::string tab_name_;
