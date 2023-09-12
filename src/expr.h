@@ -282,7 +282,7 @@ public:
     Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
         if (table_ref_ == "")  {//replace with default table name only if explicit table reference not provided
             //TODO: assuming reference is in top-most AttributeSet
-            std::vector<std::string> tables = qs->attrs.at(0)->FindUniqueTablesWithCol(t_.lexeme);
+            std::vector<std::string> tables = qs->attrs.back()->FindUniqueTablesWithCol(t_.lexeme);
             if (tables.size() > 1) {
                 return Status(false, "Error: Column '" + t_.lexeme + "' can refer to columns in muliple tables.");
             } else if (tables.empty()) {
@@ -294,12 +294,12 @@ public:
 
 
         //TODO: assuming reference is in top-most AttributeSet
-        if (!qs->attrs.at(0)->Contains(table_ref_, t_.lexeme)) {
+        if (!qs->attrs.back()->Contains(table_ref_, t_.lexeme)) {
             return Status(false, "Error: Column '" + t_.lexeme + "' does not exist");
         }
 
         //TODO: assuming reference is in top-most AttributeSet
-        Attribute a = qs->attrs.at(0)->GetAttribute(table_ref_, t_.lexeme);
+        Attribute a = qs->attrs.back()->GetAttribute(table_ref_, t_.lexeme);
         idx_ = a.idx;
         *evaluated_type = a.type;
 
@@ -346,7 +346,7 @@ public:
         }
 
         //TODO: assuming reference is in top-most AttributeSet
-        std::vector<std::string> tables = qs->attrs.at(0)->FindUniqueTablesWithCol(col_.lexeme);
+        std::vector<std::string> tables = qs->attrs.back()->FindUniqueTablesWithCol(col_.lexeme);
         if (tables.size() > 1) {
             return Status(false, "Error: Column '" + col_.lexeme + "' can refer to columns in muliple tables.");
         } else if (tables.empty()) {
@@ -356,12 +356,12 @@ public:
         std::string table_ref = tables.at(0);
 
         //TODO: assuming reference is in top-most AttributeSet
-        if (!qs->attrs.at(0)->Contains(table_ref, col_.lexeme)) {
+        if (!qs->attrs.back()->Contains(table_ref, col_.lexeme)) {
             return Status(false, "Error: Column '" + col_.lexeme + "' does not exist");
         }
 
         //TODO: assuming reference is in top-most AttributeSet
-        Attribute a = qs->attrs.at(0)->GetAttribute(table_ref, col_.lexeme);
+        Attribute a = qs->attrs.back()->GetAttribute(table_ref, col_.lexeme);
         idx_ = a.idx;
         *evaluated_type = a.type;
 
