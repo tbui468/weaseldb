@@ -20,16 +20,30 @@ struct QueryState {
 public:
     QueryState(DB* db): db(db) {}
     DB* db;
-    std::vector<AttributeSet*> attrs;
+
     //std::vector<Row*> rows; //need to push rows onto stack when entering suqueries that access outer query data
     
-public:
-    inline void PushAttributeSet(AttributeSet* as) {
-        attrs.push_back(as);
+    /*
+    bool Contains(const std::string& table, const std::string& col) const;
+    Attribute GetAttribute(const std::string& table, const std::string& col) const;
+    std::vector<std::string> TableNames() const;*/
+
+    //if multiple columns
+
+    //should this give an error?
+    //select name, 
+
+    inline AttributeSet* AnalysisScopesTop() {
+        return analysis_scopes_.back();
     }
-    inline void PopAttributeSet() {
-        attrs.pop_back();
+    inline void PushAnalysisScope(AttributeSet* as) {
+        analysis_scopes_.push_back(as);
     }
+    inline void PopAnalysisScope() {
+        analysis_scopes_.pop_back();
+    }
+private:
+    std::vector<AttributeSet*> analysis_scopes_;
 };
 
 //Putting class Stmt here since we need it in Expr,
@@ -282,7 +296,12 @@ public:
     Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
         if (table_ref_ == "")  {//replace with default table name only if explicit table reference not provided
             //TODO: assuming reference is in top-most AttributeSet
-            std::vector<std::string> tables = qs->attrs.back()->FindUniqueTablesWithCol(t_.lexeme);
+            std::vector<std::string> tables;
+            for (const std::string& name: qs->AnalysisScopesTop()->TableNames()) {
+                if (qs->AnalysisScopesTop()->Contains(name, t_.lexeme))
+                    tables.push_back(name);
+            }
+
             if (tables.size() > 1) {
                 return Status(false, "Error: Column '" + t_.lexeme + "' can refer to columns in muliple tables.");
             } else if (tables.empty()) {
@@ -294,12 +313,12 @@ public:
 
 
         //TODO: assuming reference is in top-most AttributeSet
-        if (!qs->attrs.back()->Contains(table_ref_, t_.lexeme)) {
+        if (!qs->AnalysisScopesTop()->Contains(table_ref_, t_.lexeme)) {
             return Status(false, "Error: Column '" + t_.lexeme + "' does not exist");
         }
 
         //TODO: assuming reference is in top-most AttributeSet
-        Attribute a = qs->attrs.back()->GetAttribute(table_ref_, t_.lexeme);
+        Attribute a = qs->AnalysisScopesTop()->GetAttribute(table_ref_, t_.lexeme);
         idx_ = a.idx;
         *evaluated_type = a.type;
 
@@ -346,7 +365,12 @@ public:
         }
 
         //TODO: assuming reference is in top-most AttributeSet
-        std::vector<std::string> tables = qs->attrs.back()->FindUniqueTablesWithCol(col_.lexeme);
+        std::vector<std::string> tables;
+        for (const std::string& name: qs->AnalysisScopesTop()->TableNames()) {
+            if (qs->AnalysisScopesTop()->Contains(name, col_.lexeme))
+                tables.push_back(name);
+        }
+
         if (tables.size() > 1) {
             return Status(false, "Error: Column '" + col_.lexeme + "' can refer to columns in muliple tables.");
         } else if (tables.empty()) {
@@ -356,12 +380,12 @@ public:
         std::string table_ref = tables.at(0);
 
         //TODO: assuming reference is in top-most AttributeSet
-        if (!qs->attrs.back()->Contains(table_ref, col_.lexeme)) {
+        if (!qs->AnalysisScopesTop()->Contains(table_ref, col_.lexeme)) {
             return Status(false, "Error: Column '" + col_.lexeme + "' does not exist");
         }
 
         //TODO: assuming reference is in top-most AttributeSet
-        Attribute a = qs->attrs.back()->GetAttribute(table_ref, col_.lexeme);
+        Attribute a = qs->AnalysisScopesTop()->GetAttribute(table_ref, col_.lexeme);
         idx_ = a.idx;
         *evaluated_type = a.type;
 
@@ -547,13 +571,17 @@ public:
                 return s;
         }
 
-        *working_attrs = AttributeSet::Concatenate(left_attrs, right_attrs);
+        {
+            Status s = AttributeSet::Concatenate(working_attrs, left_attrs, right_attrs);
+            if (!s.Ok())
+                return s;
+        }
 
         //Need to put current attributeset into QueryState temporarily so that Expr::Analyze
         //can use that data to perform semantic analysis for 'on' clause.  Normally Expr::Analyze is only
         //called once entire WorkTable is Analyzed an at least a single AttributeSet is in QueryState,
         //but InnerJoins have an Expr embedded as part of the WorkTable (the 'on' clause), so this is needed
-        qs->PushAttributeSet(*working_attrs);
+        qs->PushAnalysisScope(*working_attrs);
         {
             TokenType type;
             Status s = condition_->Analyze(qs, &type);
@@ -564,7 +592,7 @@ public:
                 return Status(false, "Error: Inner join condition must evaluate to a boolean type");
             }
         }
-        qs->PopAttributeSet();
+        qs->PopAnalysisScope();
 
         return Status(true, "ok");
     }
@@ -651,7 +679,11 @@ public:
                 return s;
         }
 
-        *working_attrs = AttributeSet::Concatenate(left_attrs, right_attrs);
+        {
+            Status s = AttributeSet::Concatenate(working_attrs, left_attrs, right_attrs);
+            if (!s.Ok())
+                return s;
+        }
 
         return Status(true, "ok");
     }

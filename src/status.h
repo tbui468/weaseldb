@@ -1,8 +1,8 @@
 #pragma once
 
-#include "row.h"
-
 namespace wsldb {
+
+class RowSet;
 
 class Status {
 public:

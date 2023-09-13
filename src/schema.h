@@ -5,6 +5,7 @@
 #include <cassert>
 #include "token.h"
 #include "datum.h"
+#include "status.h"
 
 namespace wsldb {
 
@@ -69,6 +70,11 @@ public:
         for (int i = 0; i < names.size(); i++) {
             attrs_vector->emplace_back(names.at(i), types.at(i), i + offset_);
         }
+
+        if (attrs_.find(ref_name) != attrs_.end()) {
+            std::cout << "table reference already exists\n";
+        }
+
         attrs_.insert({ ref_name, attrs_vector });
 
         offset_ += names.size();
@@ -79,6 +85,11 @@ public:
         for (int i = 0; i < schema->FieldCount(); i++) {
             attrs_vector->emplace_back(schema->Name(i), schema->Type(i), i + offset_);
         }
+
+        if (attrs_.find(ref_name) != attrs_.end()) {
+            std::cout << "table reference already exists\n";
+        }
+
         attrs_.insert({ ref_name, attrs_vector });
 
         offset_ += schema->FieldCount();
@@ -110,21 +121,6 @@ public:
         return {"", TokenType::Int4, 0}; //keep compiler quiet
     }
 
-    //TODO: caller can just get list of tables with 'TableNames', and use 'Contains' function to check for uniqueness
-    //This is really a composite of those two functions and can be removed
-    std::vector<std::string> FindUniqueTablesWithCol(const std::string& col) const {
-        std::vector<std::string> result;
-
-        for (const std::pair<const std::string, std::vector<Attribute>*>& p: attrs_) {
-            for (Attribute a: *(p.second)) {
-                if (a.name.compare(col) == 0)
-                    result.push_back(p.first);
-            }
-        }
-
-        return result;
-    }
-
     std::vector<std::string> TableNames() const {
         std::vector<std::string> result;
 
@@ -139,10 +135,17 @@ public:
         return attrs_.at(table);
     }
 
-    static AttributeSet* Concatenate(AttributeSet* left, AttributeSet* right) {
-        AttributeSet* result = new AttributeSet();
-        result->attrs_.insert(left->attrs_.begin(), left->attrs_.end());
-        result->attrs_.insert(right->attrs_.begin(), right->attrs_.end());
+    static Status Concatenate(AttributeSet** result, AttributeSet* left, AttributeSet* right) {
+        *result = new AttributeSet();
+
+        for (const std::pair<const std::string, std::vector<Attribute>*>& p: left->attrs_) {
+            if (right->attrs_.find(p.first) != right->attrs_.end()) {
+                return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
+            }
+        }
+
+        (*result)->attrs_.insert(left->attrs_.begin(), left->attrs_.end());
+        (*result)->attrs_.insert(right->attrs_.begin(), right->attrs_.end());
 
         //offset right attributes
         for (const std::pair<const std::string, std::vector<Attribute>*>& p: right->attrs_) {
@@ -151,7 +154,7 @@ public:
             }
         }
 
-        return result;
+        return Status(true, "ok");
     };
 
 public:

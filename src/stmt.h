@@ -12,21 +12,8 @@
 
 namespace wsldb {
 
-    /*
 //Moved class Stmt declaration to expr.h since we need it there,
 //but including stmt.h would cause a circular dependency
-class Stmt {
-public:
-    Stmt(QueryState* qs): query_state_(qs) {}
-    virtual Status Analyze() = 0;
-    virtual Status Execute() = 0;
-    virtual std::string ToString() = 0;
-    inline QueryState* GetQueryState() {
-        return query_state_;
-    }
-private:
-    QueryState* query_state_;
-};*/
 
 class CreateStmt: public Stmt {
 public:
@@ -96,7 +83,7 @@ public:
             Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
                 return s;
-            GetQueryState()->PushAttributeSet(working_attrs);
+            GetQueryState()->PushAnalysisScope(working_attrs);
         }
 
         std::vector<std::string> tables = working_attrs->TableNames();
@@ -122,6 +109,8 @@ public:
                     return Status(false, "Error: Value type does not match type in schema on record");
             }
         }
+
+        GetQueryState()->PopAnalysisScope();
 
         return Status(true, "ok");
     }
@@ -175,7 +164,7 @@ public:
             Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
                 return s;
-            GetQueryState()->PushAttributeSet(working_attrs);
+            GetQueryState()->PushAnalysisScope(working_attrs);
         }
 
         //projection
@@ -231,6 +220,8 @@ public:
                 return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
             }
         }
+
+        GetQueryState()->PopAnalysisScope();
 
         return Status(true, "ok");
     }
@@ -357,7 +348,7 @@ public:
             Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
                 return s;
-            GetQueryState()->PushAttributeSet(working_attrs);
+            GetQueryState()->PushAnalysisScope(working_attrs);
         }
 
         {
@@ -375,6 +366,8 @@ public:
             if (!s.Ok())
                 return s;
         }
+
+        GetQueryState()->PopAnalysisScope();
         
         return Status(true, "ok");
     }
@@ -422,7 +415,7 @@ public:
             Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
                 return s;
-            GetQueryState()->PushAttributeSet(working_attrs);
+            GetQueryState()->PushAnalysisScope(working_attrs);
         }
 
         {
@@ -433,6 +426,8 @@ public:
             if (type != TokenType::Bool)
                 return Status(false, "Error: 'where' clause must evaluated to a boolean value");
         }
+
+        GetQueryState()->PopAnalysisScope();
 
         return Status(true, "ok");
     }
