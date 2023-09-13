@@ -118,7 +118,7 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
         }
 
         //disabling status messages for tests
-        std::cout << status.Msg() << std::endl;
+        //std::cout << status.Msg() << std::endl;
     }
 
     return Status(true, "ok");

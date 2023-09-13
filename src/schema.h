@@ -5,7 +5,6 @@
 #include <cassert>
 #include "token.h"
 #include "datum.h"
-#include "status.h"
 
 namespace wsldb {
 
@@ -57,22 +56,19 @@ private:
 };
 
 struct Attribute {
-    Attribute(std::string name, TokenType type, int idx): name(name), type(type), idx(idx) {}
+    Attribute(std::string name, TokenType type, int idx): name(name), type(type), idx(idx), scope(-1) {}
     std::string name;
     TokenType type;
     int idx;
+    int scope; //default is -1.  Should be filled in with correct relative scope position during semantic analysis phase
 };
 
 class AttributeSet {
 public:
-    void AppendAttributes(const std::string& ref_name, std::vector<std::string> names, std::vector<TokenType> types) {
+    AttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<TokenType> types) {
         std::vector<Attribute>* attrs_vector = new std::vector<Attribute>();
         for (int i = 0; i < names.size(); i++) {
             attrs_vector->emplace_back(names.at(i), types.at(i), i + offset_);
-        }
-
-        if (attrs_.find(ref_name) != attrs_.end()) {
-            std::cout << "table reference already exists\n";
         }
 
         attrs_.insert({ ref_name, attrs_vector });
@@ -80,14 +76,10 @@ public:
         offset_ += names.size();
     }
 
-    void AppendSchema(Schema* schema, const std::string& ref_name) {
+    AttributeSet(Schema* schema, const std::string& ref_name) {
         std::vector<Attribute>* attrs_vector = new std::vector<Attribute>();
         for (int i = 0; i < schema->FieldCount(); i++) {
             attrs_vector->emplace_back(schema->Name(i), schema->Type(i), i + offset_);
-        }
-
-        if (attrs_.find(ref_name) != attrs_.end()) {
-            std::cout << "table reference already exists\n";
         }
 
         attrs_.insert({ ref_name, attrs_vector });
@@ -95,9 +87,28 @@ public:
         offset_ += schema->FieldCount();
     }
 
-    void AppendSchema(Schema* schema) {
-        AppendSchema(schema, schema->TableName());
+    AttributeSet(AttributeSet* left, AttributeSet* right, bool* has_duplicate_tables) {
+        for (const std::pair<const std::string, std::vector<Attribute>*>& p: left->attrs_) {
+            if (right->attrs_.find(p.first) != right->attrs_.end()) {
+                *has_duplicate_tables = true;
+            }
+        }
+
+        attrs_.insert(left->attrs_.begin(), left->attrs_.end());
+        attrs_.insert(right->attrs_.begin(), right->attrs_.end());
+
+        //offset right attributes
+        for (const std::pair<const std::string, std::vector<Attribute>*>& p: right->attrs_) {
+            for (Attribute& a: *(p.second)) {
+                a.idx += left->offset_;
+            }
+        }
+
+        *has_duplicate_tables = false;
+        offset_ += right->offset_;
     }
+
+    AttributeSet(Schema* schema): AttributeSet(schema, schema->TableName()) {}
 
     bool Contains(const std::string& table, const std::string& col) const {
         if (attrs_.find(table) == attrs_.end())
@@ -134,28 +145,6 @@ public:
     std::vector<Attribute>* TableAttributes(const std::string& table) const {
         return attrs_.at(table);
     }
-
-    static Status Concatenate(AttributeSet** result, AttributeSet* left, AttributeSet* right) {
-        *result = new AttributeSet();
-
-        for (const std::pair<const std::string, std::vector<Attribute>*>& p: left->attrs_) {
-            if (right->attrs_.find(p.first) != right->attrs_.end()) {
-                return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
-            }
-        }
-
-        (*result)->attrs_.insert(left->attrs_.begin(), left->attrs_.end());
-        (*result)->attrs_.insert(right->attrs_.begin(), right->attrs_.end());
-
-        //offset right attributes
-        for (const std::pair<const std::string, std::vector<Attribute>*>& p: right->attrs_) {
-            for (Attribute& a: *(p.second)) {
-                a.idx += left->offset_;
-            }
-        }
-
-        return Status(true, "ok");
-    };
 
 public:
     std::unordered_map<std::string, std::vector<Attribute>*> attrs_;

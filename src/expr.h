@@ -22,6 +22,13 @@ public:
     DB* db;
 
     //std::vector<Row*> rows; //need to push rows onto stack when entering suqueries that access outer query data
+    bool Contains(const std::string& table, const std::string& col) const {
+        //
+    }
+
+    Attribute GetAttribute(const std::string& table, const std::string& col) const {
+        //Note: must fill in Attribute.scope depending how far down the analysis stack the column reference was found
+    }
     
     /*
     bool Contains(const std::string& table, const std::string& col) const;
@@ -572,9 +579,10 @@ public:
         }
 
         {
-            Status s = AttributeSet::Concatenate(working_attrs, left_attrs, right_attrs);
-            if (!s.Ok())
-                return s;
+            bool has_duplicate_tables;
+            *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+            if (has_duplicate_tables)
+                return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
         }
 
         //Need to put current attributeset into QueryState temporarily so that Expr::Analyze
@@ -680,9 +688,10 @@ public:
         }
 
         {
-            Status s = AttributeSet::Concatenate(working_attrs, left_attrs, right_attrs);
-            if (!s.Ok())
-                return s;
+            bool has_duplicate_tables;
+            *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+            if (has_duplicate_tables)
+                return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
         }
 
         return Status(true, "ok");
@@ -755,8 +764,7 @@ public:
             types.push_back(type);
         }
 
-        *working_attrs = new AttributeSet();
-        (*working_attrs)->AppendAttributes("?table?", names, types);
+        *working_attrs = new AttributeSet("?table?", names, types);
 
         return Status(true, "ok");
     }
@@ -808,8 +816,7 @@ public:
 
         db_handle_ = qs->db->GetTableHandle(tab_name_);
 
-        *working_attrs = new AttributeSet();
-        (*working_attrs)->AppendSchema(schema_, ref_name_);
+        *working_attrs = new AttributeSet(schema_, ref_name_);
 
         return Status(true, "ok");
     }
