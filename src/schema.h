@@ -56,6 +56,7 @@ private:
 };
 
 struct Attribute {
+    Attribute(): name(""), type(TokenType::Int4), idx(-1), scope(-1) {} //placeholders
     Attribute(std::string name, TokenType type, int idx): name(name), type(type), idx(idx), scope(-1) {}
     std::string name;
     TokenType type;

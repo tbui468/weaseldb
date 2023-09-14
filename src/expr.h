@@ -18,29 +18,11 @@ namespace wsldb {
 //is stored during execution in case a subquery needs access to a column in the outer scope.
 struct QueryState {
 public:
-    QueryState(DB* db): db(db) {}
-    DB* db;
-
-    //std::vector<Row*> rows; //need to push rows onto stack when entering suqueries that access outer query data
-    bool Contains(const std::string& table, const std::string& col) const {
-        //
+    QueryState(DB* db): db(db) {
+        ResetAggState();
     }
 
-    Attribute GetAttribute(const std::string& table, const std::string& col) const {
-        //Note: must fill in Attribute.scope depending how far down the analysis stack the column reference was found
-    }
-    
-    /*
-    bool Contains(const std::string& table, const std::string& col) const;
-    Attribute GetAttribute(const std::string& table, const std::string& col) const;
-    std::vector<std::string> TableNames() const;*/
-
-    //if multiple columns
-
-    //should this give an error?
-    //select name, 
-
-    inline AttributeSet* AnalysisScopesTop() {
+    inline AttributeSet* AnalysisScopesTop() const {
         return analysis_scopes_.back();
     }
     inline void PushAnalysisScope(AttributeSet* as) {
@@ -49,8 +31,73 @@ public:
     inline void PopAnalysisScope() {
         analysis_scopes_.pop_back();
     }
+    
+    inline Row* ExecutionScopeAt(int scope) {
+        return execution_scopes_.at(execution_scopes_.size() - 1 - scope);
+    }
+    inline void PushExecutionScope(Row* r) {
+        execution_scopes_.push_back(r);
+    }
+    inline void PopExecutionScope() {
+        execution_scopes_.pop_back();
+    }
+
+    inline void ResetAggState() {
+        first_ = true;
+        sum_ = Datum(0);
+        count_ = Datum(0);
+    }
+
+    Status GetAttribute(Attribute* attr, const std::string& table_ref_param, const std::string& col) const {
+        for (int i = analysis_scopes_.size() - 1; i >= 0; i--) {
+            Status s = GetAttributeAtScopeOffset(attr, table_ref_param, col, i);
+            if (s.Ok() || i == 0)
+                return s;
+        }
+
+        return Status(false, "should never reach this"); //keeping compiler quiet
+    }
+private:
+    Status GetAttributeAtScopeOffset(Attribute* attr, const std::string& table_ref_param, const std::string& col, int i) const {
+        std::string table_ref = table_ref_param;
+        AttributeSet* as = analysis_scopes_.at(i);
+        if (table_ref == "") {
+            std::vector<std::string> tables;
+            for (const std::string& name: as->TableNames()) {
+                if (as->Contains(name, col))
+                    tables.push_back(name);
+            }
+
+            if (tables.size() > 1) {
+                return Status(false, "Error: Column '" + col + "' can refer to columns in muliple tables.");
+            } else if (tables.empty()) {
+                return Status(false, "Error: Column '" + col + "' does not exist");
+            } else {
+                table_ref = tables.at(0);
+            }
+        }
+
+        if (!as->Contains(table_ref, col)) {
+            return Status(false, "Error: Column '" + table_ref + "." + col + "' does not exist");
+        }
+
+        *attr = as->GetAttribute(table_ref, col);
+        //0 is current scope, 1 is the immediate outer scope, 2 is two outer scopes out, etc
+        attr->scope = analysis_scopes_.size() - 1 - i;
+        
+        return Status(true, "ok");
+    }
+public:
+    DB* db;
+    //state for aggregate functions
+    Datum min_;
+    Datum max_;
+    Datum sum_;
+    Datum count_;
+    bool first_;
 private:
     std::vector<AttributeSet*> analysis_scopes_;
+    std::vector<Row*> execution_scopes_;
 };
 
 //Putting class Stmt here since we need it in Expr,
@@ -69,30 +116,28 @@ private:
 };
 
 
+//QueryState is saved in both Expr and Stmt, could probably
+//make a single class called QueryNode to store this, and have both Expr and Stmt inherit from that
 class Expr {
 public:
-    virtual Status Eval(RowSet* rs, std::vector<Datum>& output) = 0;
-    virtual inline Status Eval(Row* r, Datum* result) = 0;
+    Expr(QueryState* qs): query_state_(qs) {}
+    virtual inline Status Eval(Row* r, Datum* result, bool* is_agg) = 0;
     virtual std::string ToString() = 0;
     virtual Status Analyze(QueryState* qs, TokenType* evaluated_type) = 0;
+    inline QueryState* GetQueryState() {
+        return query_state_;
+    }
+private:
+    QueryState* query_state_;
 };
 
 class Literal: public Expr {
 public:
-    Literal(Token t): t_(t) {}
-    Literal(bool b): t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
-    Literal(int i): t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
-    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
-        Datum d;
-        for (Row* r: rs->rows_) {
-            Status s = Eval(r, &d);
-            if (!s.Ok()) return s;
-
-            output.push_back(d);
-        }
-        return Status(true, "ok");
-    }
-    inline Status Eval(Row* r, Datum* result) override {
+    Literal(QueryState* qs, Token t): Expr(qs), t_(t) {}
+    Literal(QueryState* qs, bool b): Expr(qs), t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
+    Literal(QueryState* qs, int i): Expr(qs), t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
+    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
+        *is_agg = false;
         *result = Datum(t_);
         return Status(true, "ok");
     }
@@ -109,26 +154,19 @@ private:
 
 class Binary: public Expr {
 public:
-    Binary(Token op, Expr* left, Expr* right):
-        op_(op), left_(left), right_(right) {}
+    Binary(QueryState* qs, Token op, Expr* left, Expr* right):
+        Expr(qs), op_(op), left_(left), right_(right) {}
+    inline Status Eval(Row* row, Datum* result, bool* is_agg) override {
+        *is_agg = false;
 
-    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
-        Datum d;
-        for (Row* r: rs->rows_) {
-            Status s = Eval(r, &d);
-            if (!s.Ok()) return s;
-
-            output.push_back(d);
-        }
-
-        return Status(true, "ok");
-    }
-    inline Status Eval(Row* row, Datum* result) override {
         Datum l;
-        Status s1 = left_->Eval(row, &l);
+        bool left_agg;
+        Status s1 = left_->Eval(row, &l, &left_agg);
         if (!s1.Ok()) return s1;
+
         Datum r;
-        Status s2 = right_->Eval(row, &r);
+        bool right_agg;
+        Status s2 = right_->Eval(row, &r, &right_agg);
         if (!s2.Ok()) return s2;
 
         switch (op_.type) {
@@ -209,21 +247,13 @@ private:
 
 class Unary: public Expr {
 public:
-    Unary(Token op, Expr* right): op_(op), right_(right) {}
-    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
-        Datum d;
-        for (Row* r: rs->rows_) {
-            Status s = Eval(r, &d);
-            if (!s.Ok()) return s;
+    Unary(QueryState* qs, Token op, Expr* right): Expr(qs), op_(op), right_(right) {}
+    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
+        *is_agg = false;
 
-            output.push_back(d);
-        }
-
-        return Status(true, "ok");
-    }
-    inline Status Eval(Row* r, Datum* result) override {
         Datum right;
-        Status s = right_->Eval(r, &right);
+        bool inner_agg;
+        Status s = right_->Eval(r, &right, &inner_agg);
         if (!s.Ok()) return s;
 
         switch (op_.type) {
@@ -280,20 +310,10 @@ private:
 
 class ColRef: public Expr {
 public:
-    ColRef(Token t): t_(t), idx_(-1), table_ref_("") {}
-    ColRef(Token t, Token table_ref): t_(t), idx_(-1), table_ref_(table_ref.lexeme) {}
-    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
-        Datum d;
-        for (Row* r: rs->rows_) {
-            Status s = Eval(r, &d);
-            if (!s.Ok()) return s;
-
-            output.push_back(d);
-        }
-
-        return Status(true, "ok");
-    }
-    inline Status Eval(Row* r, Datum* result) override {
+    ColRef(QueryState* qs, Token t): Expr(qs), t_(t), idx_(-1), table_ref_(""), scope_(-1) {}
+    ColRef(QueryState* qs, Token t, Token table_ref): Expr(qs), t_(t), idx_(-1), table_ref_(table_ref.lexeme), scope_(-1) {}
+    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
+        *is_agg = false;
         *result = r->data_.at(idx_);
         return Status(true, "ok");
     }
@@ -301,58 +321,34 @@ public:
         return t_.lexeme;
     }
     Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
-        if (table_ref_ == "")  {//replace with default table name only if explicit table reference not provided
-            //TODO: assuming reference is in top-most AttributeSet
-            std::vector<std::string> tables;
-            for (const std::string& name: qs->AnalysisScopesTop()->TableNames()) {
-                if (qs->AnalysisScopesTop()->Contains(name, t_.lexeme))
-                    tables.push_back(name);
-            }
+        Attribute a;
+        Status s = qs->GetAttribute(&a, table_ref_, t_.lexeme);
+        if (!s.Ok())
+            return s;
 
-            if (tables.size() > 1) {
-                return Status(false, "Error: Column '" + t_.lexeme + "' can refer to columns in muliple tables.");
-            } else if (tables.empty()) {
-                return Status(false, "Error: Column '" + t_.lexeme + "' does not exist");
-            } else {
-                table_ref_ = tables.at(0);
-            }
-        }
-
-
-        //TODO: assuming reference is in top-most AttributeSet
-        if (!qs->AnalysisScopesTop()->Contains(table_ref_, t_.lexeme)) {
-            return Status(false, "Error: Column '" + t_.lexeme + "' does not exist");
-        }
-
-        //TODO: assuming reference is in top-most AttributeSet
-        Attribute a = qs->AnalysisScopesTop()->GetAttribute(table_ref_, t_.lexeme);
         idx_ = a.idx;
         *evaluated_type = a.type;
+        scope_ = a.scope;
 
         return Status(true, "ok");
     }
 private:
     Token t_;
     int idx_;
+    int scope_;
     std::string table_ref_;
 };
 
 
 class ColAssign: public Expr {
 public:
-    ColAssign(Token col, Expr* right): col_(col), right_(right) {}
-    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
-        Datum d; //result of Eval(Row*) not used
-        for (Row* r: rs->rows_) {
-            Status s = Eval(r, &d);
-            if (!s.Ok()) return s;
-        } 
+    ColAssign(QueryState* qs, Token col, Expr* right): Expr(qs), col_(col), right_(right), scope_(-1) {}
+    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
+        *is_agg = false;
 
-        return Status(true, "ok");
-    }
-    inline Status Eval(Row* r, Datum* result) override {
         Datum right;
-        Status s = right_->Eval(r, &right);
+        bool right_agg;
+        Status s = right_->Eval(r, &right, &right_agg);
         if (!s.Ok()) return s;
 
         r->data_.at(idx_) = right;
@@ -371,36 +367,22 @@ public:
                 return s;
         }
 
-        //TODO: assuming reference is in top-most AttributeSet
-        std::vector<std::string> tables;
-        for (const std::string& name: qs->AnalysisScopesTop()->TableNames()) {
-            if (qs->AnalysisScopesTop()->Contains(name, col_.lexeme))
-                tables.push_back(name);
-        }
+        Attribute a;
+        std::string table_ref = "";
+        Status s = qs->GetAttribute(&a, table_ref, col_.lexeme);
+        if (!s.Ok())
+            return s;
 
-        if (tables.size() > 1) {
-            return Status(false, "Error: Column '" + col_.lexeme + "' can refer to columns in muliple tables.");
-        } else if (tables.empty()) {
-            return Status(false, "Error: Column '" + col_.lexeme + "' does not exist");
-        }
-
-        std::string table_ref = tables.at(0);
-
-        //TODO: assuming reference is in top-most AttributeSet
-        if (!qs->AnalysisScopesTop()->Contains(table_ref, col_.lexeme)) {
-            return Status(false, "Error: Column '" + col_.lexeme + "' does not exist");
-        }
-
-        //TODO: assuming reference is in top-most AttributeSet
-        Attribute a = qs->AnalysisScopesTop()->GetAttribute(table_ref, col_.lexeme);
         idx_ = a.idx;
         *evaluated_type = a.type;
+        scope_ = a.scope;
 
         return Status(true, "ok");
     }
 private:
     Token col_;
     int idx_;
+    int scope_;
     Expr* right_;
 };
 
@@ -411,61 +393,52 @@ struct OrderCol {
 
 struct Call: public Expr {
 public:
-    Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
-    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
+    Call(QueryState* qs, Token fcn, Expr* arg): Expr(qs), fcn_(fcn), arg_(arg) {}
+    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
+        *is_agg = true;
+
+        bool arg_agg;
+        Datum arg;
+        Status s = arg_->Eval(r, &arg, &arg_agg);
+        if (!s.Ok())
+            return s;
+
+        QueryState* qs = GetQueryState();
+
         switch (fcn_.type) {
-            case TokenType::Avg: {
-                std::vector<Datum> values;
-                arg_->Eval(rs, values);
-                Datum s(0);
-                for (Datum d: values) {
-                    s = s + d;
+            case TokenType::Avg:
+                qs->sum_ += arg;
+                qs->count_ += Datum(1);
+                *result = qs->sum_ / qs->count_;
+                break;
+            case TokenType::Count:
+                qs->count_ += Datum(1);
+                *result = qs->count_;
+                break;
+            case TokenType::Max:
+                if (qs->first_ || arg > qs->max_) {
+                    qs->max_ = arg;
+                    qs->first_ = false;
                 }
-                output = { s / Datum(float(values.size())) };
+                *result = qs->max_;
                 break;
-            }
-            case TokenType::Count: {
-                output = { Datum(int(rs->rows_.size())) };
-                break;
-            }
-            case TokenType::Max: {
-                std::vector<Datum> values;
-                arg_->Eval(rs, values);
-                std::vector<Datum>::iterator it = std::max_element(values.begin(), values.end(), 
-                        [](Datum& left, Datum& right) -> bool {
-                            return left < right;
-                        });
-                output = {*it};
-                break;
-            }
-            case TokenType::Min: {
-                std::vector<Datum> values;
-                arg_->Eval(rs, values);
-                std::vector<Datum>::iterator it = std::min_element(values.begin(), values.end(), 
-                        [](Datum& left, Datum& right) -> bool {
-                            return left < right;
-                        });
-                output = {*it};
-                break;
-            }
-            case TokenType::Sum: {
-                std::vector<Datum> values;
-                arg_->Eval(rs, values);
-                Datum s(0);
-                for (Datum d: values) {
-                    s = s + d;
+            case TokenType::Min:
+                if (qs->first_ || arg < qs->min_) {
+                    qs->min_ = arg;
+                    qs->first_ = false;
                 }
-                output = {s};
+                *result = qs->min_;
                 break;
-            }
+            case TokenType::Sum:
+                qs->sum_ += arg;
+                *result = qs->sum_;
+                break;
             default:
-                //Error should have been reported before getting to this point
+                return Status(false, "Error: Invalid function name");
                 break;
         }
+
         return Status(true, "ok");
-    }
-    inline Status Eval(Row* r, Datum* result) override {
-        return Status(false, "Error: Cannot call aggregate function on single row");
     }
     std::string ToString() override {
         return fcn_.lexeme + arg_->ToString();
@@ -489,24 +462,10 @@ private:
 
 class ScalarSubquery: public Expr {
 public:
-    ScalarSubquery(Stmt* stmt): stmt_(stmt) {}
-    Status Eval(RowSet* rs, std::vector<Datum>& output) override {
-        //TODO: should run the subquery here rather than in Eval(Row*, Datum*)
-        //if it's not a correlated subquery to avoid unecessary evaluation
-        //The result can be cached and reused
+    ScalarSubquery(QueryState* qs, Stmt* stmt): Expr(qs), stmt_(stmt) {}
+    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
+        *is_agg = false;
 
-        Datum d;
-        for (Row* r: rs->rows_) {
-            Status s = Eval(r, &d);
-            if (!s.Ok()) return s;
-
-            output.push_back(d);
-        } 
-
-        return Status(true, "ok");
-    }
-    inline Status Eval(Row* r, Datum* result) override {
-        //run the stmt_ here if correlated subquery
         Status s = stmt_->Execute();
         if (!s.Ok())
             return s;
@@ -641,7 +600,8 @@ public:
 
                 *r = new Row(result);
                 Datum d;
-                Status s = condition_->Eval(*r, &d);
+                bool is_agg;
+                Status s = condition_->Eval(*r, &d, &is_agg);
                 if (d.AsBool())
                     return Status(true, "ok");
 

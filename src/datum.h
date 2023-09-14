@@ -139,9 +139,19 @@ public:
                      (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
     }
 
+    Datum operator+=(const Datum& d) {
+        *this = *this + d;
+        return *this;
+    }
+
     Datum operator-(const Datum& d) {
         return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) -
                      (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
+    }
+
+    Datum operator-=(const Datum& d) {
+        *this = *this - d;
+        return *this;
     }
 
     Datum operator*(const Datum& d) {
@@ -149,9 +159,19 @@ public:
                      (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
     }
 
+    Datum operator*=(const Datum& d) {
+        *this = *this * d;
+        return *this;
+    }
+
     Datum operator/(const Datum& d) {
         return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) /
                      (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
+    }
+
+    Datum operator/=(const Datum& d) {
+        *this = *this / d;
+        return *this;
     }
 
     bool operator==(const Datum& d) {

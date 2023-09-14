@@ -23,15 +23,15 @@ Expr* Parser::ParsePrimary() {
         case TokenType::StringLiteral:
         case TokenType::TrueLiteral:
         case TokenType::FalseLiteral:
-            return new Literal(NextToken());
+            return new Literal(query_state_, NextToken());
         case TokenType::Identifier: {
             Token ref = NextToken();
             if (PeekToken().type == TokenType::Dot) {
                 NextToken(); //.
                 Token col = NextToken();
-                return new ColRef(col, ref);
+                return new ColRef(query_state_, col, ref);
             }
-            return new ColRef(ref);
+            return new ColRef(query_state_, ref);
         }
         case TokenType::LParen: {
             NextToken(); //(
@@ -45,7 +45,7 @@ Expr* Parser::ParsePrimary() {
                 NextToken(); //(
                 Expr* arg = ParseExpr();
                 NextToken(); //)
-                return new Call(fcn, arg);
+                return new Call(query_state_, fcn, arg);
             }
             return NULL;
     }
@@ -56,7 +56,7 @@ Expr* Parser::ParseUnary() {
     if (PeekToken().type == TokenType::Minus ||
            PeekToken().type == TokenType::Not) {
         Token op = NextToken();
-        return new Unary(op, ParseUnary());
+        return new Unary(query_state_, op, ParseUnary());
     }
 
     return ParsePrimary();
@@ -68,7 +68,7 @@ Expr* Parser::ParseMultiplicative() {
     while (PeekToken().type == TokenType::Star ||
            PeekToken().type == TokenType::Slash) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseUnary());
+        left = new Binary(query_state_, op, left, ParseUnary());
     }
 
     return left;
@@ -80,7 +80,7 @@ Expr* Parser::ParseAdditive() {
     while (PeekToken().type == TokenType::Plus ||
            PeekToken().type == TokenType::Minus) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseMultiplicative());
+        left = new Binary(query_state_, op, left, ParseMultiplicative());
     }
 
     return left;
@@ -94,7 +94,7 @@ Expr* Parser::ParseRelational() {
            PeekToken().type == TokenType::Greater ||
            PeekToken().type == TokenType::GreaterEqual) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseAdditive());
+        left = new Binary(query_state_, op, left, ParseAdditive());
     }
 
     return left;
@@ -106,7 +106,7 @@ Expr* Parser::ParseEquality() {
     while (PeekToken().type == TokenType::Equal ||
            PeekToken().type == TokenType::NotEqual) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseRelational());
+        left = new Binary(query_state_, op, left, ParseRelational());
     }
 
     return left;
@@ -117,7 +117,7 @@ Expr* Parser::ParseAnd() {
 
     while (PeekToken().type == TokenType::And) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseEquality());
+        left = new Binary(query_state_, op, left, ParseEquality());
     }
 
     return left;
@@ -128,7 +128,7 @@ Expr* Parser::ParseOr() {
 
     while (PeekToken().type == TokenType::Or) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseAnd());
+        left = new Binary(query_state_, op, left, ParseAnd());
     }
 
     return left;
@@ -136,7 +136,7 @@ Expr* Parser::ParseOr() {
 
 Expr* Parser::ParseExpr() {
     if (PeekToken().type == TokenType::Select) {
-        return new ScalarSubquery(ParseStmt());
+        return new ScalarSubquery(query_state_, ParseStmt());
     }
 
     return ParseOr();
@@ -280,7 +280,7 @@ Stmt* Parser::ParseStmt() {
                 NextToken(); //where
                 where_clause = ParseExpr(); 
             } else {
-                where_clause = new Literal(true);
+                where_clause = new Literal(query_state_, true);
             }
 
             std::vector<OrderCol> order_cols;
@@ -290,13 +290,13 @@ Stmt* Parser::ParseStmt() {
 
                 Expr* col = ParseExpr();
                 Token asc = NextToken();
-                order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
+                order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(query_state_, true) : new Literal(query_state_, false)});
 
                 while (PeekToken().type == TokenType::Comma) {
                     NextToken();
                     Expr* col = ParseExpr();
                     Token asc = NextToken();
-                    order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
+                    order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(query_state_, true) : new Literal(query_state_, false)});
                 }
             }
 
@@ -305,7 +305,7 @@ Stmt* Parser::ParseStmt() {
                 NextToken(); //limit
                 limit = ParseExpr();
             } else {
-                limit = new Literal(-1); //no limit
+                limit = new Literal(query_state_, -1); //no limit
             } 
 
             //if the select statement is a subquery, it will not end with a semicolon
@@ -322,7 +322,7 @@ Stmt* Parser::ParseStmt() {
             while (!(PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Where)) {
                 Token col = NextToken();
                 NextToken();
-                assigns.push_back(new ColAssign(col, ParseExpr()));
+                assigns.push_back(new ColAssign(query_state_, col, ParseExpr()));
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken(); //,
                 }
@@ -333,7 +333,7 @@ Stmt* Parser::ParseStmt() {
                 NextToken(); //where
                 where_clause = ParseExpr(); 
             } else {
-                where_clause = new Literal(true);
+                where_clause = new Literal(query_state_, true);
             }
             NextToken(); //;
 
@@ -348,7 +348,7 @@ Stmt* Parser::ParseStmt() {
                 NextToken(); //where
                 where_clause = ParseExpr(); 
             } else {
-                where_clause = new Literal(true);
+                where_clause = new Literal(query_state_, true);
             }
             NextToken(); //;
             return new DeleteStmt(query_state_, target, where_clause);

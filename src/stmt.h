@@ -121,7 +121,8 @@ public:
             std::vector<Datum> data = std::vector<Datum>();
             for (Expr* e: exprs) {
                 Datum d;
-                Status s = e->Eval(&dummy_row, &d);
+                bool is_agg;
+                Status s = e->Eval(&dummy_row, &d, &is_agg);
                 if (!s.Ok()) return s;
 
                 data.push_back(d);
@@ -232,7 +233,8 @@ public:
         Row* r;
         while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
             Datum d;
-            Status s = where_clause_->Eval(r, &d);
+            bool is_agg;
+            Status s = where_clause_->Eval(r, &d, &is_agg);
             if (!s.Ok()) 
                 return s;
 
@@ -251,15 +253,18 @@ public:
                         [order_cols](Row* t1, Row* t2) -> bool { 
                             for (OrderCol oc: order_cols) {
                                 Datum d1;
-                                oc.col->Eval(t1, &d1);
+                                bool t1_agg;
+                                oc.col->Eval(t1, &d1, &t1_agg);
                                 Datum d2;
-                                oc.col->Eval(t2, &d2);
+                                bool t2_agg;
+                                oc.col->Eval(t2, &d2, &t2_agg);
                                 if (d1 == d2)
                                     continue;
 
                                 Row* r = nullptr;
                                 Datum d;
-                                oc.asc->Eval(r, &d);
+                                bool asc_agg;
+                                oc.asc->Eval(r, &d, &asc_agg);
                                 if (d.AsBool()) {
                                     return d1 < d2;
                                 }
@@ -278,10 +283,27 @@ public:
 
         for (Expr* e: projs_) {
             std::vector<Datum> col;
+            Datum result;
+            bool is_agg;
+
+            for (Row* r: rs->rows_) {
+                Status s = e->Eval(r, &result, &is_agg);
+                if (!s.Ok())
+                    return s;
+                if (!is_agg)
+                    col.push_back(result);
+            }
+            if (is_agg) {
+                col.push_back(result);
+                GetQueryState()->ResetAggState();
+            }
+            /*
+            std::vector<Datum> col;
             Status s = e->Eval(rs, col);
             if (!s.Ok()) {
                 return s;
-            }
+            }*/
+
             if (col.size() < proj_rs->rows_.size()) {
                 proj_rs->rows_.resize(col.size());
             } else if (col.size() > proj_rs->rows_.size()) {
@@ -311,7 +333,8 @@ public:
         //limit in-place
         Row dummy_row({});
         Datum d;
-        Status s = limit_->Eval(&dummy_row, &d);
+        bool dummy_agg;
+        Status s = limit_->Eval(&dummy_row, &d, &dummy_agg);
         if (!s.Ok()) return s;
 
         int limit = d.AsInt4();
@@ -378,7 +401,8 @@ public:
         int update_count = 0;
         Datum d;
         while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
-            Status s = where_clause_->Eval(r, &d);
+            bool is_agg;
+            Status s = where_clause_->Eval(r, &d, &is_agg);
             if (!s.Ok()) 
                 return s;
 
@@ -386,7 +410,8 @@ public:
                 continue;
 
             for (Expr* e: assigns_) {
-                Status s = e->Eval(r, &d); //returned Datum of ColAssign expressions are ignored
+                bool is_agg;
+                Status s = e->Eval(r, &d, &is_agg); //returned Datum of ColAssign expressions are ignored
                 if (!s.Ok()) 
                     return s;
             }
@@ -438,7 +463,8 @@ public:
         int delete_count = 0;
         Datum d;
         while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
-            Status s = where_clause_->Eval(r, &d);
+            bool is_agg;
+            Status s = where_clause_->Eval(r, &d, &is_agg);
             if (!s.Ok()) 
                 return s;
 
