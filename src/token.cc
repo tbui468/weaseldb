@@ -137,6 +137,8 @@ std::string TokenTypeToString(TokenType type) {
             return "On";
         case TokenType::Inner:
             return "Inner";
+        case TokenType::Is:
+            return "Is";
         default:
             return "Unrecognized token";
     }

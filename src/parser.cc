@@ -105,9 +105,21 @@ Expr* Parser::ParseEquality() {
     Expr* left = ParseRelational();
 
     while (PeekToken().type == TokenType::Equal ||
-           PeekToken().type == TokenType::NotEqual) {
+           PeekToken().type == TokenType::NotEqual ||
+           PeekToken().type == TokenType::Is) {
+
         Token op = NextToken();
-        left = new Binary(query_state_, op, left, ParseRelational());
+        if (op.type == TokenType::Is) {
+            Token t = NextToken();
+            if (t.type == TokenType::Null) {
+                left = new IsNull(query_state_, left);
+            } else { //t.type must be 'not'
+                NextToken(); //null
+                left = new IsNotNull(query_state_, left);
+            } 
+        } else {
+            left = new Binary(query_state_, op, left, ParseRelational());
+        }
     }
 
     return left;

@@ -177,6 +177,8 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::On;
     } else if (len == 5 && strncmp(&query_.at(idx), "inner", len) == 0) {
         type = TokenType::Inner;
+    } else if (len == 2 && strncmp(&query_.at(idx), "is", len) == 0) {
+        type = TokenType::Is;
     } else {
         type = TokenType::Identifier;
     }

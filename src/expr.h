@@ -470,6 +470,80 @@ private:
     Expr* arg_;
 };
 
+class IsNull: public Expr {
+public:
+    IsNull(QueryState* qs, Expr* left): Expr(qs), left_(left) {}
+    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
+        *is_agg = false;
+
+        Datum d;
+        bool left_agg;
+        Status s = left_->Eval(r, &d, &left_agg);
+        if (!s.Ok())
+            return s;
+
+        if (d.Type() == TokenType::Null) {
+            *result = Datum(true);
+        } else {
+            *result = Datum(false);
+        }
+
+        return Status(true, "ok");
+    }
+    std::string ToString() override {
+        return "IsNull";
+    }
+    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+        *evaluated_type = TokenType::Bool;
+
+        TokenType left_type;
+        Status s = left_->Analyze(qs, &left_type);
+        if (!s.Ok())
+            return s;
+
+        return Status(true, "ok");
+    }
+private:
+    Expr* left_;
+};
+
+class IsNotNull: public Expr {
+public:
+    IsNotNull(QueryState* qs, Expr* left): Expr(qs), left_(left) {}
+    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
+        *is_agg = false;
+
+        Datum d;
+        bool left_agg;
+        Status s = left_->Eval(r, &d, &left_agg);
+        if (!s.Ok())
+            return s;
+
+        if (d.Type() != TokenType::Null) {
+            *result = Datum(true);
+        } else {
+            *result = Datum(false);
+        }
+
+        return Status(true, "ok");
+    }
+    std::string ToString() override {
+        return "IsNotNull";
+    }
+    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+        *evaluated_type = TokenType::Bool;
+
+        TokenType left_type;
+        Status s = left_->Analyze(qs, &left_type);
+        if (!s.Ok())
+            return s;
+
+        return Status(true, "ok");
+    }
+private:
+    Expr* left_;
+};
+
 class ScalarSubquery: public Expr {
 public:
     ScalarSubquery(QueryState* qs, Stmt* stmt): Expr(qs), stmt_(stmt) {}

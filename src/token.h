@@ -50,6 +50,7 @@ enum class TokenType {
     Join,
     On,
     Inner,
+    Is,
 
     /* user-defined identifier */
     Identifier,
