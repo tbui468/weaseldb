@@ -39,7 +39,12 @@ public:
                 data_.append((char*)&value, sizeof(bool));
                 break;
             }
+            case TokenType::Null: {
+                type_ = TokenType::Null;
+                break;
+            }
             default:
+                //TODO: this should report and error rather than printing 
                 std::cout << "invalid token type for initializing datum: " << TokenTypeToString(t.type) << std::endl;
                 break;
         }
@@ -70,6 +75,9 @@ public:
                 *off += sizeof(bool);
                 break;
             }
+            case TokenType::Null: {
+                break;
+            }
             default:
                 std::cout << "invalid buffer data for initializing datum: " << TokenTypeToString(type) << std::endl;
                 break;
@@ -77,8 +85,7 @@ public:
     }
 
     Datum() {
-        //placeholders
-        type_ = TokenType::Int4;
+        type_ = TokenType::Null;
         data_ = "";
     }
 

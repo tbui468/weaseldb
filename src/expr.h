@@ -169,6 +169,11 @@ public:
         Status s2 = right_->Eval(row, &r, &right_agg);
         if (!s2.Ok()) return s2;
 
+        if (l.Type() == TokenType::Null || r.Type() == TokenType::Null) {
+            *result = Datum();
+            return Status(true, "ok");
+        }
+
         switch (op_.type) {
             case TokenType::Equal:          *result = Datum(l == r); break;
             case TokenType::NotEqual:       *result = Datum(l != r); break;
@@ -202,6 +207,11 @@ public:
             Status s = right_->Analyze(qs, &right_type);
             if (!s.Ok())
                 return s;
+        }
+
+        if (left_type == TokenType::Null || right_type == TokenType::Null) {
+            *evaluated_type = TokenType::Null;
+            return Status(true, "ok");
         }
 
         switch (op_.type) {

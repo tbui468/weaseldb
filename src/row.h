@@ -34,12 +34,16 @@ public:
                     std::cout << d.AsFloat4() << ",";
                 } else if (d.Type() == TokenType::Text) {
                     std::cout << d.AsString() << ",";
-                } else {
+                } else if (d.Type() == TokenType::Null) {
+                    std::cout << "null,";
+                } else if (d.Type() == TokenType::Bool) {
                     if (d.AsBool()) {
                         std::cout << "true,";
                     } else {
                         std::cout << "false,";
                     }
+                } else {
+                    std::cout << "unsupported data type,";
                 }
             }
             std::cout << std::endl;

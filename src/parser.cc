@@ -23,6 +23,7 @@ Expr* Parser::ParsePrimary() {
         case TokenType::StringLiteral:
         case TokenType::TrueLiteral:
         case TokenType::FalseLiteral:
+        case TokenType::Null:
             return new Literal(query_state_, NextToken());
         case TokenType::Identifier: {
             Token ref = NextToken();

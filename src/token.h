@@ -60,7 +60,6 @@ enum class TokenType {
     StringLiteral,
     TrueLiteral,
     FalseLiteral,
-    //NullLiteral, //TODO: should we have this along with TokenType::Null
 
     /* single characters */
     LParen,
