@@ -12,7 +12,7 @@ namespace wsldb {
 //Row will have either a single tuple (just the input row) or many (group row)
 class Row {
 public:
-    Row(std::vector<Datum> data): data_({data}) {}
+    Row(std::vector<Datum> data): data_(data) {}
 public:
     std::vector<Datum> data_;
 };

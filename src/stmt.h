@@ -74,8 +74,8 @@ private:
 
 class InsertStmt: public Stmt {
 public:
-    InsertStmt(QueryState* qd, WorkTable* target, std::vector<std::vector<Expr*>> values):
-        Stmt(qd), target_(target), values_(std::move(values)) {}
+    InsertStmt(QueryState* qd, WorkTable* target, std::vector<std::vector<Expr*>> col_assigns):
+        Stmt(qd), target_(target), col_assigns_(std::move(col_assigns)) {}
 
     Status Analyze(std::vector<TokenType>& types) override {
         AttributeSet* working_attrs;
@@ -90,6 +90,17 @@ public:
         if (tables.size() != 1)
             return Status(false, "Error: Cannot insert into more than one table");
 
+
+        for (const std::vector<Expr*>& assigns: col_assigns_) {
+            for (Expr* e: assigns) {
+                TokenType type;
+                Status s = e->Analyze(GetQueryState(), &type);
+                if (!s.Ok())
+                    return s;
+            }
+        }
+
+        /*
         std::string table = tables.at(0);
         std::vector<Attribute>* attrs = working_attrs->TableAttributes(table);
 
@@ -108,7 +119,7 @@ public:
                 if (attrs->at(i).type != type)
                     return Status(false, "Error: Value type does not match type in schema on record");
             }
-        }
+        }*/
 
         GetQueryState()->PopAnalysisScope();
 
@@ -116,23 +127,25 @@ public:
     }
 
     Status Execute() override {
-        Row dummy_row({});
-        for (std::vector<Expr*> exprs: values_) {
-            std::vector<Datum> data = std::vector<Datum>();
+        for (std::vector<Expr*> exprs: col_assigns_) {
+            std::vector<Datum> nulls;
+            for (Expr* e: exprs) {
+                nulls.push_back(Datum());
+            }
+            Row row(nulls); //TODO: need to fill dummy row with enough nulls since ColAssign expects correct number of columns
+
             for (Expr* e: exprs) {
                 Datum d;
                 bool is_agg;
-                Status s = e->Eval(&dummy_row, &d, &is_agg);
+                Status s = e->Eval(&row, &d, &is_agg); //result d is not used
                 if (!s.Ok()) return s;
-
-                data.push_back(d);
             }
-            Status s = target_->Insert(GetQueryState()->db, data);
+            Status s = target_->Insert(GetQueryState()->db, row.data_);
             if (!s.Ok())
                 return s;
         }
 
-        return Status(true, "INSERT " + std::to_string(values_.size()));
+        return Status(true, "INSERT " + std::to_string(col_assigns_.size()));
 
     }
     std::string ToString() override {
@@ -140,7 +153,7 @@ public:
     }
 private:
     WorkTable* target_;
-    std::vector<std::vector<Expr*>> values_;
+    std::vector<std::vector<Expr*>> col_assigns_;
 };
 
 class SelectStmt: public Stmt {

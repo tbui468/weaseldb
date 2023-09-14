@@ -243,16 +243,37 @@ Stmt* Parser::ParseStmt() {
         case TokenType::Insert: {
             NextToken(); //into
             WorkTable* target = ParseWorkTable(); //table name
+
+            std::vector<Token> cols;
+            NextToken(); //(
+            while (PeekToken().type != TokenType::RParen) {
+                cols.push_back(NextToken());
+                if (PeekToken().type == TokenType::Comma)
+                    NextToken(); //,
+            }
+            NextToken(); //)
+
             NextToken(); //values
-            std::vector<std::vector<Expr*>> values = std::vector<std::vector<Expr*>>();
+            std::vector<std::vector<Expr*>> col_values;
             while (PeekToken().type == TokenType::LParen) {
-                values.push_back(ParseTuple());
+                std::vector<Expr*> tuple;
+
+                NextToken(); //(
+                for (Token col: cols) {
+                    tuple.push_back(new ColAssign(query_state_, col, ParseExpr()));
+                    if (PeekToken().type == TokenType::Comma)
+                        NextToken(); //,
+                }
+                NextToken(); //)
+
+                col_values.push_back(tuple);
+
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken(); //,
                 }
             }
             NextToken(); //;
-            return new InsertStmt(query_state_, target, values);
+            return new InsertStmt(query_state_, target, col_values);
         }
         case TokenType::Select: {
             bool remove_duplicates = false;

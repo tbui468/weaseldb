@@ -2,10 +2,10 @@ drop table if exists planets;
 drop table if exists moons;
 
 create table planets (id int4, name text, primary key (id));
-insert into planets values (1, 'Earth'), (2, 'Mars');
+insert into planets (id, name) values (1, 'Earth'), (2, 'Mars');
 
 create table moons (id int4, name text, primary key(id));
-insert into moons values (1, 'Luna'), (2, 'Deimos'), (3, 'Phobos');
+insert into moons (id, name) values (1, 'Luna'), (2, 'Deimos'), (3, 'Phobos');
 
 select p.id, p.name, m.id, m.name from planets as p cross join moons as m order by m.id asc, p.id asc;
 select '----';

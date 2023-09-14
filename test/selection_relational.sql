@@ -1,5 +1,5 @@
 create table planets (id int4, name text, mass float4, primary key (id));
-insert into planets values (1, 'Earth', 10.0), (2, 'Saturn', 20.0), (3, 'Jupiter' 30.0);
+insert into planets (id, name, mass) values (1, 'Earth', 10.0), (2, 'Saturn', 20.0), (3, 'Jupiter' 30.0);
 
 select id, name from planets where id < 2;
 select id, name from planets where id <= 1;

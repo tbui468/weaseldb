@@ -51,6 +51,15 @@ public:
     }
 
     Datum(const std::string& buf, int* off, TokenType type) {
+        bool is_null = *((bool*)(buf.data() + *off));
+        *off += sizeof(bool);
+
+        if (is_null) {
+            type_ = TokenType::Null;
+            data_ = "";
+            return;
+        }
+
         type_ = type;
         switch (type) {
             case TokenType::Int4: {
@@ -73,9 +82,6 @@ public:
             case TokenType::Bool: {
                 data_.append((char*)(buf.data() + *off), sizeof(bool));
                 *off += sizeof(bool);
-                break;
-            }
-            case TokenType::Null: {
                 break;
             }
             default:
@@ -114,15 +120,22 @@ public:
     }
 
     std::string Serialize() const {
-        if (type_ == TokenType::Text) {
-            std::string result;
-            int size = data_.size();
-            result.append((char*)&size, sizeof(int));
-            result += data_;
-            return result;
+        std::string result;
+        bool is_null = false;
+        if (type_ == TokenType::Null) {
+            is_null = true;
         }
 
-        return data_;
+        result.append((char*)&is_null, sizeof(bool));
+
+        if (type_ == TokenType::Text) {
+            int size = data_.size();
+            result.append((char*)&size, sizeof(int));
+        }
+            
+        result += data_;
+
+        return result;
     }
 
     std::string AsString() const {
