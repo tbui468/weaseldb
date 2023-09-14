@@ -234,7 +234,11 @@ public:
         while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
             Datum d;
             bool is_agg;
+            
+            GetQueryState()->PushScopeRow(r);
             Status s = where_clause_->Eval(r, &d, &is_agg);
+            GetQueryState()->PopScopeRow();
+
             if (!s.Ok()) 
                 return s;
 
@@ -247,17 +251,25 @@ public:
         //sort filtered rows in-place
         if (!order_cols_.empty()) {
             std::vector<OrderCol>& order_cols = order_cols_; //lambdas can only capture non-member variable
+            QueryState* qs = GetQueryState();
 
             std::sort(rs->rows_.begin(), rs->rows_.end(), 
                         //No error checking in lambda...
-                        [order_cols](Row* t1, Row* t2) -> bool { 
+                        //do scope rows need to be pushed/popped of query state stack here???
+                        [order_cols, qs](Row* t1, Row* t2) -> bool { 
                             for (OrderCol oc: order_cols) {
                                 Datum d1;
                                 bool t1_agg;
+                                qs->PushScopeRow(t1);
                                 oc.col->Eval(t1, &d1, &t1_agg);
+                                qs->PopScopeRow();
+
                                 Datum d2;
                                 bool t2_agg;
+                                qs->PushScopeRow(t2);
                                 oc.col->Eval(t2, &d2, &t2_agg);
+                                qs->PopScopeRow();
+
                                 if (d1 == d2)
                                     continue;
 
@@ -287,7 +299,10 @@ public:
             bool is_agg;
 
             for (Row* r: rs->rows_) {
+                GetQueryState()->PushScopeRow(r);
                 Status s = e->Eval(r, &result, &is_agg);
+                GetQueryState()->PopScopeRow();
+
                 if (!s.Ok())
                     return s;
                 if (!is_agg)
@@ -334,6 +349,7 @@ public:
         Row dummy_row({});
         Datum d;
         bool dummy_agg;
+        //do rows need to be pushed/popped on query state row stack here?
         Status s = limit_->Eval(&dummy_row, &d, &dummy_agg);
         if (!s.Ok()) return s;
 
@@ -402,7 +418,10 @@ public:
         Datum d;
         while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
             bool is_agg;
+            GetQueryState()->PushScopeRow(r);
             Status s = where_clause_->Eval(r, &d, &is_agg);
+            GetQueryState()->PopScopeRow();
+
             if (!s.Ok()) 
                 return s;
 
@@ -411,7 +430,10 @@ public:
 
             for (Expr* e: assigns_) {
                 bool is_agg;
+                GetQueryState()->PushScopeRow(r);
                 Status s = e->Eval(r, &d, &is_agg); //returned Datum of ColAssign expressions are ignored
+                GetQueryState()->PopScopeRow();
+
                 if (!s.Ok()) 
                     return s;
             }
@@ -464,7 +486,11 @@ public:
         Datum d;
         while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
             bool is_agg;
+
+            GetQueryState()->PushScopeRow(r);
             Status s = where_clause_->Eval(r, &d, &is_agg);
+            GetQueryState()->PopScopeRow();
+
             if (!s.Ok()) 
                 return s;
 

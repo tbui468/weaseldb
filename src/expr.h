@@ -32,14 +32,14 @@ public:
         analysis_scopes_.pop_back();
     }
     
-    inline Row* ExecutionScopeAt(int scope) {
-        return execution_scopes_.at(execution_scopes_.size() - 1 - scope);
+    inline Row* ScopeRowAt(int scope) {
+        return scope_rows_.at(scope_rows_.size() - 1 - scope);
     }
-    inline void PushExecutionScope(Row* r) {
-        execution_scopes_.push_back(r);
+    inline void PushScopeRow(Row* r) {
+        scope_rows_.push_back(r);
     }
-    inline void PopExecutionScope() {
-        execution_scopes_.pop_back();
+    inline void PopScopeRow() {
+        scope_rows_.pop_back();
     }
 
     inline void ResetAggState() {
@@ -97,7 +97,7 @@ public:
     bool first_;
 private:
     std::vector<AttributeSet*> analysis_scopes_;
-    std::vector<Row*> execution_scopes_;
+    std::vector<Row*> scope_rows_;
 };
 
 //Putting class Stmt here since we need it in Expr,
@@ -314,7 +314,7 @@ public:
     ColRef(QueryState* qs, Token t, Token table_ref): Expr(qs), t_(t), idx_(-1), table_ref_(table_ref.lexeme), scope_(-1) {}
     inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
         *is_agg = false;
-        *result = r->data_.at(idx_);
+        *result = GetQueryState()->ScopeRowAt(scope_)->data_.at(idx_);
         return Status(true, "ok");
     }
     std::string ToString() override {
@@ -548,6 +548,7 @@ public:
         //can use that data to perform semantic analysis for 'on' clause.  Normally Expr::Analyze is only
         //called once entire WorkTable is Analyzed an at least a single AttributeSet is in QueryState,
         //but InnerJoins have an Expr embedded as part of the WorkTable (the 'on' clause), so this is needed
+        //Something similar is done in InnerJoin::NextRow
         qs->PushAnalysisScope(*working_attrs);
         {
             TokenType type;
@@ -601,7 +602,13 @@ public:
                 *r = new Row(result);
                 Datum d;
                 bool is_agg;
+
+                //this is ugly, we need to do this since Expr::Eval is needed to generate a working table
+                //something similar is done in InnerJoin::Analyze
+                condition_->GetQueryState()->PushScopeRow(*r);
                 Status s = condition_->Eval(*r, &d, &is_agg);
+                condition_->GetQueryState()->PopScopeRow();
+
                 if (d.AsBool())
                     return Status(true, "ok");
 
