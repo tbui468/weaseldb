@@ -51,6 +51,9 @@ enum class TokenType {
     On,
     Inner,
     Is,
+    Left,
+    Right,
+    Full,
 
     /* user-defined identifier */
     Identifier,

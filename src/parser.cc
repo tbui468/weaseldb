@@ -168,7 +168,12 @@ WorkTable* Parser::ParsePrimaryWorkTable() {
 
 WorkTable* Parser::ParseBinaryWorkTable() {
     WorkTable* left = ParsePrimaryWorkTable();
-    while (PeekToken().type == TokenType::Cross || PeekToken().type == TokenType::Inner) {
+    while (PeekToken().type == TokenType::Cross || 
+           PeekToken().type == TokenType::Inner ||
+           PeekToken().type == TokenType::Left ||
+           PeekToken().type == TokenType::Right ||
+           PeekToken().type == TokenType::Full) {
+
         switch (NextToken().type) {
             case TokenType::Cross: {
                 NextToken(); //join
@@ -182,6 +187,28 @@ WorkTable* Parser::ParseBinaryWorkTable() {
                 left = new InnerJoin(left, right, ParseExpr());
                 break;
             }
+            case TokenType::Left: {
+                NextToken(); //join
+                WorkTable* right = ParsePrimaryWorkTable();
+                NextToken(); //on
+                left = new LeftJoin(left, right, ParseExpr());
+                break;
+            }
+            case TokenType::Right: {
+                NextToken(); //join
+                WorkTable* right = ParsePrimaryWorkTable();
+                NextToken(); //on
+                left = new LeftJoin(right, left, ParseExpr());
+                break;
+            }
+                                   /*
+            case TokenType::Full: {
+                NextToken(); //join
+                WorkTable* right = ParsePrimaryWorkTable();
+                NextToken(); //on
+                left = new FullJoin(left, right, ParseExpr());
+                break;
+            }*/
             default:
                 break;
         }

@@ -179,6 +179,12 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Inner;
     } else if (len == 2 && strncmp(&query_.at(idx), "is", len) == 0) {
         type = TokenType::Is;
+    } else if (len == 4 && strncmp(&query_.at(idx), "left", len) == 0) {
+        type = TokenType::Left;
+    } else if (len == 5 && strncmp(&query_.at(idx), "right", len) == 0) {
+        type = TokenType::Right;
+    } else if (len == 4 && strncmp(&query_.at(idx), "full", len) == 0) {
+        type = TokenType::Full;
     } else {
         type = TokenType::Identifier;
     }

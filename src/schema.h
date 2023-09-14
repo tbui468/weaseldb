@@ -147,6 +147,15 @@ public:
         return attrs_.at(table);
     }
 
+    int AttributeCount() const {
+        int count = 0;
+        for (const std::pair<const std::string, std::vector<Attribute>*>& p: attrs_) {
+            count += p.second->size();
+        }
+
+        return count;
+    }
+
 public:
     std::unordered_map<std::string, std::vector<Attribute>*> attrs_;
     int offset_ = 0;

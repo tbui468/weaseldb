@@ -91,7 +91,7 @@ public:
             return Status(false, "Error: Cannot insert into more than one table");
 
         //need to cache schema count in case some columns are not specified
-        col_count_ = working_attrs->TableAttributes(tables.at(0))->size();
+        col_count_ = working_attrs->AttributeCount();
 
         for (const std::vector<Expr*>& assigns: col_assigns_) {
             for (Expr* e: assigns) {

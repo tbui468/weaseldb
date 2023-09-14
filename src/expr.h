@@ -603,6 +603,139 @@ public:
     virtual std::string ToString() const = 0;
 };
 
+class LeftJoin: public WorkTable {
+public:
+    LeftJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
+    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
+        AttributeSet* left_attrs;
+        {
+            Status s = left_->Analyze(qs, &left_attrs);
+            if (!s.Ok())
+                return s;
+        }
+
+        AttributeSet* right_attrs;
+        {
+            Status s = right_->Analyze(qs, &right_attrs);
+            if (!s.Ok())
+                return s;
+        }
+
+        right_attr_count_ = right_attrs->AttributeCount();
+
+        {
+            bool has_duplicate_tables;
+            *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+            if (has_duplicate_tables)
+                return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
+        }
+
+        qs->PushAnalysisScope(*working_attrs);
+        {
+            TokenType type;
+            Status s = condition_->Analyze(qs, &type);
+            if (!s.Ok())
+                return s;
+
+            if (type != TokenType::Bool) {
+                return Status(false, "Error: Inner join condition must evaluate to a boolean type");
+            }
+        }
+        qs->PopAnalysisScope();
+
+        return Status(true, "ok");
+    }
+    Status BeginScan(DB* db) override {
+        left_->BeginScan(db);
+        right_->BeginScan(db);
+
+        //initialize left row
+        Status s = left_->NextRow(db, &left_row_);
+        lefts_inserted_ = 0;
+        if (!s.Ok())
+            return Status(false, "No more rows");
+
+        return Status(true, "ok");
+    }
+    Status NextRow(DB* db, Row** r) override {
+        Row* right_row;
+
+        while (true) {
+            Status s = right_->NextRow(db, &right_row);
+            if (!s.Ok()) {
+                //get new left
+                {
+                    if (lefts_inserted_ == 0) {
+                        std::vector<Datum> result = left_row_->data_;
+                        for (int i = 0; i < right_attr_count_; i++) {
+                            result.push_back(Datum());
+                        }
+
+                        *r = new Row(result);
+                        lefts_inserted_++;
+
+                        return Status(true, "ok");
+                    }
+
+                    Status s = left_->NextRow(db, &left_row_);
+                    lefts_inserted_ = 0;
+                    if (!s.Ok())
+                        return Status(false, "No more rows");
+                }
+
+                {
+                    right_->BeginScan(db);
+                    Status s = right_->NextRow(db, &right_row);
+                    if (!s.Ok())
+                        return Status(false, "No more rows");
+                } 
+            }
+
+            {
+                std::vector<Datum> result = left_row_->data_;
+                result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());
+
+                *r = new Row(result);
+                Datum d;
+                bool is_agg;
+
+                condition_->GetQueryState()->PushScopeRow(*r);
+                Status s = condition_->Eval(*r, &d, &is_agg);
+                condition_->GetQueryState()->PopScopeRow();
+
+                if (d.AsBool()) {
+                    lefts_inserted_++;
+                    return Status(true, "ok");
+                }
+
+            }
+        }
+
+        return Status(false, "Should never see this message");
+    }
+    Status DeletePrev(DB* db) override {
+        return Status(false, "Error: Cannot delete a row from a left joined table");
+    }
+    Status UpdatePrev(DB* db, Row* r) override {
+        return Status(false, "Error: Cannot update a row in a left joined table");
+    }
+    Status Insert(DB* db, const std::vector<Datum>& data) override {
+        return Status(false, "Error: Cannot insert value into a row in a left joined table");
+    }
+    std::string ToString() const override {
+        return "left join";
+    }
+private:
+    //used to track number of times a given left row is inserted into the final working table
+    //if a row is inserted 0 times, then insert the left row and fill in the right row with nulls
+    int lefts_inserted_;
+    int right_attr_count_;
+    Row* left_row_;
+    WorkTable* left_;
+    WorkTable* right_;
+    Expr* condition_;
+};
+
 class InnerJoin: public WorkTable {
 public:
     InnerJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
@@ -665,6 +798,7 @@ public:
         while (true) {
             Status s = right_->NextRow(db, &right_row);
             if (!s.Ok()) {
+                //get new left
                 {
                     Status s = left_->NextRow(db, &left_row_);
                     if (!s.Ok())
@@ -679,6 +813,7 @@ public:
                 } 
             }
 
+            //return concatenated row if condition is met - otherwise continue loop
             {
                 std::vector<Datum> result = left_row_->data_;
                 result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());

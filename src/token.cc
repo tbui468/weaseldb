@@ -139,6 +139,12 @@ std::string TokenTypeToString(TokenType type) {
             return "Inner";
         case TokenType::Is:
             return "Is";
+        case TokenType::Left:
+            return "Left";
+        case TokenType::Right:
+            return "Right";
+        case TokenType::Full:
+            return "Full";
         default:
             return "Unrecognized token";
     }
