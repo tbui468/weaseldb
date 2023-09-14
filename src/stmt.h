@@ -90,6 +90,8 @@ public:
         if (tables.size() != 1)
             return Status(false, "Error: Cannot insert into more than one table");
 
+        //need to cache schema count in case some columns are not specified
+        col_count_ = working_attrs->TableAttributes(tables.at(0))->size();
 
         for (const std::vector<Expr*>& assigns: col_assigns_) {
             for (Expr* e: assigns) {
@@ -129,7 +131,7 @@ public:
     Status Execute() override {
         for (std::vector<Expr*> exprs: col_assigns_) {
             std::vector<Datum> nulls;
-            for (Expr* e: exprs) {
+            for (int i = 0; i < col_count_; i++) { //TODO: this is a bug - the number of exprs IS NOT necessarily same as total number
                 nulls.push_back(Datum());
             }
             Row row(nulls); //TODO: need to fill dummy row with enough nulls since ColAssign expects correct number of columns
@@ -154,6 +156,7 @@ public:
 private:
     WorkTable* target_;
     std::vector<std::vector<Expr*>> col_assigns_;
+    int col_count_;
 };
 
 class SelectStmt: public Stmt {
