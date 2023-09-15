@@ -75,8 +75,8 @@ void Tokenizer::DebugPrintTokens(const std::vector<Token>& tokens) {
 }
 
 Token Tokenizer::MakeIdentifier() {
-    int idx = idx_;
-    int len = 0;
+    size_t idx = idx_;
+    size_t len = 0;
 
     while ((IsNumeric(query_.at(idx_)) || IsAlpha(query_.at(idx_))) && query_.at(idx_) != '.') {
         idx_++;
@@ -194,8 +194,8 @@ Token Tokenizer::MakeIdentifier() {
 
 Token Tokenizer::MakeString() {
     idx_++; //skip starting single quote
-    int idx = idx_;
-    int len = 0;
+    size_t idx = idx_;
+    size_t len = 0;
     TokenType type = TokenType::StringLiteral;
     while (query_.at(idx_) != '\'') {
         idx_++;
@@ -207,8 +207,8 @@ Token Tokenizer::MakeString() {
 }
 
 Token Tokenizer::MakeNumber() {
-    int idx = idx_;
-    int len = 0;
+    size_t idx = idx_;
+    size_t len = 0;
     TokenType type = TokenType::IntLiteral;
     while (IsNumeric(query_.at(idx_)) || query_.at(idx_) == '.') {
         if (query_.at(idx_) == '.')

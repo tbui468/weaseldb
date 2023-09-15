@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <unordered_map>
+#include <limits>
 
 #include "expr.h"
 #include "token.h"
@@ -328,12 +329,6 @@ public:
                 col.push_back(result);
                 GetQueryState()->ResetAggState();
             }
-            /*
-            std::vector<Datum> col;
-            Status s = e->Eval(rs, col);
-            if (!s.Ok()) {
-                return s;
-            }*/
 
             if (col.size() < proj_rs->rows_.size()) {
                 proj_rs->rows_.resize(col.size());
@@ -366,11 +361,12 @@ public:
         Datum d;
         bool dummy_agg;
         //do rows need to be pushed/popped on query state row stack here?
+        //should scalar subqueries be allowed in the limit clause?
         Status s = limit_->Eval(&dummy_row, &d, &dummy_agg);
         if (!s.Ok()) return s;
 
-        int limit = d.AsInt4();
-        if (limit != -1 && limit < final_rs->rows_.size()) {
+        size_t limit = d.AsInt4() == -1 ? std::numeric_limits<size_t>::max() : d.AsInt4();
+        if (limit < final_rs->rows_.size()) {
             final_rs->rows_.resize(limit);
         }
 

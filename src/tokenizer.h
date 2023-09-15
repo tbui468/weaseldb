@@ -16,8 +16,8 @@ private:
     Token MakeString();
     Token MakeNumber();
 
-    inline Token MakeToken(TokenType type, int char_count) {
-        int old_idx = idx_;
+    inline Token MakeToken(TokenType type, size_t char_count) {
+        size_t old_idx = idx_;
         idx_ += char_count;
         return Token(query_.substr(old_idx, char_count), type);
     }
@@ -43,7 +43,7 @@ private:
     }
 private:
     std::string query_;
-    int idx_;
+    size_t idx_;
 };
 
 }

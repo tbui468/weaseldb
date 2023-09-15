@@ -93,13 +93,13 @@ std::string Schema::GetKeyFromData(const std::vector<Datum>& data) {
 }
 
 int Schema::GetFieldIdx(const std::string& name) {
-    ptrdiff_t pos = std::distance(attr_names_.begin(), std::find(attr_names_.begin(), attr_names_.end(), name));
-
-    if (pos >= attr_names_.size()) {
-        return -1;
+    for (size_t i = 0; i < attr_names_.size(); i++) {
+        if (name.compare(attr_names_.at(i)) == 0) {
+            return i;
+        }
     }
 
-    return pos;
+    return -1;
 }
 
 }
