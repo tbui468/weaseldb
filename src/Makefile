@@ -14,6 +14,8 @@ endif
 
 CFLAGS += -Wstrict-prototypes
 
+CXXFLAGS += -Wall
+
 .PHONY: clean librocksdb
 
 main: librocksdb main.cc tokenizer.cc parser.cc db.cc token.cc schema.cc

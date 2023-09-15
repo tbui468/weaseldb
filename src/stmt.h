@@ -26,7 +26,7 @@ public:
             return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
         }
 
-        for (int i = 0; i < names_.size(); i++) {
+        for (size_t i = 0; i < names_.size(); i++) {
             Token name = names_.at(i);
             Token type = types_.at(i);
             if (name.type != TokenType::Identifier) {
@@ -305,7 +305,7 @@ public:
 
         //projection
         RowSet* proj_rs = new RowSet();
-        for (Row* r: rs->rows_) {
+        for (size_t i = 0; i < rs->rows_.size(); i++) {
             proj_rs->rows_.push_back(new Row({}));
         }
 
@@ -341,7 +341,7 @@ public:
                 return Status(false, "Error: Mixing column references with and without aggregation functions causes mismatched column sizes!");
             }
 
-            for (int i = 0; i < col.size(); i++) {
+            for (size_t i = 0; i < col.size(); i++) {
                 proj_rs->rows_.at(i)->data_.push_back(col.at(i));
             }
         }

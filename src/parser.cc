@@ -431,6 +431,8 @@ Stmt* Parser::ParseStmt() {
             NextToken(); //;
             return new DescribeTableStmt(query_state_, target);
         }
+        default:
+            return NULL;
     }
 
     return NULL;

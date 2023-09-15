@@ -68,7 +68,7 @@ class AttributeSet {
 public:
     AttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<TokenType> types) {
         std::vector<Attribute>* attrs_vector = new std::vector<Attribute>();
-        for (int i = 0; i < names.size(); i++) {
+        for (size_t i = 0; i < names.size(); i++) {
             attrs_vector->emplace_back(names.at(i), types.at(i), i + offset_);
         }
 

@@ -250,9 +250,9 @@ public:
         return Status(true, "ok");
     }
 private:
+    Token op_;
     Expr* left_;
     Expr* right_;
-    Token op_;
 };
 
 class Unary: public Expr {
@@ -313,15 +313,15 @@ public:
         return Status(true, "ok");
     }
 private:
-    Expr* right_;
     Token op_;
+    Expr* right_;
 };
 
 
 class ColRef: public Expr {
 public:
-    ColRef(QueryState* qs, Token t): Expr(qs), t_(t), idx_(-1), table_ref_(""), scope_(-1) {}
-    ColRef(QueryState* qs, Token t, Token table_ref): Expr(qs), t_(t), idx_(-1), table_ref_(table_ref.lexeme), scope_(-1) {}
+    ColRef(QueryState* qs, Token t): Expr(qs), t_(t), table_ref_(""), idx_(-1), scope_(-1) {}
+    ColRef(QueryState* qs, Token t, Token table_ref): Expr(qs), t_(t), table_ref_(table_ref.lexeme), idx_(-1), scope_(-1) {}
     inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
         *is_agg = false;
         *result = GetQueryState()->ScopeRowAt(scope_)->data_.at(idx_);
@@ -344,15 +344,15 @@ public:
     }
 private:
     Token t_;
+    std::string table_ref_;
     int idx_;
     int scope_;
-    std::string table_ref_;
 };
 
 
 class ColAssign: public Expr {
 public:
-    ColAssign(QueryState* qs, Token col, Expr* right): Expr(qs), col_(col), right_(right), scope_(-1) {}
+    ColAssign(QueryState* qs, Token col, Expr* right): Expr(qs), col_(col), right_(right), scope_(-1), idx_(-1) {}
     inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
         *is_agg = false;
 
@@ -391,9 +391,9 @@ public:
     }
 private:
     Token col_;
-    int idx_;
-    int scope_;
     Expr* right_;
+    int scope_;
+    int idx_;
 };
 
 struct OrderCol {
@@ -1066,9 +1066,9 @@ public:
         return "cross join";
     }
 private:
-    Row* left_row_;
     WorkTable* left_;
     WorkTable* right_;
+    Row* left_row_;
 };
 
 class ConstantTable: public WorkTable {
@@ -1099,7 +1099,7 @@ public:
             return Status(false, "No more rows");
 
         std::vector<Datum> data;
-        for (int i = 0; i < target_cols_.size(); i++) {
+        for (size_t i = 0; i < target_cols_.size(); i++) {
             data.emplace_back(0);
         }
         *r = new Row(data);
@@ -1119,8 +1119,8 @@ public:
         return "constant table";
     }
 private:
-    int cur_;
     std::vector<Expr*> target_cols_;
+    int cur_;
 };
 
 //TODO: should rename to PhysicalTable

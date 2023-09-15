@@ -57,7 +57,7 @@ std::string Schema::Serialize() {
     int count = attr_names_.size();
     buf.append((char*)&count, sizeof(count));
 
-    for (int i = 0; i < attr_names_.size(); i++) { //types vector should be same size
+    for (size_t i = 0; i < attr_names_.size(); i++) { //types vector should be same size
         buf.append((char*)&attr_types_.at(i), sizeof(TokenType));
         int str_size = attr_names_.at(i).length();
         buf.append((char*)&str_size, sizeof(int));

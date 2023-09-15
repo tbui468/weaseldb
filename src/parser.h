@@ -36,8 +36,8 @@ private:
 
     Stmt* ParseStmt();
 private:
-    int idx_;
     std::vector<Token> tokens_;
+    int idx_;
     QueryState* query_state_;
 };
 

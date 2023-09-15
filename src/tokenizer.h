@@ -42,8 +42,8 @@ private:
         return idx_ >= query_.length();
     }
 private:
-    int idx_;
     std::string query_;
+    int idx_;
 };
 
 }
