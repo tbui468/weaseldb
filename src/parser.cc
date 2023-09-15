@@ -201,14 +201,13 @@ WorkTable* Parser::ParseBinaryWorkTable() {
                 left = new LeftJoin(right, left, ParseExpr());
                 break;
             }
-                                   /*
             case TokenType::Full: {
                 NextToken(); //join
                 WorkTable* right = ParsePrimaryWorkTable();
                 NextToken(); //on
                 left = new FullJoin(left, right, ParseExpr());
                 break;
-            }*/
+            }
             default:
                 break;
         }

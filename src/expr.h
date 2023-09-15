@@ -736,6 +736,142 @@ private:
     Expr* condition_;
 };
 
+//Idea: make a left join, run that to get left rows + rows in common
+//Then run the right join, but only include rights with left sides that are nulled out
+class FullJoin: public WorkTable {
+public:
+    FullJoin(WorkTable* left, WorkTable* right, Expr* condition): 
+        left_(left), right_(right), condition_(condition), right_join_(new LeftJoin(right, left, condition)) {}
+
+    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
+        Status s = right_join_->Analyze(qs, working_attrs);
+
+        if (!s.Ok())
+            return s;
+
+        attr_count_ = (*working_attrs)->AttributeCount();
+
+        return s;
+    }
+    Status BeginScan(DB* db) override {
+        right_join_->BeginScan(db);
+        do_right_ = true;
+
+        return Status(true, "ok");
+    }
+    Status NextRow(DB* db, Row** r) override {
+        //attempt grabbing row from right_join_
+        //if none left, initialize left_ and right_, and start processing left join but only use values with nulled right sides
+        if (do_right_) {
+            Status s = right_join_->NextRow(db, r);
+            if (s.Ok()) {
+                return s;
+            } else {
+                //reset to begin augmented left outer join scan
+                do_right_ = false;
+                left_->BeginScan(db);
+                right_->BeginScan(db);
+                Status s = left_->NextRow(db, &left_row_);
+                lefts_inserted_ = 0;
+                if (!s.Ok())
+                    return Status(false, "No more rows");
+            }
+        }
+        
+
+        //right join is done, so grabbing left join rows where the right side has no match, and will be nulled
+        Row* right_row;
+
+        while (true) {
+            Status s = right_->NextRow(db, &right_row);
+            if (!s.Ok()) {
+                //get new left
+                if (lefts_inserted_ == 0) {
+                    std::vector<Datum> result;
+                    int right_attr_count = attr_count_ - left_row_->data_.size();
+                    for (int i = 0; i < right_attr_count; i++) {
+                        result.push_back(Datum());
+                    }
+
+                    result.insert(result.end(), left_row_->data_.begin(), left_row_->data_.end());
+
+                    *r = new Row(result);
+                    lefts_inserted_++;
+
+                    return Status(true, "ok");
+                }
+
+                {
+                    Status s = left_->NextRow(db, &left_row_);
+                    lefts_inserted_ = 0;
+                    if (!s.Ok())
+                        return Status(false, "No more rows");
+                }
+
+                {
+                    right_->BeginScan(db);
+                    Status s = right_->NextRow(db, &right_row);
+                    if (!s.Ok())
+                        return Status(false, "No more rows");
+                } 
+            }
+
+            //checking 'on' condition, but not adding row if true since
+            //that was already taken care of with the right outer join
+            //only checking if condition is met or not so that we know
+            //whether the current left row needs to be concatenated with a nulled right row 
+            {
+                std::vector<Datum> result = right_row->data_;
+                result.insert(result.end(), left_row_->data_.begin(), left_row_->data_.end());
+
+                Row temp(result);
+                Datum d;
+                bool is_agg;
+
+                condition_->GetQueryState()->PushScopeRow(&temp);
+                Status s = condition_->Eval(&temp, &d, &is_agg);
+                condition_->GetQueryState()->PopScopeRow();
+
+                //TODO: optmization opportunity here
+                //if a left join row has a matching right side here, no need to check the
+                //rest of the right rows to determine if a left + nulled-right is necessary
+                //can go straight to the next left row immediately
+                if (d.AsBool()) {
+                    lefts_inserted_++;
+                }
+
+            }
+        }
+
+        return Status(false, "Should never see this message");
+    }
+    Status DeletePrev(DB* db) override {
+        return Status(false, "Error: Cannot delete a row from a full joined table");
+    }
+    Status UpdatePrev(DB* db, Row* r) override {
+        return Status(false, "Error: Cannot update a row in a full joined table");
+    }
+    Status Insert(DB* db, const std::vector<Datum>& data) override {
+        return Status(false, "Error: Cannot insert value into a row in a full joined table");
+    }
+    std::string ToString() const override {
+        return "full join";
+    }
+private:
+    //used to track number of times a given left row is inserted into the final working table
+    //if a row is inserted 0 times, then insert the left row and fill in the right row with nulls
+    int lefts_inserted_;
+    int attr_count_;
+    bool do_right_;
+    Row* left_row_;
+    WorkTable* left_;
+    WorkTable* right_;
+    Expr* condition_;
+    LeftJoin* right_join_;
+};
+
+
+
 class InnerJoin: public WorkTable {
 public:
     InnerJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
