@@ -16,9 +16,8 @@ public:
     Datum(Token t) {
         switch (t.type) {
             case TokenType::IntLiteral: {
-                //all integer literals are evaluated to int8
-                //if schema expects int4, will be demoted to int4 before written to disk
-                //inside of ColAssign
+                //all integer literals are evaluated to int8 for processing in wsldb
+                //if schema expects int4, will be demoted to int4 before written to disk inside of class ColAssign
                 type_ = TokenType::Int8;
                 int64_t value = std::stol(t.lexeme);
                 data_.append((char*)&value, sizeof(int64_t));
@@ -215,11 +214,9 @@ public:
     bool operator==(const Datum& d) {
         switch (type_) {
             case TokenType::Int4:
-                return AsInt4() - d.AsInt4() == 0;
             case TokenType::Int8:
-                return AsInt8() - d.AsInt8() == 0;
             case TokenType::Float4:
-                return AsFloat4() - d.AsFloat4() == 0;
+                return WSLDB_NUMERIC_LITERAL(*this) - WSLDB_NUMERIC_LITERAL(d) == 0;
             case TokenType::Bool:
                 return AsBool() - d.AsBool() == 0;
             case TokenType::Text:
@@ -238,11 +235,9 @@ public:
     bool operator<(const Datum& d) {
         switch (type_) {
             case TokenType::Int4:
-                return AsInt4() - d.AsInt4() < 0;
             case TokenType::Int8:
-                return AsInt8() - d.AsInt8() < 0;
             case TokenType::Float4:
-                return AsFloat4() - d.AsFloat4() < 0;
+                return WSLDB_NUMERIC_LITERAL(*this) - WSLDB_NUMERIC_LITERAL(d) < 0;
             case TokenType::Bool:
                 return AsBool() - d.AsBool() < 0;
             case TokenType::Text:
