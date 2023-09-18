@@ -27,6 +27,10 @@ public:
             return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
         }
 
+        //insert internal column _rowid
+        names_.insert(names_.begin(), Token("_rowid", TokenType::Identifier));
+        types_.insert(types_.begin(), Token("int8", TokenType::Int8));
+
         for (size_t i = 0; i < names_.size(); i++) {
             Token name = names_.at(i);
             Token type = types_.at(i);

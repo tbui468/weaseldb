@@ -54,7 +54,6 @@ Schema::Schema(std::string table_name, const std::string& buf) {
         pk_attr_idxs_.push_back(k);
     }
 
-    rowid_counter_ = 0;
 }
 
 std::string Schema::Serialize() {

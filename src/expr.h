@@ -617,7 +617,7 @@ public:
     //since most WorkTables will not use them (only Physical Table will need it)
     virtual Status DeletePrev(DB* db) = 0;
     virtual Status UpdatePrev(DB* db, Row* r) = 0;
-    virtual Status Insert(DB* db, const std::vector<Datum>& data) = 0;
+    virtual Status Insert(DB* db, std::vector<Datum>& data) = 0;
     virtual std::string ToString() const = 0;
 };
 
@@ -737,7 +737,7 @@ public:
     Status UpdatePrev(DB* db, Row* r) override {
         return Status(false, "Error: Cannot update a row in a left joined table");
     }
-    Status Insert(DB* db, const std::vector<Datum>& data) override {
+    Status Insert(DB* db, std::vector<Datum>& data) override {
         return Status(false, "Error: Cannot insert value into a row in a left joined table");
     }
     std::string ToString() const override {
@@ -850,7 +850,7 @@ public:
                 Status s = condition_->Eval(&temp, &d, &is_agg);
                 condition_->GetQueryState()->PopScopeRow();
 
-                //TODO: optmization opportunity here
+                //TODO: optimization opportunity here
                 //if a left join row has a matching right side here, no need to check the
                 //rest of the right rows to determine if a left + nulled-right is necessary
                 //can go straight to the next left row immediately
@@ -869,7 +869,7 @@ public:
     Status UpdatePrev(DB* db, Row* r) override {
         return Status(false, "Error: Cannot update a row in a full joined table");
     }
-    Status Insert(DB* db, const std::vector<Datum>& data) override {
+    Status Insert(DB* db, std::vector<Datum>& data) override {
         return Status(false, "Error: Cannot insert value into a row in a full joined table");
     }
     std::string ToString() const override {
@@ -996,7 +996,7 @@ public:
     Status UpdatePrev(DB* db, Row* r) override {
         return Status(false, "Error: Cannot update a row in a cross-joined table");
     }
-    Status Insert(DB* db, const std::vector<Datum>& data) override {
+    Status Insert(DB* db, std::vector<Datum>& data) override {
         return Status(false, "Error: Cannot insert value into a row in a cross-joined table");
     }
     std::string ToString() const override {
@@ -1077,7 +1077,7 @@ public:
     Status UpdatePrev(DB* db, Row* r) override {
         return Status(false, "Error: Cannot update a row in a cross-joined table");
     }
-    Status Insert(DB* db, const std::vector<Datum>& data) override {
+    Status Insert(DB* db, std::vector<Datum>& data) override {
         return Status(false, "Error: Cannot insert value into a row in a cross-joined table");
     }
     std::string ToString() const override {
@@ -1130,7 +1130,7 @@ public:
     Status UpdatePrev(DB* db, Row* r) override {
         return Status(false, "Error: Cannot update a constant table row");
     }
-    Status Insert(DB* db, const std::vector<Datum>& data) override {
+    Status Insert(DB* db, std::vector<Datum>& data) override {
         return Status(false, "Error: Cannot insert value into a constant table row");
     }
     std::string ToString() const override {
@@ -1193,8 +1193,13 @@ public:
         it_->Next();
         return Status(true, "ok");
     }
-    Status Insert(DB* db, const std::vector<Datum>& data) override {
+    Status Insert(DB* db, std::vector<Datum>& data) override {
         rocksdb::DB* tab_handle = db->GetTableHandle(tab_name_);
+
+        //insert _rowid
+        int64_t rowid = schema_->NextRowId();
+        data.at(0) = Datum(rowid);
+
         std::string value = Datum::SerializeData(data);
         std::string key = schema_->GetKeyFromData(data);
 
@@ -1205,6 +1210,10 @@ public:
         }
 
         tab_handle->Put(rocksdb::WriteOptions(), key, value);
+
+        //Writing schema back to disk to ensure autoincrementing rowid is updated
+        //TODO: optimzation opportunity - only need to write schema once all inserts are done, not after each one
+        db->Catalogue()->Put(rocksdb::WriteOptions(), tab_name_, schema_->Serialize());
         return Status(true, "ok");
     }
     std::string ToString() const override {

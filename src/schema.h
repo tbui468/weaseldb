@@ -47,6 +47,10 @@ public:
     inline std::string TableName() {
         return table_name_;
     }
+
+    inline int64_t NextRowId() {
+        return rowid_counter_++;
+    }
 private:
     std::string table_name_;
     std::vector<std::string> attr_names_;
