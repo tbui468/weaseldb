@@ -242,6 +242,7 @@ Stmt* Parser::ParseStmt() {
 
             std::vector<Token> names;
             std::vector<Token> types;
+            std::vector<bool> not_null_constraints;
             std::vector<Token> pks;
             while (PeekToken().type != TokenType::RParen) {
                 if (PeekToken().type == TokenType::Primary) {
@@ -269,6 +270,9 @@ Stmt* Parser::ParseStmt() {
                     types.push_back(NextToken());
                 }
 
+                //TODO: parse 'not null' row contraints
+                not_null_constraints.push_back(false);
+
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken();//,
                 }
@@ -276,7 +280,7 @@ Stmt* Parser::ParseStmt() {
 
             NextToken();//)
             NextToken();//;
-            return new CreateStmt(query_state_, target, names, types, pks);
+            return new CreateStmt(query_state_, target, names, types, not_null_constraints, pks);
         }
         case TokenType::Insert: {
             NextToken(); //into

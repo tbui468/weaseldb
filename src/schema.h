@@ -20,22 +20,25 @@ private:
     std::vector<Expr*> foreign_cols_;
 };*/
 
+struct Attribute {
+    Attribute(const std::string& name, TokenType type, bool not_null_constraint):
+        name(name), type(type), not_null_constraint(not_null_constraint) {}
+
+    std::string name;
+    TokenType type;
+    bool not_null_constraint;
+};
+
 class Schema {
 public:
-    Schema(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<Token> primary_keys);
+    Schema(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<bool> not_null_constraints, std::vector<Token> primary_keys);
     Schema(std::string table_name, const std::string& buf);
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
     std::string GetKeyFromData(const std::vector<Datum>& data);
-    int GetFieldIdx(const std::string& name);
-    inline int FieldCount() {
-        return attr_names_.size(); // == types.size()
-    }
-    inline TokenType Type(int i) {
-        return attr_types_.at(i);
-    }
-    inline std::string Name(int i) {
-        return attr_names_.at(i);
+    int GetAttrIdx(const std::string& name);
+    inline const std::vector<Attribute>& Attrs() const {
+        return attrs_;
     }
     inline int PrimaryKeyCount() {
         return pk_attr_idxs_.size();
@@ -53,20 +56,19 @@ public:
     }
 private:
     std::string table_name_;
-    std::vector<std::string> attr_names_;
-    std::vector<TokenType> attr_types_;
+    std::vector<Attribute> attrs_;
     std::vector<int> pk_attr_idxs_;
     int64_t rowid_counter_;
     //std::vector<int> fk_attr_idxs_;
     //std::string fk_ref_;
 };
 
-struct Attribute {
-    Attribute(): name(""), type(TokenType::Int4), idx(-1), scope(-1) {} //placeholders
-    Attribute(std::string name, TokenType type, int idx): name(name), type(type), idx(idx), scope(-1) {}
-    std::string name;
-    TokenType type;
-    int idx;
+struct WorkingAttribute: public Attribute {
+    //dummy constructor to allow creation on stack (used in WorkingAttributeSet functions)
+    WorkingAttribute(): Attribute("", TokenType::Int4, true), idx(-1), scope(-1) {} //placeholders
+    WorkingAttribute(Attribute a, int idx): Attribute(a.name, a.type, a.not_null_constraint), idx(idx), scope(-1) {} //scope is placeholder
+
+    int idx; //attributes of later tables are offset if multiple tables are joined into a single working table
     int scope; //default is -1.  Should be filled in with correct relative scope position during semantic analysis phase
 
     Status CheckConstraints(TokenType type) {
@@ -88,12 +90,14 @@ struct Attribute {
 
 };
 
-class AttributeSet {
+class WorkingAttributeSet {
 public:
-    AttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<TokenType> types) {
-        std::vector<Attribute>* attrs_vector = new std::vector<Attribute>();
+    //This constructor is only used for ConstantTables, since a Physical table will use a schema
+    WorkingAttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<TokenType> types) {
+        std::vector<WorkingAttribute>* attrs_vector = new std::vector<WorkingAttribute>();
         for (size_t i = 0; i < names.size(); i++) {
-            attrs_vector->emplace_back(names.at(i), types.at(i), i + offset_);
+            //not_null_constraint not used in ConstantTables, so just setting it to true
+            attrs_vector->emplace_back(Attribute(names.at(i), types.at(i), true), i + offset_);
         }
 
         attrs_.insert({ ref_name, attrs_vector });
@@ -101,19 +105,19 @@ public:
         offset_ += names.size();
     }
 
-    AttributeSet(Schema* schema, const std::string& ref_name) {
-        std::vector<Attribute>* attrs_vector = new std::vector<Attribute>();
-        for (int i = 0; i < schema->FieldCount(); i++) {
-            attrs_vector->emplace_back(schema->Name(i), schema->Type(i), i + offset_);
+    WorkingAttributeSet(Schema* schema, const std::string& ref_name) {
+        std::vector<WorkingAttribute>* attrs_vector = new std::vector<WorkingAttribute>();
+        for (size_t i = 0; i < schema->Attrs().size(); i++) {
+            attrs_vector->emplace_back(schema->Attrs().at(i), i + offset_);
         }
 
         attrs_.insert({ ref_name, attrs_vector });
 
-        offset_ += schema->FieldCount();
+        offset_ += schema->Attrs().size();
     }
 
-    AttributeSet(AttributeSet* left, AttributeSet* right, bool* has_duplicate_tables) {
-        for (const std::pair<const std::string, std::vector<Attribute>*>& p: left->attrs_) {
+    WorkingAttributeSet(WorkingAttributeSet* left, WorkingAttributeSet* right, bool* has_duplicate_tables) {
+        for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: left->attrs_) {
             if (right->attrs_.find(p.first) != right->attrs_.end()) {
                 *has_duplicate_tables = true;
             }
@@ -123,8 +127,8 @@ public:
         attrs_.insert(right->attrs_.begin(), right->attrs_.end());
 
         //offset right attributes
-        for (const std::pair<const std::string, std::vector<Attribute>*>& p: right->attrs_) {
-            for (Attribute& a: *(p.second)) {
+        for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: right->attrs_) {
+            for (WorkingAttribute& a: *(p.second)) {
                 a.idx += left->offset_;
             }
         }
@@ -133,13 +137,13 @@ public:
         offset_ += right->offset_;
     }
 
-    AttributeSet(Schema* schema): AttributeSet(schema, schema->TableName()) {}
+    WorkingAttributeSet(Schema* schema): WorkingAttributeSet(schema, schema->TableName()) {}
 
     bool Contains(const std::string& table, const std::string& col) const {
         if (attrs_.find(table) == attrs_.end())
             return false;
 
-        for (const Attribute& a: *(attrs_.at(table))) {
+        for (const WorkingAttribute& a: *(attrs_.at(table))) {
             if (a.name.compare(col) == 0)
                 return true;
         }
@@ -147,33 +151,33 @@ public:
         return false;
     }
 
-    Attribute GetAttribute(const std::string& table, const std::string& col) const {
-        std::vector<Attribute>* v = attrs_.at(table);
-        for (Attribute a: *v) {
+    WorkingAttribute GetWorkingAttribute(const std::string& table, const std::string& col) const {
+        std::vector<WorkingAttribute>* v = attrs_.at(table);
+        for (WorkingAttribute a: *v) {
             if (a.name.compare(col) == 0)
                 return a;
         }
 
-        return {"", TokenType::Int4, 0}; //keep compiler quiet
+        return {}; //keep compiler quiet
     }
 
     std::vector<std::string> TableNames() const {
         std::vector<std::string> result;
 
-        for (const std::pair<const std::string, std::vector<Attribute>*>& p: attrs_) {
+        for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: attrs_) {
             result.push_back(p.first);
         }
 
         return result;
     }
 
-    std::vector<Attribute>* TableAttributes(const std::string& table) const {
+    std::vector<WorkingAttribute>* TableWorkingAttributes(const std::string& table) const {
         return attrs_.at(table);
     }
 
-    int AttributeCount() const {
+    int WorkingAttributeCount() const {
         int count = 0;
-        for (const std::pair<const std::string, std::vector<Attribute>*>& p: attrs_) {
+        for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: attrs_) {
             count += p.second->size();
         }
 
@@ -181,7 +185,7 @@ public:
     }
 
 public:
-    std::unordered_map<std::string, std::vector<Attribute>*> attrs_;
+    std::unordered_map<std::string, std::vector<WorkingAttribute>*> attrs_;
     int offset_ = 0;
 };
 

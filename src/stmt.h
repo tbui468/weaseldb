@@ -18,8 +18,18 @@ namespace wsldb {
 
 class CreateStmt: public Stmt {
 public:
-    CreateStmt(QueryState* qs, Token target, std::vector<Token> names, std::vector<Token> types, std::vector<Token> primary_keys):
-        Stmt(qs), target_(target), names_(std::move(names)), types_(std::move(types)), primary_keys_(std::move(primary_keys)) {}
+    CreateStmt(QueryState* qs, 
+               Token target, 
+               std::vector<Token> names, 
+               std::vector<Token> types, 
+               std::vector<bool> not_null_constraints, 
+               std::vector<Token> primary_keys):
+                    Stmt(qs), 
+                    target_(target), 
+                    names_(std::move(names)), 
+                    types_(std::move(types)), 
+                    not_null_constraints_(std::move(not_null_constraints)), 
+                    primary_keys_(std::move(primary_keys)) {}
 
     Status Analyze(std::vector<TokenType>& types) override {
         std::string serialized_schema;
@@ -28,6 +38,7 @@ public:
         }
 
         //insert internal column _rowid
+        not_null_constraints_.insert(not_null_constraints_.begin(), true);
         names_.insert(names_.begin(), Token("_rowid", TokenType::Identifier));
         types_.insert(types_.begin(), Token("int8", TokenType::Int8));
 
@@ -42,9 +53,9 @@ public:
             }
         }
 
-        Schema schema(target_.lexeme, names_, types_, primary_keys_);
+        Schema schema(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_);
         for (Token t: primary_keys_) {
-            if (schema.GetFieldIdx(t.lexeme) == -1) {
+            if (schema.GetAttrIdx(t.lexeme) == -1) {
                 return Status(false, "Error: Column '" + t.lexeme + "' not declared in table '" + target_.lexeme + "'");
             }
         }
@@ -56,7 +67,7 @@ public:
     }
 
     Status Execute() override {
-        Schema schema(target_.lexeme, names_, types_, primary_keys_);
+        Schema schema(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_);
         GetQueryState()->db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, schema.Serialize());
 
         rocksdb::Options options;
@@ -74,6 +85,7 @@ private:
     Token target_;
     std::vector<Token> names_;
     std::vector<Token> types_;
+    std::vector<bool> not_null_constraints_;
     std::vector<Token> primary_keys_;
 };
 
@@ -83,7 +95,7 @@ public:
         Stmt(qd), target_(target), col_assigns_(std::move(col_assigns)) {}
 
     Status Analyze(std::vector<TokenType>& types) override {
-        AttributeSet* working_attrs;
+        WorkingAttributeSet* working_attrs;
         {
             Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
@@ -96,7 +108,7 @@ public:
             return Status(false, "Error: Cannot insert into more than one table");
 
         //need to cache schema count in case some columns are not specified
-        col_count_ = working_attrs->AttributeCount();
+        col_count_ = working_attrs->WorkingAttributeCount();
 
         for (const std::vector<Expr*>& assigns: col_assigns_) {
             for (Expr* e: assigns) {
@@ -109,7 +121,7 @@ public:
 
         /*
         std::string table = tables.at(0);
-        std::vector<Attribute>* attrs = working_attrs->TableAttributes(table);
+        std::vector<WorkingAttribute>* attrs = working_attrs->TableWorkingAttributes(table);
 
         for (const std::vector<Expr*>& exprs: values_) {
             if (exprs.size() != attrs->size()) {
@@ -122,7 +134,7 @@ public:
                 Status s = e->Analyze(GetQueryState(), &type);
                 if (!s.Ok())
                     return s;
-                Attribute a = attrs->at(i);
+                WorkingAttribute a = attrs->at(i);
                 if (attrs->at(i).type != type)
                     return Status(false, "Error: Value type does not match type in schema on record");
             }
@@ -181,7 +193,7 @@ public:
                     remove_duplicates_(remove_duplicates) {}
 
     Status Analyze(std::vector<TokenType>& types) override {
-        AttributeSet* working_attrs;
+        WorkingAttributeSet* working_attrs;
         {
             Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
@@ -398,7 +410,7 @@ public:
     UpdateStmt(QueryState* qd, WorkTable* target, std::vector<Expr*> assigns, Expr* where_clause):
         Stmt(qd), target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
     Status Analyze(std::vector<TokenType>& types) override {
-        AttributeSet* working_attrs;
+        WorkingAttributeSet* working_attrs;
         {
             Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
@@ -473,7 +485,7 @@ public:
     DeleteStmt(QueryState* qd, WorkTable* target, Expr* where_clause): 
         Stmt(qd), target_(target), where_clause_(where_clause) {}
     Status Analyze(std::vector<TokenType>& types) override {
-        AttributeSet* working_attrs;
+        WorkingAttributeSet* working_attrs;
         {
             Status s = target_->Analyze(GetQueryState(), &working_attrs);
             if (!s.Ok())
@@ -577,8 +589,8 @@ public:
         tuplefields.push_back("Type");
         RowSet* rowset = new RowSet();
 
-        for (int i = 0; i < schema.FieldCount(); i++) {
-            std::vector<Datum> data = {Datum(schema.Name(i)), Datum(TokenTypeToString(schema.Type(i)))};
+        for (const Attribute& a: schema.Attrs()) {
+            std::vector<Datum> data = { Datum(a.name), Datum(TokenTypeToString(a.type))};
             rowset->rows_.push_back(new Row(data));
         }
 
@@ -586,7 +598,8 @@ public:
         std::string s = "Primary keys:";
         pk_data.push_back(Datum(s));
         for (int i = 0; i < schema.PrimaryKeyCount(); i++) {
-            pk_data.push_back(schema.Name(schema.PrimaryKey(i)));
+            std::string name = schema.Attrs().at(schema.PrimaryKey(i)).name;
+            pk_data.push_back(Datum(name));
         }
         rowset->rows_.push_back(new Row(pk_data));
 

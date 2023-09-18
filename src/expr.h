@@ -22,10 +22,10 @@ public:
         ResetAggState();
     }
 
-    inline AttributeSet* AnalysisScopesTop() const {
+    inline WorkingAttributeSet* AnalysisScopesTop() const {
         return analysis_scopes_.back();
     }
-    inline void PushAnalysisScope(AttributeSet* as) {
+    inline void PushAnalysisScope(WorkingAttributeSet* as) {
         analysis_scopes_.push_back(as);
     }
     inline void PopAnalysisScope() {
@@ -48,9 +48,9 @@ public:
         count_ = Datum(0);
     }
 
-    Status GetAttribute(Attribute* attr, const std::string& table_ref_param, const std::string& col) const {
+    Status GetWorkingAttribute(WorkingAttribute* attr, const std::string& table_ref_param, const std::string& col) const {
         for (int i = analysis_scopes_.size() - 1; i >= 0; i--) {
-            Status s = GetAttributeAtScopeOffset(attr, table_ref_param, col, i);
+            Status s = GetWorkingAttributeAtScopeOffset(attr, table_ref_param, col, i);
             if (s.Ok() || i == 0)
                 return s;
         }
@@ -58,9 +58,9 @@ public:
         return Status(false, "should never reach this"); //keeping compiler quiet
     }
 private:
-    Status GetAttributeAtScopeOffset(Attribute* attr, const std::string& table_ref_param, const std::string& col, int i) const {
+    Status GetWorkingAttributeAtScopeOffset(WorkingAttribute* attr, const std::string& table_ref_param, const std::string& col, int i) const {
         std::string table_ref = table_ref_param;
-        AttributeSet* as = analysis_scopes_.at(i);
+        WorkingAttributeSet* as = analysis_scopes_.at(i);
         if (table_ref == "") {
             std::vector<std::string> tables;
             for (const std::string& name: as->TableNames()) {
@@ -81,7 +81,7 @@ private:
             return Status(false, "Error: Column '" + table_ref + "." + col + "' does not exist");
         }
 
-        *attr = as->GetAttribute(table_ref, col);
+        *attr = as->GetWorkingAttribute(table_ref, col);
         //0 is current scope, 1 is the immediate outer scope, 2 is two outer scopes out, etc
         attr->scope = analysis_scopes_.size() - 1 - i;
         
@@ -96,7 +96,7 @@ public:
     Datum count_;
     bool first_;
 private:
-    std::vector<AttributeSet*> analysis_scopes_;
+    std::vector<WorkingAttributeSet*> analysis_scopes_;
     std::vector<Row*> scope_rows_;
 };
 
@@ -329,8 +329,8 @@ public:
         return t_.lexeme;
     }
     Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
-        Attribute a;
-        Status s = qs->GetAttribute(&a, table_ref_, t_.lexeme);
+        WorkingAttribute a;
+        Status s = qs->GetWorkingAttribute(&a, table_ref_, t_.lexeme);
         if (!s.Ok())
             return s;
 
@@ -383,10 +383,10 @@ public:
                 return s;
         }
 
-        Attribute a;
+        WorkingAttribute a;
         {
             std::string table_ref = "";
-            Status s = qs->GetAttribute(&a, table_ref, col_.lexeme);
+            Status s = qs->GetWorkingAttribute(&a, table_ref, col_.lexeme);
             if (!s.Ok())
                 return s;
         }
@@ -610,7 +610,7 @@ private:
 
 class WorkTable {
 public:
-    virtual Status Analyze(QueryState* qs, AttributeSet** working_attrs) = 0;
+    virtual Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) = 0;
     virtual Status BeginScan(DB* db) = 0;
     virtual Status NextRow(DB* db, Row** r) = 0;
     //DeletePrev, UpdatePrev, Insert are really strange in this case
@@ -624,26 +624,26 @@ public:
 class LeftJoin: public WorkTable {
 public:
     LeftJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
-        AttributeSet* left_attrs;
+    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
+        WorkingAttributeSet* left_attrs;
         {
             Status s = left_->Analyze(qs, &left_attrs);
             if (!s.Ok())
                 return s;
         }
 
-        AttributeSet* right_attrs;
+        WorkingAttributeSet* right_attrs;
         {
             Status s = right_->Analyze(qs, &right_attrs);
             if (!s.Ok())
                 return s;
         }
 
-        right_attr_count_ = right_attrs->AttributeCount();
+        right_attr_count_ = right_attrs->WorkingAttributeCount();
 
         {
             bool has_duplicate_tables;
-            *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+            *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
             if (has_duplicate_tables)
                 return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
         }
@@ -761,13 +761,13 @@ public:
     FullJoin(WorkTable* left, WorkTable* right, Expr* condition): 
         left_(left), right_(right), condition_(condition), right_join_(new LeftJoin(right, left, condition)) {}
 
-    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
+    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
         Status s = right_join_->Analyze(qs, working_attrs);
 
         if (!s.Ok())
             return s;
 
-        attr_count_ = (*working_attrs)->AttributeCount();
+        attr_count_ = (*working_attrs)->WorkingAttributeCount();
 
         return s;
     }
@@ -893,15 +893,15 @@ private:
 class InnerJoin: public WorkTable {
 public:
     InnerJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
-        AttributeSet* left_attrs;
+    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
+        WorkingAttributeSet* left_attrs;
         {
             Status s = left_->Analyze(qs, &left_attrs);
             if (!s.Ok())
                 return s;
         }
 
-        AttributeSet* right_attrs;
+        WorkingAttributeSet* right_attrs;
         {
             Status s = right_->Analyze(qs, &right_attrs);
             if (!s.Ok())
@@ -910,14 +910,14 @@ public:
 
         {
             bool has_duplicate_tables;
-            *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+            *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
             if (has_duplicate_tables)
                 return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
         }
 
         //Need to put current attributeset into QueryState temporarily so that Expr::Analyze
         //can use that data to perform semantic analysis for 'on' clause.  Normally Expr::Analyze is only
-        //called once entire WorkTable is Analyzed an at least a single AttributeSet is in QueryState,
+        //called once entire WorkTable is Analyzed an at least a single WorkingAttributeSet is in QueryState,
         //but InnerJoins have an Expr embedded as part of the WorkTable (the 'on' clause), so this is needed
         //Something similar is done in InnerJoin::NextRow
         qs->PushAnalysisScope(*working_attrs);
@@ -1012,15 +1012,15 @@ private:
 class CrossJoin: public WorkTable {
 public:
     CrossJoin(WorkTable* left, WorkTable* right): left_(left), right_(right), left_row_(nullptr) {}
-    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
-        AttributeSet* left_attrs;
+    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
+        WorkingAttributeSet* left_attrs;
         {
             Status s = left_->Analyze(qs, &left_attrs);
             if (!s.Ok())
                 return s;
         }
 
-        AttributeSet* right_attrs;
+        WorkingAttributeSet* right_attrs;
         {
             Status s = right_->Analyze(qs, &right_attrs);
             if (!s.Ok())
@@ -1029,7 +1029,7 @@ public:
 
         {
             bool has_duplicate_tables;
-            *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+            *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
             if (has_duplicate_tables)
                 return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
         }
@@ -1092,7 +1092,7 @@ private:
 class ConstantTable: public WorkTable {
 public:
     ConstantTable(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
-    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
+    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
         std::vector<std::string> names;
         std::vector<TokenType> types;
         for (Expr* e: target_cols_) {
@@ -1104,7 +1104,7 @@ public:
             types.push_back(type);
         }
 
-        *working_attrs = new AttributeSet("?table?", names, types);
+        *working_attrs = new WorkingAttributeSet("?table?", names, types);
 
         return Status(true, "ok");
     }
@@ -1147,7 +1147,7 @@ public:
     Physical(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
     //if an alias is not provided, the reference name is the same as the physical table name
     Physical(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
-    Status Analyze(QueryState* qs, AttributeSet** working_attrs) override {
+    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
         std::string serialized_schema;
         if (!qs->db->TableSchema(tab_name_, &serialized_schema)) {
             return Status(false, "Error: Table '" + tab_name_ + "' does not exist");
@@ -1156,7 +1156,7 @@ public:
 
         db_handle_ = qs->db->GetTableHandle(tab_name_);
 
-        *working_attrs = new AttributeSet(schema_, ref_name_);
+        *working_attrs = new WorkingAttributeSet(schema_, ref_name_);
 
         return Status(true, "ok");
     }
