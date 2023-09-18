@@ -79,7 +79,8 @@ rocksdb::Status DB::execute(const std::string& query) {
             }
         }
 
-        std::cout << status.Msg() << std::endl;
+        if (!status.Ok())
+            std::cout << status.Msg() << std::endl;
     }
 
     return status_;
@@ -117,8 +118,8 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
             }
         }
 
-        //disabling status messages for tests
-        //std::cout << status.Msg() << std::endl;
+        if (!status.Ok())
+            std::cout << status.Msg() << std::endl;
     }
 
     return Status(true, "ok");

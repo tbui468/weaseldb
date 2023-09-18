@@ -1,5 +1,7 @@
+drop table if exists planets;
+
 create table planets (id int4, primary key (id));
-insert into planets values (1), (2), (3);
+insert into planets (id) values (1), (2), (3);
 
 select count(5);
 select sum(5);

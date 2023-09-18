@@ -72,9 +72,7 @@ struct WorkingAttribute: public Attribute {
     int scope; //default is -1.  Should be filled in with correct relative scope position during semantic analysis phase
 
     Status CheckConstraints(TokenType type) {
-        bool not_null = false; //placeholder until 'not null' constraint is implemented
-
-        if (not_null && type == TokenType::Null) {
+        if (not_null_constraint && type == TokenType::Null) {
             return Status(false, "Error: Value violates column 'not null' constraint");
         }
 

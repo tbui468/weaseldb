@@ -1,0 +1,7 @@
+_rowid,Int8,true,
+name,Text,true,
+moons,Int4,false,
+rings,Bool,true,
+Primary keys:,name,
+Mars,2,false,
+Earth,null,false,

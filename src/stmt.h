@@ -587,10 +587,11 @@ public:
         std::vector<std::string> tuplefields = std::vector<std::string>();
         tuplefields.push_back("Column");
         tuplefields.push_back("Type");
+        tuplefields.push_back("Not Null");
         RowSet* rowset = new RowSet();
 
         for (const Attribute& a: schema.Attrs()) {
-            std::vector<Datum> data = { Datum(a.name), Datum(TokenTypeToString(a.type))};
+            std::vector<Datum> data = { Datum(a.name), Datum(TokenTypeToString(a.type)), Datum(a.not_null_constraint) };
             rowset->rows_.push_back(new Row(data));
         }
 

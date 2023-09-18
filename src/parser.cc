@@ -266,12 +266,19 @@ Stmt* Parser::ParseStmt() {
                     std::vector<Expr*> foreign_cols = ParseTuple();
                     constraints.push_back(new ForeignKey(cols, foreign_target, foreign_cols));*/
                 } else {
+                    //column name and type
                     names.push_back(NextToken());
                     types.push_back(NextToken());
+
+                    if (PeekToken().type == TokenType::Not) {
+                        NextToken(); //not
+                        NextToken(); //null
+                        not_null_constraints.push_back(true);
+                    } else {
+                        not_null_constraints.push_back(false);
+                    }
                 }
 
-                //TODO: parse 'not null' row contraints
-                not_null_constraints.push_back(false);
 
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken();//,
