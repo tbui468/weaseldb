@@ -18,12 +18,18 @@ Schema::Schema(std::string table_name, std::vector<Token> names, std::vector<Tok
     for (Token t: primary_keys) {
         pk_attr_idxs_.push_back(GetFieldIdx(t.lexeme));
     }
+
+    rowid_counter_ = 0;
 }
 
 Schema::Schema(std::string table_name, const std::string& buf) {
     table_name_ = table_name;
 
     int off = 0; 
+
+    rowid_counter_ = *((int64_t*)(buf.data() + off));
+    off += sizeof(int64_t);
+
     //attributes
     int count = *((int*)(buf.data() + off));
     off += sizeof(int);
@@ -48,10 +54,13 @@ Schema::Schema(std::string table_name, const std::string& buf) {
         pk_attr_idxs_.push_back(k);
     }
 
+    rowid_counter_ = 0;
 }
 
 std::string Schema::Serialize() {
     std::string buf;
+
+    buf.append((char*)&rowid_counter_, sizeof(int64_t));
 
     //attributes
     int count = attr_names_.size();

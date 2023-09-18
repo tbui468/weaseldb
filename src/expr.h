@@ -221,8 +221,8 @@ public:
             case TokenType::LessEqual:
             case TokenType::Greater:
             case TokenType::GreaterEqual:
-                if (left_type != right_type) {
-                    return Status(false, "Error: Equality and relational operands must be same data types");
+                if (!(TokenTypeIsNumeric(left_type) && TokenTypeIsNumeric(right_type)) && left_type != right_type) {
+                        return Status(false, "Error: Equality and relational operands must be same data types");
                 }
                 *evaluated_type = TokenType::Bool;
                 break;
@@ -268,10 +268,8 @@ public:
 
         switch (op_.type) {
             case TokenType::Minus:
-                if (right.Type() == TokenType::Float4) {
-                    *result = Datum(-right.AsFloat4());
-                } else if (right.Type() == TokenType::Int4) {
-                    *result = Datum(-right.AsInt4());
+                if (TokenTypeIsNumeric(right.Type())) {
+                    *result = Datum(-WSLDB_NUMERIC_LITERAL(right));
                 }
                 break;
             case TokenType::Not:
@@ -350,9 +348,11 @@ private:
 };
 
 
+//Used for both InsertStmt and UpdateStmt
 class ColAssign: public Expr {
 public:
-    ColAssign(QueryState* qs, Token col, Expr* right): Expr(qs), col_(col), right_(right), scope_(-1), idx_(-1) {}
+    ColAssign(QueryState* qs, Token col, Expr* right): 
+        Expr(qs), col_(col), right_(right), scope_(-1), idx_(-1), physical_type_(TokenType::Null) {}
     inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
         *is_agg = false;
 
@@ -360,6 +360,12 @@ public:
         bool right_agg;
         Status s = right_->Eval(r, &right, &right_agg);
         if (!s.Ok()) return s;
+
+        //demote int8 (working integer type in wsldb) evaluated type to fit physical type on disk
+        if (right.Type() == TokenType::Int8 && physical_type_ == TokenType::Int4) {
+            int32_t value = WSLDB_INTEGER_LITERAL(right);
+            right = Datum(value);
+        }
 
         r->data_.at(idx_) = right;
 
@@ -378,13 +384,22 @@ public:
         }
 
         Attribute a;
-        std::string table_ref = "";
-        Status s = qs->GetAttribute(&a, table_ref, col_.lexeme);
-        if (!s.Ok())
-            return s;
+        {
+            std::string table_ref = "";
+            Status s = qs->GetAttribute(&a, table_ref, col_.lexeme);
+            if (!s.Ok())
+                return s;
+        }
 
-        idx_ = a.idx;
+        {
+            Status s = a.CheckConstraints(type);
+            if (!s.Ok())
+                return s;
+        }
+
         *evaluated_type = a.type;
+        physical_type_ = a.type;
+        idx_ = a.idx;
         scope_ = a.scope;
 
         return Status(true, "ok");
@@ -394,6 +409,9 @@ private:
     Expr* right_;
     int scope_;
     int idx_;
+    //need physical type saved during analyze stage so that
+    //the evaluation stage can demote integer working type (int8) to int4 if necessary
+    TokenType physical_type_;
 };
 
 struct OrderCol {

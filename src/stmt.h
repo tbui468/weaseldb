@@ -234,7 +234,7 @@ public:
                 return s;
             }
 
-            if (type != TokenType::Int4) {
+            if (!TokenTypeIsInteger(type)) {
                 return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
             }
         }
@@ -365,7 +365,7 @@ public:
         Status s = limit_->Eval(&dummy_row, &d, &dummy_agg);
         if (!s.Ok()) return s;
 
-        size_t limit = d.AsInt4() == -1 ? std::numeric_limits<size_t>::max() : d.AsInt4();
+        size_t limit = d == -1 ? std::numeric_limits<size_t>::max() : WSLDB_INTEGER_LITERAL(d);
         if (limit < final_rs->rows_.size()) {
             final_rs->rows_.resize(limit);
         }

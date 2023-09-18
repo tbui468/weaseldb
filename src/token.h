@@ -10,6 +10,7 @@ enum class TokenType {
     Table, 
     Text,
     Int4,
+    Int8,
     Bool,
     Float4,
     Null,
@@ -89,6 +90,7 @@ enum class TokenType {
 
 std::string TokenTypeToString(TokenType type);
 bool TokenTypeIsNumeric(TokenType type);
+bool TokenTypeIsInteger(TokenType type);
 bool TokenTypeValidDataType(TokenType type);
 bool TokenTypeIsAggregateFunction(TokenType type);
 

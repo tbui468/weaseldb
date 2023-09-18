@@ -2,18 +2,26 @@
 
 #include <string>
 #include <iostream>
+#include <limits>
 #include "token.h"
 
 namespace wsldb {
+
+#define WSLDB_NUMERIC_LITERAL(d) ((d).Type() == TokenType::Float4 ? (d).AsFloat4() : (d).Type() == TokenType::Int4 ? (d).AsInt4() : (d).AsInt8())
+#define WSLDB_INTEGER_LITERAL(d) ((d).Type() == TokenType::Int4 ? (d).AsInt4() : (d).AsInt8())
+
 
 class Datum {
 public:
     Datum(Token t) {
         switch (t.type) {
             case TokenType::IntLiteral: {
-                type_ = TokenType::Int4;
-                int value = std::stoi(t.lexeme);
-                data_.append((char*)&value, sizeof(int));
+                //all integer literals are evaluated to int8
+                //if schema expects int4, will be demoted to int4 before written to disk
+                //inside of ColAssign
+                type_ = TokenType::Int8;
+                int64_t value = std::stol(t.lexeme);
+                data_.append((char*)&value, sizeof(int64_t));
                 break;
             }
             case TokenType::FloatLiteral: {
@@ -67,6 +75,11 @@ public:
                 *off += sizeof(int);
                 break;
             }
+            case TokenType::Int8: {
+                data_.append((char*)(buf.data() + *off), sizeof(int64_t));
+                *off += sizeof(int64_t);
+                break;
+            }
             case TokenType::Float4: {
                 data_.append((char*)(buf.data() + *off), sizeof(float));
                 *off += sizeof(float);
@@ -98,6 +111,11 @@ public:
     Datum(int i) {
         type_ = TokenType::Int4;
         data_.append((char*)&i, sizeof(int));
+    }
+
+    Datum(int64_t i) {
+        type_ = TokenType::Int8;
+        data_.append((char*)&i, sizeof(int64_t));
     }
 
     Datum(float f) {
@@ -146,6 +164,10 @@ public:
         return *((int*)(data_.data()));
     }
 
+    int64_t AsInt8() const {
+        return *((int64_t*)(data_.data()));
+    }
+
     float AsFloat4() const {
         return *((float*)(data_.data()));
     }
@@ -155,8 +177,7 @@ public:
     }
 
     Datum operator+(const Datum& d) {
-        return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) + 
-                     (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
+        return Datum(WSLDB_NUMERIC_LITERAL(*this) + WSLDB_NUMERIC_LITERAL(d));
     }
 
     Datum operator+=(const Datum& d) {
@@ -165,8 +186,7 @@ public:
     }
 
     Datum operator-(const Datum& d) {
-        return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) -
-                     (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
+        return Datum(WSLDB_NUMERIC_LITERAL(*this) - WSLDB_NUMERIC_LITERAL(d));
     }
 
     Datum operator-=(const Datum& d) {
@@ -175,8 +195,7 @@ public:
     }
 
     Datum operator*(const Datum& d) {
-        return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) *
-                     (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
+        return Datum(WSLDB_NUMERIC_LITERAL(*this) * WSLDB_NUMERIC_LITERAL(d));
     }
 
     Datum operator*=(const Datum& d) {
@@ -185,8 +204,7 @@ public:
     }
 
     Datum operator/(const Datum& d) {
-        return Datum((Type() == TokenType::Int4 ? AsInt4() : AsFloat4()) /
-                     (d.Type() == TokenType::Int4 ? d.AsInt4() : d.AsFloat4()));
+        return Datum(WSLDB_NUMERIC_LITERAL(*this) / WSLDB_NUMERIC_LITERAL(d));
     }
 
     Datum operator/=(const Datum& d) {
@@ -195,7 +213,22 @@ public:
     }
 
     bool operator==(const Datum& d) {
-        return this->Compare(d).AsInt4() == 0;
+        switch (type_) {
+            case TokenType::Int4:
+                return AsInt4() - d.AsInt4() == 0;
+            case TokenType::Int8:
+                return AsInt8() - d.AsInt8() == 0;
+            case TokenType::Float4:
+                return AsFloat4() - d.AsFloat4() == 0;
+            case TokenType::Bool:
+                return AsBool() - d.AsBool() == 0;
+            case TokenType::Text:
+                return AsString().compare(d.AsString()) == 0;
+            default:
+                std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
+                break;
+        }        
+        return false;
     }
 
     bool operator!=(const Datum& d) {
@@ -203,7 +236,22 @@ public:
     }
 
     bool operator<(const Datum& d) {
-        return this->Compare(d).AsInt4() < 0;
+        switch (type_) {
+            case TokenType::Int4:
+                return AsInt4() - d.AsInt4() < 0;
+            case TokenType::Int8:
+                return AsInt8() - d.AsInt8() < 0;
+            case TokenType::Float4:
+                return AsFloat4() - d.AsFloat4() < 0;
+            case TokenType::Bool:
+                return AsBool() - d.AsBool() < 0;
+            case TokenType::Text:
+                return AsString().compare(d.AsString()) < 0;
+            default:
+                std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
+                break;
+        }        
+        return false;
     }
 
     bool operator<=(const Datum& d) {
@@ -232,25 +280,6 @@ public:
             value += d.Serialize();
         }
         return value;
-    }
-
-
-private:
-    Datum Compare(const Datum& d) {
-        switch (type_) {
-            case TokenType::Int4:
-                return Datum(AsInt4() - d.AsInt4());
-            case TokenType::Float4:
-                return Datum(AsFloat4() - d.AsFloat4());
-            case TokenType::Bool:
-                return Datum(AsBool() - d.AsBool());
-            case TokenType::Text:
-                return Datum(AsString().compare(d.AsString()));
-            default:
-                std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
-                break;
-        }        
-        return Datum(0);
     }
 
 private:

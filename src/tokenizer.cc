@@ -185,6 +185,8 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Right;
     } else if (len == 4 && strncmp(&query_.at(idx), "full", len) == 0) {
         type = TokenType::Full;
+    } else if (len == 4 && strncmp(&query_.at(idx), "int8", len) == 0) {
+        type = TokenType::Int8;
     } else {
         type = TokenType::Identifier;
     }

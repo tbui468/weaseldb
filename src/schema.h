@@ -5,6 +5,7 @@
 #include <cassert>
 #include "token.h"
 #include "datum.h"
+#include "status.h"
 
 namespace wsldb {
 
@@ -51,6 +52,7 @@ private:
     std::vector<std::string> attr_names_;
     std::vector<TokenType> attr_types_;
     std::vector<int> pk_attr_idxs_;
+    int64_t rowid_counter_;
     //std::vector<int> fk_attr_idxs_;
     //std::string fk_ref_;
 };
@@ -62,6 +64,24 @@ struct Attribute {
     TokenType type;
     int idx;
     int scope; //default is -1.  Should be filled in with correct relative scope position during semantic analysis phase
+
+    Status CheckConstraints(TokenType type) {
+        bool not_null = false; //placeholder until 'not null' constraint is implemented
+
+        if (not_null && type == TokenType::Null) {
+            return Status(false, "Error: Value violates column 'not null' constraint");
+        }
+
+        bool will_demote_int8_literal_later = this->type == TokenType::Int4 && type == TokenType::Int8;
+
+        if (!will_demote_int8_literal_later && type != TokenType::Null && type != this->type) {
+            return Status(false, "Error: Value type does not match column type in schema");
+        }
+
+        return Status(true, "ok");
+    }
+
+
 };
 
 class AttributeSet {

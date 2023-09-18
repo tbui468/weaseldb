@@ -30,6 +30,8 @@ public:
             for (Datum d: r->data_) {
                 if (d.Type() == TokenType::Int4) {
                     std::cout << d.AsInt4() << ",";
+                } else if (d.Type() == TokenType::Int8) {
+                    std::cout << d.AsInt8() << ",";
                 } else if (d.Type() == TokenType::Float4) {
                     std::cout << d.AsFloat4() << ",";
                 } else if (d.Type() == TokenType::Text) {
