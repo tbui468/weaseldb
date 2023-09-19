@@ -89,72 +89,6 @@ private:
     std::vector<Token> primary_keys_;
 };
 
-class InsertStmt: public Stmt {
-public:
-    InsertStmt(QueryState* qd, WorkTable* target, std::vector<std::vector<Expr*>> col_assigns):
-        Stmt(qd), target_(target), col_assigns_(std::move(col_assigns)) {}
-
-    Status Analyze(std::vector<TokenType>& types) override {
-        WorkingAttributeSet* working_attrs;
-        {
-            Status s = target_->Analyze(GetQueryState(), &working_attrs);
-            if (!s.Ok())
-                return s;
-            GetQueryState()->PushAnalysisScope(working_attrs);
-        }
-
-        std::vector<std::string> tables = working_attrs->TableNames();
-        if (tables.size() != 1)
-            return Status(false, "Error: Cannot insert into more than one table");
-
-        //need to cache working table attribute count in case some columns are not specified
-        col_count_ = working_attrs->WorkingAttributeCount();
-
-        for (const std::vector<Expr*>& assigns: col_assigns_) {
-            for (Expr* e: assigns) {
-                TokenType type;
-                Status s = e->Analyze(GetQueryState(), &type);
-                if (!s.Ok())
-                    return s;
-            }
-        }
-
-        GetQueryState()->PopAnalysisScope();
-
-        return Status(true, "ok");
-    }
-
-    Status Execute() override {
-        for (std::vector<Expr*> exprs: col_assigns_) {
-            std::vector<Datum> nulls;
-            for (int i = 0; i < col_count_; i++) { //TODO: this is a bug - the number of exprs IS NOT necessarily same as total number
-                nulls.push_back(Datum());
-            }
-            Row row(nulls); //TODO: need to fill dummy row with enough nulls since ColAssign expects correct number of columns
-
-            for (Expr* e: exprs) {
-                Datum d;
-                bool is_agg;
-                Status s = e->Eval(&row, &d, &is_agg); //result d is not used
-                if (!s.Ok()) return s;
-            }
-            Status s = target_->Insert(GetQueryState()->db, row.data_);
-            if (!s.Ok())
-                return s;
-        }
-
-        return Status(true, "INSERT " + std::to_string(col_assigns_.size()));
-
-    }
-    std::string ToString() override {
-        return "insert";
-    }
-private:
-    WorkTable* target_;
-    std::vector<std::vector<Expr*>> col_assigns_;
-    int col_count_;
-};
-
 class SelectStmt: public Stmt {
 public:
     SelectStmt(QueryState* qd, WorkTable* target, 
@@ -372,7 +306,7 @@ public:
         for (Expr* e: projs_) {
             result += e->ToString() + " ";
         }
-        result += "from " + target_->ToString();
+        //result += "from " + target_->ToString();
         return result;
     }
 private:
@@ -384,18 +318,82 @@ private:
     bool remove_duplicates_;
 };
 
-class UpdateStmt: public Stmt {
+class InsertStmt: public Stmt {
 public:
-    UpdateStmt(QueryState* qd, WorkTable* target, std::vector<Expr*> assigns, Expr* where_clause):
-        Stmt(qd), target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
+    InsertStmt(QueryState* qs, Token target, std::vector<std::vector<Expr*>> col_assigns):
+        Stmt(qs), target_(target), col_assigns_(std::move(col_assigns)) {}
+
     Status Analyze(std::vector<TokenType>& types) override {
-        WorkingAttributeSet* working_attrs;
-        {
-            Status s = target_->Analyze(GetQueryState(), &working_attrs);
+        std::string serialized_table;
+        if (!GetQueryState()->db->GetSerializedTable(target_.lexeme, &serialized_table))
+            return Status(false, "Error: Table doesn't exist");
+        table_ = new Table(target_.lexeme, serialized_table);
+       
+        WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //does postgresql allow table aliases on insert?
+
+        GetQueryState()->PushAnalysisScope(working_attrs);
+
+        for (const std::vector<Expr*>& assigns: col_assigns_) {
+            for (Expr* e: assigns) {
+                TokenType type;
+                Status s = e->Analyze(GetQueryState(), &type);
+                if (!s.Ok())
+                    return s;
+            }
+        }
+
+        GetQueryState()->PopAnalysisScope();
+
+        return Status(true, "ok");
+    }
+
+    Status Execute() override {
+        for (std::vector<Expr*> exprs: col_assigns_) {
+            //fill call fields with default null
+            std::vector<Datum> nulls;
+            for (size_t i = 0; i < table_->Attrs().size(); i++) {
+                nulls.push_back(Datum());
+            }
+            Row row(nulls);
+
+            for (Expr* e: exprs) {
+                Datum d;
+                bool is_agg;
+                Status s = e->Eval(&row, &d, &is_agg); //result d is not used
+                if (!s.Ok()) return s;
+            }
+
+            Status s = table_->Insert(GetQueryState()->db, row.data_);
             if (!s.Ok())
                 return s;
-            GetQueryState()->PushAnalysisScope(working_attrs);
         }
+
+        return Status(true, "INSERT " + std::to_string(col_assigns_.size()));
+
+    }
+    std::string ToString() override {
+        return "insert";
+    }
+private:
+    Token target_;
+    Table* table_;
+    std::vector<std::vector<Expr*>> col_assigns_;
+};
+
+class UpdateStmt: public Stmt {
+public:
+    UpdateStmt(QueryState* qs, Token target, std::vector<Expr*> assigns, Expr* where_clause):
+        Stmt(qs), target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
+
+    Status Analyze(std::vector<TokenType>& types) override {
+        std::string serialized_table;
+        if (!GetQueryState()->db->GetSerializedTable(target_.lexeme, &serialized_table))
+            return Status(false, "Error: Table doesn't exist");
+        table_ = new Table(target_.lexeme, serialized_table);
+       
+        WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //Does postgresql allow table aliases on update?
+
+        GetQueryState()->PushAnalysisScope(working_attrs);
 
         {
             TokenType type;
@@ -418,12 +416,12 @@ public:
         return Status(true, "ok");
     }
     Status Execute() override {
-        target_->BeginScan(GetQueryState()->db);
+        table_->BeginScan(GetQueryState()->db);
 
         Row* r;
         int update_count = 0;
         Datum d;
-        while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
+        while (table_->NextRow(GetQueryState()->db, &r).Ok()) {
             bool is_agg;
             GetQueryState()->PushScopeRow(r);
             Status s = where_clause_->Eval(r, &d, &is_agg);
@@ -444,7 +442,7 @@ public:
                 if (!s.Ok()) 
                     return s;
             }
-            target_->UpdatePrev(GetQueryState()->db, r);
+            table_->UpdatePrev(GetQueryState()->db, r);
             update_count++;
         }
 
@@ -454,23 +452,26 @@ public:
         return "update";
     }
 private:
-    WorkTable* target_;
+    Token target_;
+    Table* table_;
     std::vector<Expr*> assigns_;
     Expr* where_clause_;
 };
 
 class DeleteStmt: public Stmt {
 public:
-    DeleteStmt(QueryState* qd, WorkTable* target, Expr* where_clause): 
-        Stmt(qd), target_(target), where_clause_(where_clause) {}
+    DeleteStmt(QueryState* qs, Token target, Expr* where_clause): 
+        Stmt(qs), target_(target), where_clause_(where_clause) {}
+
     Status Analyze(std::vector<TokenType>& types) override {
-        WorkingAttributeSet* working_attrs;
-        {
-            Status s = target_->Analyze(GetQueryState(), &working_attrs);
-            if (!s.Ok())
-                return s;
-            GetQueryState()->PushAnalysisScope(working_attrs);
-        }
+        std::string serialized_table;
+        if (!GetQueryState()->db->GetSerializedTable(target_.lexeme, &serialized_table))
+            return Status(false, "Error: Table doesn't exist");
+        table_ = new Table(target_.lexeme, serialized_table);
+       
+        WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //Does postgresql allow table aliases on delete?
+
+        GetQueryState()->PushAnalysisScope(working_attrs);
 
         {
             TokenType type;
@@ -486,12 +487,12 @@ public:
         return Status(true, "ok");
     }
     Status Execute() override {
-        target_->BeginScan(GetQueryState()->db);
+        table_->BeginScan(GetQueryState()->db);
 
         Row* r;
         int delete_count = 0;
         Datum d;
-        while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
+        while (table_->NextRow(GetQueryState()->db, &r).Ok()) {
             bool is_agg;
 
             GetQueryState()->PushScopeRow(r);
@@ -504,7 +505,7 @@ public:
             if (!d.AsBool())
                 continue;
 
-            target_->DeletePrev(GetQueryState()->db);
+            table_->DeletePrev(GetQueryState()->db);
             delete_count++;
         }
 
@@ -514,7 +515,8 @@ public:
         return "delete";
     }
 private:
-    WorkTable* target_;
+    Token target_;
+    Table* table_;
     Expr* where_clause_;
 };
 

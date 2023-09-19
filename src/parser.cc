@@ -291,7 +291,7 @@ Stmt* Parser::ParseStmt() {
         }
         case TokenType::Insert: {
             NextToken(); //into
-            WorkTable* target = ParseWorkTable(); //table name
+            Token target = NextToken(); //table name
 
             std::vector<Token> cols;
             NextToken(); //(
@@ -386,7 +386,7 @@ Stmt* Parser::ParseStmt() {
         }
 
         case TokenType::Update: {
-            WorkTable* target = ParseWorkTable();
+            Token target = NextToken();
             NextToken(); //set
 
             std::vector<Expr*> assigns;
@@ -412,7 +412,7 @@ Stmt* Parser::ParseStmt() {
         }
         case TokenType::Delete: {
             NextToken(); //from
-            WorkTable* target = ParseWorkTable();
+            Token target = NextToken();
 
             Expr* where_clause = nullptr;
             if (PeekToken().type == TokenType::Where) {

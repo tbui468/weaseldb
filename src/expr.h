@@ -613,12 +613,6 @@ public:
     virtual Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) = 0;
     virtual Status BeginScan(DB* db) = 0;
     virtual Status NextRow(DB* db, Row** r) = 0;
-    //DeletePrev, UpdatePrev, Insert are really strange in this case
-    //since most WorkTables will not use them (only Physical Table will need it)
-    virtual Status DeletePrev(DB* db) = 0;
-    virtual Status UpdatePrev(DB* db, Row* r) = 0;
-    virtual Status Insert(DB* db, std::vector<Datum>& data) = 0;
-    virtual std::string ToString() const = 0;
 };
 
 class LeftJoin: public WorkTable {
@@ -730,18 +724,6 @@ public:
         }
 
         return Status(false, "Should never see this message");
-    }
-    Status DeletePrev(DB* db) override {
-        return Status(false, "Error: Cannot delete a row from a left joined table");
-    }
-    Status UpdatePrev(DB* db, Row* r) override {
-        return Status(false, "Error: Cannot update a row in a left joined table");
-    }
-    Status Insert(DB* db, std::vector<Datum>& data) override {
-        return Status(false, "Error: Cannot insert value into a row in a left joined table");
-    }
-    std::string ToString() const override {
-        return "left join";
     }
 private:
     //used to track number of times a given left row is inserted into the final working table
@@ -863,18 +845,6 @@ public:
 
         return Status(false, "Should never see this message");
     }
-    Status DeletePrev(DB* db) override {
-        return Status(false, "Error: Cannot delete a row from a full joined table");
-    }
-    Status UpdatePrev(DB* db, Row* r) override {
-        return Status(false, "Error: Cannot update a row in a full joined table");
-    }
-    Status Insert(DB* db, std::vector<Datum>& data) override {
-        return Status(false, "Error: Cannot insert value into a row in a full joined table");
-    }
-    std::string ToString() const override {
-        return "full join";
-    }
 private:
     //used to track number of times a given left row is inserted into the final working table
     //if a row is inserted 0 times, then insert the left row and fill in the right row with nulls
@@ -990,18 +960,6 @@ public:
 
         return Status(false, "Should never see this message");
     }
-    Status DeletePrev(DB* db) override {
-        return Status(false, "Error: Cannot delete a row from a cross-joined table");
-    }
-    Status UpdatePrev(DB* db, Row* r) override {
-        return Status(false, "Error: Cannot update a row in a cross-joined table");
-    }
-    Status Insert(DB* db, std::vector<Datum>& data) override {
-        return Status(false, "Error: Cannot insert value into a row in a cross-joined table");
-    }
-    std::string ToString() const override {
-        return "inner join";
-    }
 private:
     Row* left_row_;
     WorkTable* left_;
@@ -1071,18 +1029,6 @@ public:
 
         return Status(true, "ok");
     }
-    Status DeletePrev(DB* db) override {
-        return Status(false, "Error: Cannot delete a row from a cross-joined table");
-    }
-    Status UpdatePrev(DB* db, Row* r) override {
-        return Status(false, "Error: Cannot update a row in a cross-joined table");
-    }
-    Status Insert(DB* db, std::vector<Datum>& data) override {
-        return Status(false, "Error: Cannot insert value into a row in a cross-joined table");
-    }
-    std::string ToString() const override {
-        return "cross join";
-    }
 private:
     WorkTable* left_;
     WorkTable* right_;
@@ -1124,18 +1070,6 @@ public:
         cur_++;
         return Status(true, "ok");
     }
-    Status DeletePrev(DB* db) override {
-        return Status(false, "Error: Cannot delete a constant table row");
-    }
-    Status UpdatePrev(DB* db, Row* r) override {
-        return Status(false, "Error: Cannot update a constant table row");
-    }
-    Status Insert(DB* db, std::vector<Datum>& data) override {
-        return Status(false, "Error: Cannot insert value into a constant table row");
-    }
-    std::string ToString() const override {
-        return "constant table";
-    }
 private:
     std::vector<Expr*> target_cols_;
     int cur_;
@@ -1174,50 +1108,6 @@ public:
         it_->Next();
 
         return Status(true, "ok");
-    }
-    Status DeletePrev(DB* db) override {
-        it_->Prev();
-        std::string key = it_->key().ToString();
-        db_handle_->Delete(rocksdb::WriteOptions(), key);
-        it_->Next();
-        return Status(true, "ok");
-    }
-    Status UpdatePrev(DB* db, Row* r) override {
-        it_->Prev();
-        std::string old_key = it_->key().ToString();
-        std::string new_key = table_->GetKeyFromData(r->data_);
-        if (old_key.compare(new_key) != 0) {
-            db_handle_->Delete(rocksdb::WriteOptions(), old_key);
-        }
-        db_handle_->Put(rocksdb::WriteOptions(), new_key, Datum::SerializeData(r->data_));
-        it_->Next();
-        return Status(true, "ok");
-    }
-    Status Insert(DB* db, std::vector<Datum>& data) override {
-        rocksdb::DB* tab_handle = db->GetIdxHandle(tab_name_);
-
-        //insert _rowid
-        int64_t rowid = table_->NextRowId();
-        data.at(0) = Datum(rowid);
-
-        std::string value = Datum::SerializeData(data);
-        std::string key = table_->GetKeyFromData(data);
-
-        std::string test_value;
-        rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), key, &test_value);
-        if (status.ok()) {
-            return Status(false, "Error: A record with the same primary key already exists");
-        }
-
-        tab_handle->Put(rocksdb::WriteOptions(), key, value);
-
-        //Writing table back to disk to ensure autoincrementing rowid is updated
-        //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
-        db->Catalogue()->Put(rocksdb::WriteOptions(), tab_name_, table_->Serialize());
-        return Status(true, "ok");
-    }
-    std::string ToString() const override {
-        return "physical table";
     }
 private:
     std::string tab_name_;

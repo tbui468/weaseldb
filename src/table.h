@@ -3,22 +3,15 @@
 #include <vector>
 #include <string>
 #include <cassert>
+
 #include "token.h"
 #include "datum.h"
 #include "status.h"
+#include "db.h"
+#include "row.h"
+#include "rocksdb/db.h"
 
 namespace wsldb {
-
-/*
-class ForeignKey: public Constraint {
-public:
-    ForeignKey(std::vector<Expr*> cols, Token foreign_table, std::vector<Expr*> foreign_cols):
-        cols_(std::move(cols)), foreign_table_(foreign_table), foreign_cols_(std::move(foreign_cols)) {}
-private:
-    std::vector<Expr*> cols_;
-    Token foreign_table_;
-    std::vector<Expr*> foreign_cols_;
-};*/
 
 struct Attribute {
     Attribute(const std::string& name, TokenType type, bool not_null_constraint):
@@ -29,10 +22,11 @@ struct Attribute {
     bool not_null_constraint;
 };
 
+/*
 class Index {
     std::string name_;
     std::vector<int> key_idxs_;
-};
+};*/
 
 class Table {
 public:
@@ -43,6 +37,66 @@ public:
     std::vector<Datum> DeserializeData(const std::string& value);
     std::string GetKeyFromData(const std::vector<Datum>& data);
     int GetAttrIdx(const std::string& name);
+
+    Status BeginScan(DB* db) {
+        it_ = db->GetIdxHandle(table_name_)->NewIterator(rocksdb::ReadOptions());
+        it_->SeekToFirst();
+
+        return Status(true, "ok");
+    }
+    Status NextRow(DB* db, Row** r) {
+        if (!it_->Valid()) return Status(false, "no more record");
+
+        std::string value = it_->value().ToString();
+        *r = new Row(DeserializeData(value));
+        it_->Next();
+
+        return Status(true, "ok");
+    }
+
+    Status DeletePrev(DB* db) {
+        it_->Prev();
+        std::string key = it_->key().ToString();
+        db->GetIdxHandle(table_name_)->Delete(rocksdb::WriteOptions(), key);
+        it_->Next();
+        return Status(true, "ok");
+    }
+    Status UpdatePrev(DB* db, Row* r) {
+        it_->Prev();
+        std::string old_key = it_->key().ToString();
+        std::string new_key = GetKeyFromData(r->data_);
+
+        rocksdb::DB* tab_handle = db->GetIdxHandle(table_name_);
+        if (old_key.compare(new_key) != 0) {
+            tab_handle->Delete(rocksdb::WriteOptions(), old_key);
+        }
+        tab_handle->Put(rocksdb::WriteOptions(), new_key, Datum::SerializeData(r->data_));
+        it_->Next();
+        return Status(true, "ok");
+    }
+    Status Insert(DB* db, std::vector<Datum>& data) {
+        rocksdb::DB* tab_handle = db->GetIdxHandle(table_name_);
+
+        //insert _rowid
+        int64_t rowid = NextRowId();
+        data.at(0) = Datum(rowid);
+
+        std::string value = Datum::SerializeData(data);
+        std::string key = GetKeyFromData(data);
+
+        std::string test_value;
+        rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), key, &test_value);
+        if (status.ok()) {
+            return Status(false, "Error: A record with the same primary key already exists");
+        }
+
+        tab_handle->Put(rocksdb::WriteOptions(), key, value);
+
+        //Writing table back to disk to ensure autoincrementing rowid is updated
+        //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
+        db->Catalogue()->Put(rocksdb::WriteOptions(), table_name_, Serialize());
+        return Status(true, "ok");
+    }
 
     inline const std::vector<Attribute>& Attrs() const {
         return attrs_;
@@ -65,7 +119,8 @@ private:
     std::vector<Attribute> attrs_;
     std::vector<int> pk_attr_idxs_; //store this information in index metadata
     int64_t rowid_counter_;
-    //std::vector<IndexMeta> idxs_; //primary index is in first position in vector
+    rocksdb::Iterator* it_;
+    //std::vector<Index> idxs_; //primary index is in first position in vector
     //std::vector<int> fk_attr_idxs_;
     //std::string fk_ref_;
 };
