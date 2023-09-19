@@ -29,14 +29,21 @@ struct Attribute {
     bool not_null_constraint;
 };
 
-class Schema {
+class Index {
+    std::string name_;
+    std::vector<int> key_idxs_;
+};
+
+class Table {
 public:
-    Schema(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<bool> not_null_constraints, std::vector<Token> primary_keys);
-    Schema(std::string table_name, const std::string& buf);
+    Table(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<bool> not_null_constraints, std::vector<Token> primary_keys);
+    Table(std::string table_name, const std::string& buf);
+
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
     std::string GetKeyFromData(const std::vector<Datum>& data);
     int GetAttrIdx(const std::string& name);
+
     inline const std::vector<Attribute>& Attrs() const {
         return attrs_;
     }
@@ -50,15 +57,15 @@ public:
     inline std::string TableName() {
         return table_name_;
     }
-
     inline int64_t NextRowId() {
         return rowid_counter_++;
     }
 private:
     std::string table_name_;
     std::vector<Attribute> attrs_;
-    std::vector<int> pk_attr_idxs_;
+    std::vector<int> pk_attr_idxs_; //store this information in index metadata
     int64_t rowid_counter_;
+    //std::vector<IndexMeta> idxs_; //primary index is in first position in vector
     //std::vector<int> fk_attr_idxs_;
     //std::string fk_ref_;
 };
@@ -79,7 +86,7 @@ struct WorkingAttribute: public Attribute {
         bool will_demote_int8_literal_later = this->type == TokenType::Int4 && type == TokenType::Int8;
 
         if (!will_demote_int8_literal_later && type != TokenType::Null && type != this->type) {
-            return Status(false, "Error: Value type does not match column type in schema");
+            return Status(false, "Error: Value type does not match column type in table");
         }
 
         return Status(true, "ok");
@@ -90,7 +97,7 @@ struct WorkingAttribute: public Attribute {
 
 class WorkingAttributeSet {
 public:
-    //This constructor is only used for ConstantTables, since a Physical table will use a schema
+    //This constructor is only used for ConstantTables, since a Physical table will use a table
     WorkingAttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<TokenType> types) {
         std::vector<WorkingAttribute>* attrs_vector = new std::vector<WorkingAttribute>();
         for (size_t i = 0; i < names.size(); i++) {
@@ -103,15 +110,15 @@ public:
         offset_ += names.size();
     }
 
-    WorkingAttributeSet(Schema* schema, const std::string& ref_name) {
+    WorkingAttributeSet(Table* table, const std::string& ref_name) {
         std::vector<WorkingAttribute>* attrs_vector = new std::vector<WorkingAttribute>();
-        for (size_t i = 0; i < schema->Attrs().size(); i++) {
-            attrs_vector->emplace_back(schema->Attrs().at(i), i + offset_);
+        for (size_t i = 0; i < table->Attrs().size(); i++) {
+            attrs_vector->emplace_back(table->Attrs().at(i), i + offset_);
         }
 
         attrs_.insert({ ref_name, attrs_vector });
 
-        offset_ += schema->Attrs().size();
+        offset_ += table->Attrs().size();
     }
 
     WorkingAttributeSet(WorkingAttributeSet* left, WorkingAttributeSet* right, bool* has_duplicate_tables) {
@@ -135,7 +142,7 @@ public:
         offset_ += right->offset_;
     }
 
-    WorkingAttributeSet(Schema* schema): WorkingAttributeSet(schema, schema->TableName()) {}
+    WorkingAttributeSet(Table* table): WorkingAttributeSet(table, table->TableName()) {}
 
     bool Contains(const std::string& table, const std::string& col) const {
         if (attrs_.find(table) == attrs_.end())

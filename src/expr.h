@@ -6,7 +6,7 @@
 #include "token.h"
 #include "datum.h"
 #include "row.h"
-#include "schema.h"
+#include "table.h"
 #include "status.h"
 #include "db.h"
 
@@ -1148,15 +1148,15 @@ public:
     //if an alias is not provided, the reference name is the same as the physical table name
     Physical(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
     Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
-        std::string serialized_schema;
-        if (!qs->db->TableSchema(tab_name_, &serialized_schema)) {
+        std::string serialized_table;
+        if (!qs->db->GetSerializedTable(tab_name_, &serialized_table)) {
             return Status(false, "Error: Table '" + tab_name_ + "' does not exist");
         }
-        schema_ = new Schema(tab_name_, serialized_schema);
+        table_ = new Table(tab_name_, serialized_table);
 
-        db_handle_ = qs->db->GetTableHandle(tab_name_);
+        db_handle_ = qs->db->GetIdxHandle(tab_name_);
 
-        *working_attrs = new WorkingAttributeSet(schema_, ref_name_);
+        *working_attrs = new WorkingAttributeSet(table_, ref_name_);
 
         return Status(true, "ok");
     }
@@ -1170,7 +1170,7 @@ public:
         if (!it_->Valid()) return Status(false, "no more record");
 
         std::string value = it_->value().ToString();
-        *r = new Row(schema_->DeserializeData(value));
+        *r = new Row(table_->DeserializeData(value));
         it_->Next();
 
         return Status(true, "ok");
@@ -1185,7 +1185,7 @@ public:
     Status UpdatePrev(DB* db, Row* r) override {
         it_->Prev();
         std::string old_key = it_->key().ToString();
-        std::string new_key = schema_->GetKeyFromData(r->data_);
+        std::string new_key = table_->GetKeyFromData(r->data_);
         if (old_key.compare(new_key) != 0) {
             db_handle_->Delete(rocksdb::WriteOptions(), old_key);
         }
@@ -1194,14 +1194,14 @@ public:
         return Status(true, "ok");
     }
     Status Insert(DB* db, std::vector<Datum>& data) override {
-        rocksdb::DB* tab_handle = db->GetTableHandle(tab_name_);
+        rocksdb::DB* tab_handle = db->GetIdxHandle(tab_name_);
 
         //insert _rowid
-        int64_t rowid = schema_->NextRowId();
+        int64_t rowid = table_->NextRowId();
         data.at(0) = Datum(rowid);
 
         std::string value = Datum::SerializeData(data);
-        std::string key = schema_->GetKeyFromData(data);
+        std::string key = table_->GetKeyFromData(data);
 
         std::string test_value;
         rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), key, &test_value);
@@ -1211,9 +1211,9 @@ public:
 
         tab_handle->Put(rocksdb::WriteOptions(), key, value);
 
-        //Writing schema back to disk to ensure autoincrementing rowid is updated
-        //TODO: optimzation opportunity - only need to write schema once all inserts are done, not after each one
-        db->Catalogue()->Put(rocksdb::WriteOptions(), tab_name_, schema_->Serialize());
+        //Writing table back to disk to ensure autoincrementing rowid is updated
+        //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
+        db->Catalogue()->Put(rocksdb::WriteOptions(), tab_name_, table_->Serialize());
         return Status(true, "ok");
     }
     std::string ToString() const override {
@@ -1225,7 +1225,7 @@ private:
     rocksdb::DB* db_handle_;
     rocksdb::Iterator* it_;
 public:
-    Schema* schema_;
+    Table* table_;
 };
 
 }

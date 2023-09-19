@@ -55,6 +55,8 @@ enum class TokenType {
     Left,
     Right,
     Full,
+    Unique,
+    Nulls,
 
     /* user-defined identifier */
     Identifier,

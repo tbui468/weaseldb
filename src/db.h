@@ -18,10 +18,10 @@ public:
     rocksdb::Status execute(const std::string& query);
     wsldb::Status ExecuteScript(const std::string& path);
     void ShowTables();
-    void AppendTableHandle(rocksdb::DB* h);
-    rocksdb::DB* GetTableHandle(const std::string& table_name);
-    std::string GetTablePath(const std::string& table_name);
-    bool TableSchema(const std::string& table_name, std::string* serialized_schema);
+    void AppendIdxHandle(rocksdb::DB* h);
+    rocksdb::DB* GetIdxHandle(const std::string& table_name);
+    std::string GetPrimaryIdxPath(const std::string& table_name);
+    bool GetSerializedTable(const std::string& table_name, std::string* serialized_result);
     bool DropTable(const std::string& table_name);
 
     inline rocksdb::DB* Catalogue() {

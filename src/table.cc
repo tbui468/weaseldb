@@ -1,11 +1,11 @@
 #include <algorithm>
 
-#include "schema.h"
+#include "table.h"
 
 namespace wsldb {
 
 
-Schema::Schema(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<bool> not_null_constraints, std::vector<Token> primary_keys) {
+Table::Table(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<bool> not_null_constraints, std::vector<Token> primary_keys) {
     table_name_ = table_name;
 
     for (size_t i = 0; i < names.size(); i++) {
@@ -19,7 +19,7 @@ Schema::Schema(std::string table_name, std::vector<Token> names, std::vector<Tok
     rowid_counter_ = 0;
 }
 
-Schema::Schema(std::string table_name, const std::string& buf) {
+Table::Table(std::string table_name, const std::string& buf) {
     table_name_ = table_name;
 
     int off = 0; 
@@ -58,7 +58,7 @@ Schema::Schema(std::string table_name, const std::string& buf) {
 
 }
 
-std::string Schema::Serialize() {
+std::string Table::Serialize() {
     std::string buf;
 
     buf.append((char*)&rowid_counter_, sizeof(int64_t));
@@ -85,7 +85,7 @@ std::string Schema::Serialize() {
     return buf;
 }
 
-std::vector<Datum> Schema::DeserializeData(const std::string& value) {
+std::vector<Datum> Table::DeserializeData(const std::string& value) {
     std::vector<Datum> data = std::vector<Datum>();
     int off = 0;
     for (const Attribute& a: attrs_) {
@@ -95,7 +95,7 @@ std::vector<Datum> Schema::DeserializeData(const std::string& value) {
     return data;
 }
 
-std::string Schema::GetKeyFromData(const std::vector<Datum>& data) {
+std::string Table::GetKeyFromData(const std::vector<Datum>& data) {
     std::string primary_key;
     for (int i: pk_attr_idxs_) {
         primary_key += data.at(i).Serialize();
@@ -103,7 +103,7 @@ std::string Schema::GetKeyFromData(const std::vector<Datum>& data) {
     return primary_key;
 }
 
-int Schema::GetAttrIdx(const std::string& name) {
+int Table::GetAttrIdx(const std::string& name) {
     for (size_t i = 0; i < attrs_.size(); i++) {
         if (name.compare(attrs_.at(i).name) == 0) {
             return i;

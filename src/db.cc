@@ -22,8 +22,8 @@ DB::DB(const std::string& path): path_(path) {
         rocksdb::Options options;
         options.create_if_missing = true;
         rocksdb::DB* rel_handle;
-        rocksdb::Status status = rocksdb::DB::Open(options, GetTablePath(table_name), &rel_handle);
-        AppendTableHandle(rel_handle);
+        rocksdb::Status status = rocksdb::DB::Open(options, GetPrimaryIdxPath(table_name), &rel_handle);
+        AppendIdxHandle(rel_handle);
     }
 }
 
@@ -35,8 +35,8 @@ DB::~DB() {
 }
 
 
-std::string DB::GetTablePath(const std::string& table_name) {
-    return GetPath() + "/" + table_name;
+std::string DB::GetPrimaryIdxPath(const std::string& table_name) {
+    return GetPath() + "/" + table_name + "_primary";
 }
 
 std::vector<Token> DB::tokenize(const std::string& query) {
@@ -157,30 +157,30 @@ void DB::ShowTables() {
     delete it;
 }
 
-void DB::AppendTableHandle(rocksdb::DB* h) {
+void DB::AppendIdxHandle(rocksdb::DB* h) {
     table_handles_.push_back(h);    
 }
 
-rocksdb::DB* DB::GetTableHandle(const std::string& table_name) {
+rocksdb::DB* DB::GetIdxHandle(const std::string& table_name) {
     for (rocksdb::DB* h: table_handles_) {
-        if (h->GetName().compare(GetTablePath(table_name)) == 0)
+        if (h->GetName().compare(GetPrimaryIdxPath(table_name)) == 0)
             return h;
     }
     return NULL;
 }
 
-bool DB::TableSchema(const std::string& table_name, std::string* serialized_schema) {
-    rocksdb::Status status = Catalogue()->Get(rocksdb::ReadOptions(), table_name, serialized_schema);
+bool DB::GetSerializedTable(const std::string& table_name, std::string* serialized_result) {
+    rocksdb::Status status = Catalogue()->Get(rocksdb::ReadOptions(), table_name, serialized_result);
     return status.ok();
 }
 
 bool DB::DropTable(const std::string& table_name) {
     for (size_t i = 0; i < table_handles_.size(); i++) {
         rocksdb::DB* h = table_handles_.at(i);
-        if (h->GetName().compare(GetTablePath(table_name)) == 0) {
+        if (h->GetName().compare(GetPrimaryIdxPath(table_name)) == 0) {
             delete h;
             rocksdb::Options options;
-            rocksdb::DestroyDB(GetTablePath(table_name), options);
+            rocksdb::DestroyDB(GetPrimaryIdxPath(table_name), options);
             table_handles_.erase(table_handles_.begin() + i);
             return true;
         }

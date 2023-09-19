@@ -7,7 +7,7 @@
 #include "expr.h"
 #include "token.h"
 #include "db.h"
-#include "schema.h"
+#include "table.h"
 #include "status.h"
 #include "rocksdb/db.h"
 
@@ -32,8 +32,8 @@ public:
                     primary_keys_(std::move(primary_keys)) {}
 
     Status Analyze(std::vector<TokenType>& types) override {
-        std::string serialized_schema;
-        if (GetQueryState()->db->TableSchema(target_.lexeme, &serialized_schema)) {
+        std::string serialized_table;
+        if (GetQueryState()->db->GetSerializedTable(target_.lexeme, &serialized_table)) {
             return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
         }
 
@@ -53,9 +53,9 @@ public:
             }
         }
 
-        Schema schema(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_);
+        Table table(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_);
         for (Token t: primary_keys_) {
-            if (schema.GetAttrIdx(t.lexeme) == -1) {
+            if (table.GetAttrIdx(t.lexeme) == -1) {
                 return Status(false, "Error: Column '" + t.lexeme + "' not declared in table '" + target_.lexeme + "'");
             }
         }
@@ -67,14 +67,14 @@ public:
     }
 
     Status Execute() override {
-        Schema schema(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_);
-        GetQueryState()->db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, schema.Serialize());
+        Table table(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_);
+        GetQueryState()->db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, table.Serialize());
 
         rocksdb::Options options;
         options.create_if_missing = true;
-        rocksdb::DB* rel_handle;
-        rocksdb::Status status = rocksdb::DB::Open(options, GetQueryState()->db->GetTablePath(target_.lexeme), &rel_handle);
-        GetQueryState()->db->AppendTableHandle(rel_handle);
+        rocksdb::DB* idx_handle;
+        rocksdb::Status status = rocksdb::DB::Open(options, GetQueryState()->db->GetPrimaryIdxPath(target_.lexeme), &idx_handle);
+        GetQueryState()->db->AppendIdxHandle(idx_handle);
 
         return Status(true, "CREATE TABLE");
     }
@@ -107,7 +107,7 @@ public:
         if (tables.size() != 1)
             return Status(false, "Error: Cannot insert into more than one table");
 
-        //need to cache schema count in case some columns are not specified
+        //need to cache working table attribute count in case some columns are not specified
         col_count_ = working_attrs->WorkingAttributeCount();
 
         for (const std::vector<Expr*>& assigns: col_assigns_) {
@@ -118,27 +118,6 @@ public:
                     return s;
             }
         }
-
-        /*
-        std::string table = tables.at(0);
-        std::vector<WorkingAttribute>* attrs = working_attrs->TableWorkingAttributes(table);
-
-        for (const std::vector<Expr*>& exprs: values_) {
-            if (exprs.size() != attrs->size()) {
-                return Status(false, "Error: Value count does not match attribute count in schema on record");
-            }
-
-            for (int i = 0; i < exprs.size(); i++) {
-                Expr* e = exprs.at(i);
-                TokenType type;
-                Status s = e->Analyze(GetQueryState(), &type);
-                if (!s.Ok())
-                    return s;
-                WorkingAttribute a = attrs->at(i);
-                if (attrs->at(i).type != type)
-                    return Status(false, "Error: Value type does not match type in schema on record");
-            }
-        }*/
 
         GetQueryState()->PopAnalysisScope();
 
@@ -545,8 +524,8 @@ public:
         Stmt(qd), target_relation_(target_relation), has_if_exists_(has_if_exists) {}
     Status Analyze(std::vector<TokenType>& types) override {
         if (!has_if_exists_) {
-            std::string serialized_schema;
-            if (!GetQueryState()->db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
+            std::string serialized_table;
+            if (!GetQueryState()->db->GetSerializedTable(target_relation_.lexeme, &serialized_table)) {
                 return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
             }
         }
@@ -573,16 +552,16 @@ class DescribeTableStmt: public Stmt {
 public:
     DescribeTableStmt(QueryState* qd, Token target_relation): Stmt(qd), target_relation_(target_relation) {}
     Status Analyze(std::vector<TokenType>& types) override {
-        std::string serialized_schema;
-        if (!GetQueryState()->db->TableSchema(target_relation_.lexeme, &serialized_schema)) {
+        std::string serialized_table;
+        if (!GetQueryState()->db->GetSerializedTable(target_relation_.lexeme, &serialized_table)) {
             return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
         }
         return Status(true, "ok");
     }
     Status Execute() override {
-        std::string serialized_schema;
-        rocksdb::Status status = GetQueryState()->db->Catalogue()->Get(rocksdb::ReadOptions(), target_relation_.lexeme, &serialized_schema);
-        Schema schema(target_relation_.lexeme, serialized_schema);
+        std::string serialized_table;
+        GetQueryState()->db->GetSerializedTable(target_relation_.lexeme, &serialized_table);
+        Table table(target_relation_.lexeme, serialized_table);
 
         std::vector<std::string> tuplefields = std::vector<std::string>();
         tuplefields.push_back("Column");
@@ -590,7 +569,7 @@ public:
         tuplefields.push_back("Not Null");
         RowSet* rowset = new RowSet();
 
-        for (const Attribute& a: schema.Attrs()) {
+        for (const Attribute& a: table.Attrs()) {
             std::vector<Datum> data = { Datum(a.name), Datum(TokenTypeToString(a.type)), Datum(a.not_null_constraint) };
             rowset->rows_.push_back(new Row(data));
         }
@@ -598,8 +577,8 @@ public:
         std::vector<Datum> pk_data;
         std::string s = "Primary keys:";
         pk_data.push_back(Datum(s));
-        for (int i = 0; i < schema.PrimaryKeyCount(); i++) {
-            std::string name = schema.Attrs().at(schema.PrimaryKey(i)).name;
+        for (int i = 0; i < table.PrimaryKeyCount(); i++) {
+            std::string name = table.Attrs().at(table.PrimaryKey(i)).name;
             pk_data.push_back(Datum(name));
         }
         rowset->rows_.push_back(new Row(pk_data));

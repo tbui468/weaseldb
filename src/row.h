@@ -5,7 +5,6 @@
 #include <unordered_map>
 
 #include "datum.h"
-#include "schema.h"
 
 namespace wsldb {
 
