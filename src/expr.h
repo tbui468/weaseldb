@@ -1075,12 +1075,12 @@ private:
     int cur_;
 };
 
-//TODO: should rename to PhysicalTable
-class Physical: public WorkTable {
+class PrimaryTable: public WorkTable {
 public:
-    Physical(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
+    PrimaryTable(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
     //if an alias is not provided, the reference name is the same as the physical table name
-    Physical(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
+    PrimaryTable(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
+
     Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
         std::string serialized_table;
         if (!qs->db->GetSerializedTable(tab_name_, &serialized_table)) {
@@ -1088,33 +1088,19 @@ public:
         }
         table_ = new Table(tab_name_, serialized_table);
 
-        db_handle_ = qs->db->GetIdxHandle(tab_name_);
-
         *working_attrs = new WorkingAttributeSet(table_, ref_name_);
 
         return Status(true, "ok");
     }
     Status BeginScan(DB* db) override {
-        it_ = db_handle_->NewIterator(rocksdb::ReadOptions());
-        it_->SeekToFirst();
-
-        return Status(true, "ok");
+        return table_->BeginScan(db);
     }
     Status NextRow(DB* db, Row** r) override {
-        if (!it_->Valid()) return Status(false, "no more record");
-
-        std::string value = it_->value().ToString();
-        *r = new Row(table_->DeserializeData(value));
-        it_->Next();
-
-        return Status(true, "ok");
+        return table_->NextRow(db, r);
     }
 private:
     std::string tab_name_;
     std::string ref_name_;
-    rocksdb::DB* db_handle_;
-    rocksdb::Iterator* it_;
-public:
     Table* table_;
 };
 

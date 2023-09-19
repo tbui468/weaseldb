@@ -160,10 +160,10 @@ WorkTable* Parser::ParsePrimaryWorkTable() {
     if (PeekToken().type == TokenType::As) {
         NextToken(); //as
         Token alias = NextToken();
-        return new Physical(t, alias);
+        return new PrimaryTable(t, alias);
     }
 
-    return new Physical(t);
+    return new PrimaryTable(t);
 }
 
 WorkTable* Parser::ParseBinaryWorkTable() {
