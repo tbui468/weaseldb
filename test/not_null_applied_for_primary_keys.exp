@@ -1,0 +1,6 @@
+Column,Type,Not Null,
+_rowid,Int8,true,
+system,Text,true,
+name,Text,true,
+moons,Int4,false,
+Primary keys:,system,name,

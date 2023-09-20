@@ -61,7 +61,10 @@ public:
         for (Token t: primary_keys_) {
             if (table.GetAttrIdx(t.lexeme) == -1) {
                 return Status(false, "Error: Column '" + t.lexeme + "' not declared in table '" + target_.lexeme + "'");
-            }
+            } 
+
+            //set 'not null' for primary key columns in case not already set
+            not_null_constraints_.at(table.GetAttrIdx(t.lexeme)) = true;
         }
 
         //TODO: verify that foreign table in foreign keys exists
