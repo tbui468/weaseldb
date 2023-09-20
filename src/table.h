@@ -22,91 +22,41 @@ struct Attribute {
     bool not_null_constraint;
 };
 
-/*
 class Index {
+public:
+    Index(const std::string& name, std::vector<int> key_idxs): name_(name), key_idxs_(std::move(key_idxs)) {}
+    Index(const std::string& buf, int* offset);
+    Index(): name_(""), key_idxs_({}) {} //Default constructor so that Index can be created/copied in Table constructor - this is ugly
+    std::string Serialize() const;
+public:
     std::string name_;
     std::vector<int> key_idxs_;
-};*/
+};
 
 class Table {
 public:
     Table(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<bool> not_null_constraints, std::vector<Token> primary_keys);
     Table(std::string table_name, const std::string& buf);
-
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
+    //TODO: Generalize to work with primary and secondary idxs
     std::string GetKeyFromData(const std::vector<Datum>& data);
     int GetAttrIdx(const std::string& name);
-
-    Status BeginScan(DB* db) {
-        it_ = db->GetIdxHandle(table_name_)->NewIterator(rocksdb::ReadOptions());
-        it_->SeekToFirst();
-
-        return Status(true, "ok");
-    }
-    Status NextRow(DB* db, Row** r) {
-        if (!it_->Valid()) return Status(false, "no more record");
-
-        std::string value = it_->value().ToString();
-        *r = new Row(DeserializeData(value));
-        it_->Next();
-
-        return Status(true, "ok");
-    }
-
-    Status DeletePrev(DB* db) {
-        it_->Prev();
-        std::string key = it_->key().ToString();
-        db->GetIdxHandle(table_name_)->Delete(rocksdb::WriteOptions(), key);
-        it_->Next();
-        return Status(true, "ok");
-    }
-    Status UpdatePrev(DB* db, Row* r) {
-        it_->Prev();
-        std::string old_key = it_->key().ToString();
-        std::string new_key = GetKeyFromData(r->data_);
-
-        rocksdb::DB* tab_handle = db->GetIdxHandle(table_name_);
-        if (old_key.compare(new_key) != 0) {
-            tab_handle->Delete(rocksdb::WriteOptions(), old_key);
-        }
-        tab_handle->Put(rocksdb::WriteOptions(), new_key, Datum::SerializeData(r->data_));
-        it_->Next();
-        return Status(true, "ok");
-    }
-    Status Insert(DB* db, std::vector<Datum>& data) {
-        rocksdb::DB* tab_handle = db->GetIdxHandle(table_name_);
-
-        //insert _rowid
-        int64_t rowid = NextRowId();
-        data.at(0) = Datum(rowid);
-
-        std::string value = Datum::SerializeData(data);
-        std::string key = GetKeyFromData(data);
-
-        std::string test_value;
-        rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), key, &test_value);
-        if (status.ok()) {
-            return Status(false, "Error: A record with the same primary key already exists");
-        }
-
-        tab_handle->Put(rocksdb::WriteOptions(), key, value);
-
-        //Writing table back to disk to ensure autoincrementing rowid is updated
-        //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
-        db->Catalogue()->Put(rocksdb::WriteOptions(), table_name_, Serialize());
-        return Status(true, "ok");
-    }
+    Status BeginScan(DB* db);
+    Status NextRow(DB* db, Row** r);
+    Status DeletePrev(DB* db);
+    Status UpdatePrev(DB* db, Row* r);
+    Status Insert(DB* db, std::vector<Datum>& data);
 
     inline const std::vector<Attribute>& Attrs() const {
         return attrs_;
     }
     inline int PrimaryKeyCount() {
-        return pk_attr_idxs_.size();
+        return primary_idx_.key_idxs_.size();
     }
 
     inline int PrimaryKey(int i) {
-        return pk_attr_idxs_.at(i);
+        return primary_idx_.key_idxs_.at(i);
     }
     inline std::string TableName() {
         return table_name_;
@@ -114,13 +64,26 @@ public:
     inline int64_t NextRowId() {
         return rowid_counter_++;
     }
+public:
+    static std::string PrimaryIdxName(const std::string& table_name) {
+        return table_name + "_primary";
+    }
+    static std::string SecondaryIdxName(const std::string& table_name, const std::vector<Attribute>& attrs, const std::vector<int>& idxs) {
+        std::string result = table_name + "_secondary";
+
+        for (int i: idxs) {
+            result += "_" + attrs.at(i).name;            
+        }
+
+        return result;
+    }
 private:
     std::string table_name_;
     std::vector<Attribute> attrs_;
-    std::vector<int> pk_attr_idxs_; //store this information in index metadata
     int64_t rowid_counter_;
     rocksdb::Iterator* it_;
-    //std::vector<Index> idxs_; //primary index is in first position in vector
+    Index primary_idx_;
+    std::vector<Index> secondary_idxs_;
     //std::vector<int> fk_attr_idxs_;
     //std::string fk_ref_;
 };

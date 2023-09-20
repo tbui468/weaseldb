@@ -107,6 +107,7 @@ public:
         data_ = "";
     }
 
+    //TODO: change this to int32_t, and fix any warnings/errors that occur in program
     Datum(int i) {
         type_ = TokenType::Int4;
         data_.append((char*)&i, sizeof(int));
