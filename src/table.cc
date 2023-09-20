@@ -136,7 +136,7 @@ int Table::GetAttrIdx(const std::string& name) {
 }
 
 Status Table::BeginScan(DB* db) {
-    it_ = db->GetIdxHandle(table_name_)->NewIterator(rocksdb::ReadOptions());
+    it_ = db->GetIdxHandle(PrimaryIdxName())->NewIterator(rocksdb::ReadOptions());
     it_->SeekToFirst();
 
     return Status(true, "ok");
@@ -154,7 +154,7 @@ Status Table::NextRow(DB* db, Row** r) {
 Status Table::DeletePrev(DB* db) {
     it_->Prev();
     std::string key = it_->key().ToString();
-    db->GetIdxHandle(table_name_)->Delete(rocksdb::WriteOptions(), key);
+    db->GetIdxHandle(PrimaryIdxName())->Delete(rocksdb::WriteOptions(), key);
     it_->Next();
     return Status(true, "ok");
 }
@@ -163,7 +163,7 @@ Status Table::UpdatePrev(DB* db, Row* r) {
     std::string old_key = it_->key().ToString();
     std::string new_key = GetKeyFromData(r->data_);
 
-    rocksdb::DB* tab_handle = db->GetIdxHandle(table_name_);
+    rocksdb::DB* tab_handle = db->GetIdxHandle(PrimaryIdxName());
     if (old_key.compare(new_key) != 0) {
         tab_handle->Delete(rocksdb::WriteOptions(), old_key);
     }
@@ -172,7 +172,7 @@ Status Table::UpdatePrev(DB* db, Row* r) {
     return Status(true, "ok");
 }
 Status Table::Insert(DB* db, std::vector<Datum>& data) {
-    rocksdb::DB* tab_handle = db->GetIdxHandle(table_name_);
+    rocksdb::DB* tab_handle = db->GetIdxHandle(PrimaryIdxName());
 
     //insert _rowid
     int64_t rowid = NextRowId();

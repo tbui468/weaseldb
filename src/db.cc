@@ -13,30 +13,18 @@ DB::DB(const std::string& path): path_(path) {
     if (!status_.ok()) {
         std::cout << "Error:" << status_.ToString() << std::endl;
     }
-
-    //TODO: iterate through catalog keys/values and open all database handles
-    rocksdb::Iterator* it = catalogue_handle_->NewIterator(rocksdb::ReadOptions());
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string table_name = it->key().ToString();
-        rocksdb::Options options;
-        options.create_if_missing = true;
-        rocksdb::DB* rel_handle;
-        rocksdb::Status status = rocksdb::DB::Open(options, GetPrimaryIdxPath(table_name), &rel_handle);
-        AppendIdxHandle(rel_handle);
-    }
 }
 
 DB::~DB() {
-    for (rocksdb::DB* h: table_handles_) {
+    for (rocksdb::DB* h: idx_handles_) {
         delete h;
     }
     delete catalogue_handle_;
 }
 
 
-std::string DB::GetPrimaryIdxPath(const std::string& table_name) {
-    return GetPath() + "/" + table_name + "_primary";
+std::string DB::PrependDBPath(const std::string& idx_name) {
+    return path_ + "/" + idx_name;
 }
 
 std::vector<Token> DB::tokenize(const std::string& query) {
@@ -125,68 +113,43 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
     return Status(true, "ok");
 }
 
-void DB::ShowTables() {
-    rocksdb::Iterator* it = catalogue_handle_->NewIterator(rocksdb::ReadOptions());
-
-    std::cout << "Tables:" << std::endl;
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string key = it->key().ToString();
-        std::string value = it->value().ToString();
-
-        //deserialize schema and print out all values
-        int off = 0;
-        int count = *((int*)(value.data() + off));
-        off += sizeof(int);
-
-        std::cout << key << std::endl;
-
-        for (int i = 0; i < count; i++) {
-            //read data type
-            TokenType attr_type = *((TokenType*)(value.data() + off));
-            off += sizeof(TokenType);
-            int attr_name_size = *((int*)(value.data() + off));
-            off += sizeof(int);
-            std::string attr_name = value.substr(off, attr_name_size);
-            off += attr_name_size;
-            std::cout << attr_name << ": " << TokenTypeToString(attr_type) << std::endl;
-        }
-
-        //looop through attribute types and names, and print out
-    }
-
-    delete it;
+void DB::CreateIdxHandle(const std::string& idx_name) {
+    rocksdb::Options options;
+    options.create_if_missing = true;
+    rocksdb::DB* idx_handle;
+    rocksdb::Status status = rocksdb::DB::Open(options, PrependDBPath(idx_name), &idx_handle);
+    idx_handles_.push_back(idx_handle);    
 }
 
-void DB::AppendIdxHandle(rocksdb::DB* h) {
-    table_handles_.push_back(h);    
-}
-
-rocksdb::DB* DB::GetIdxHandle(const std::string& table_name) {
-    for (rocksdb::DB* h: table_handles_) {
-        if (h->GetName().compare(GetPrimaryIdxPath(table_name)) == 0)
+rocksdb::DB* DB::GetIdxHandle(const std::string& idx_name) {
+    for (rocksdb::DB* h: idx_handles_) {
+        if (h->GetName().compare(PrependDBPath(idx_name)) == 0)
             return h;
     }
-    return NULL;
+
+    //open idx if not found, and put into idx_handles_ vector
+    rocksdb::Options options;
+    options.create_if_missing = false;
+    rocksdb::DB* idx_handle;
+    rocksdb::Status status = rocksdb::DB::Open(options, PrependDBPath(idx_name), &idx_handle);
+    idx_handles_.push_back(idx_handle);    
+
+    return idx_handle;
 }
 
-bool DB::GetSerializedTable(const std::string& table_name, std::string* serialized_result) {
-    rocksdb::Status status = Catalogue()->Get(rocksdb::ReadOptions(), table_name, serialized_result);
-    return status.ok();
-}
-
-bool DB::DropTable(const std::string& table_name) {
-    for (size_t i = 0; i < table_handles_.size(); i++) {
-        rocksdb::DB* h = table_handles_.at(i);
-        if (h->GetName().compare(GetPrimaryIdxPath(table_name)) == 0) {
+void DB::DropIdxHandle(const std::string& idx_name) {
+    for (size_t i = 0; i < idx_handles_.size(); i++) {
+        rocksdb::DB* h = idx_handles_.at(i);
+        if (h->GetName().compare(PrependDBPath(idx_name)) == 0) {
             delete h;
-            rocksdb::Options options;
-            rocksdb::DestroyDB(GetPrimaryIdxPath(table_name), options);
-            table_handles_.erase(table_handles_.begin() + i);
-            return true;
+            idx_handles_.erase(idx_handles_.begin() + i);
+            break;
         }
     }
 
-    return false;
+    rocksdb::Options options;
+    rocksdb::DestroyDB(PrependDBPath(idx_name), options);
 }
+
 
 }

@@ -32,8 +32,9 @@ public:
                     primary_keys_(std::move(primary_keys)) {}
 
     Status Analyze(std::vector<TokenType>& types) override {
-        std::string serialized_table;
-        if (GetQueryState()->db->GetSerializedTable(target_.lexeme, &serialized_table)) {
+        Table* table_ptr;
+        Status s = OpenTable(target_.lexeme, &table_ptr);
+        if (s.Ok()) {
             return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
         }
 
@@ -67,14 +68,12 @@ public:
     }
 
     Status Execute() override {
+        //put able in catalogue
         Table table(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_);
         GetQueryState()->db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, table.Serialize());
 
-        rocksdb::Options options;
-        options.create_if_missing = true;
-        rocksdb::DB* idx_handle;
-        rocksdb::Status status = rocksdb::DB::Open(options, GetQueryState()->db->GetPrimaryIdxPath(target_.lexeme), &idx_handle);
-        GetQueryState()->db->AppendIdxHandle(idx_handle);
+        //create indexes
+        GetQueryState()->db->CreateIdxHandle(table.PrimaryIdxName());
 
         return Status(true, "CREATE TABLE");
     }
@@ -324,10 +323,9 @@ public:
         Stmt(qs), target_(target), col_assigns_(std::move(col_assigns)) {}
 
     Status Analyze(std::vector<TokenType>& types) override {
-        std::string serialized_table;
-        if (!GetQueryState()->db->GetSerializedTable(target_.lexeme, &serialized_table))
-            return Status(false, "Error: Table doesn't exist");
-        table_ = new Table(target_.lexeme, serialized_table);
+        Status s = OpenTable(target_.lexeme, &table_);
+        if (!s.Ok())
+            return s;
        
         WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //does postgresql allow table aliases on insert?
 
@@ -386,10 +384,9 @@ public:
         Stmt(qs), target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
 
     Status Analyze(std::vector<TokenType>& types) override {
-        std::string serialized_table;
-        if (!GetQueryState()->db->GetSerializedTable(target_.lexeme, &serialized_table))
-            return Status(false, "Error: Table doesn't exist");
-        table_ = new Table(target_.lexeme, serialized_table);
+        Status s = OpenTable(target_.lexeme, &table_);
+        if (!s.Ok())
+            return s;
        
         WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //Does postgresql allow table aliases on update?
 
@@ -464,10 +461,9 @@ public:
         Stmt(qs), target_(target), where_clause_(where_clause) {}
 
     Status Analyze(std::vector<TokenType>& types) override {
-        std::string serialized_table;
-        if (!GetQueryState()->db->GetSerializedTable(target_.lexeme, &serialized_table))
-            return Status(false, "Error: Table doesn't exist");
-        table_ = new Table(target_.lexeme, serialized_table);
+        Status s = OpenTable(target_.lexeme, &table_);
+        if (!s.Ok())
+            return s;
        
         WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //Does postgresql allow table aliases on delete?
 
@@ -523,24 +519,27 @@ private:
 class DropTableStmt: public Stmt {
 public:
     DropTableStmt(QueryState* qd, Token target_relation, bool has_if_exists):
-        Stmt(qd), target_relation_(target_relation), has_if_exists_(has_if_exists) {}
+        Stmt(qd), target_relation_(target_relation), has_if_exists_(has_if_exists), table_(nullptr) {}
+
     Status Analyze(std::vector<TokenType>& types) override {
-        if (!has_if_exists_) {
-            std::string serialized_table;
-            if (!GetQueryState()->db->GetSerializedTable(target_relation_.lexeme, &serialized_table)) {
-                return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
-            }
-        }
+        Status s = OpenTable(target_relation_.lexeme, &table_);
+        if (!s.Ok() && !has_if_exists_)
+            return s;
+
         return Status(true, "ok");
     }
     Status Execute() override {
-        GetQueryState()->db->Catalogue()->Delete(rocksdb::WriteOptions(), target_relation_.lexeme);
-        bool dropped = GetQueryState()->db->DropTable(target_relation_.lexeme);
-        if (dropped) {
-            return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");
-        } else {
+        //drop table name from catalogue
+        bool idx_existed = GetQueryState()->db->Catalogue()->Delete(rocksdb::WriteOptions(), target_relation_.lexeme).ok();
+        if (!idx_existed)
             return Status(true, "(table '" + target_relation_.lexeme + "' doesn't exist and not dropped)");
-        }
+
+        //TODO: go through all indexes and drop them here
+        //TODO: should get full index name here before passing to DropIdxHandle
+        if (table_)
+            GetQueryState()->db->DropIdxHandle(table_->PrimaryIdxName());
+
+        return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");
     }
     std::string ToString() override {
         return "drop table";
@@ -548,41 +547,32 @@ public:
 private:
     Token target_relation_;
     bool has_if_exists_;
+    Table* table_;
 };
 
 class DescribeTableStmt: public Stmt {
 public:
-    DescribeTableStmt(QueryState* qd, Token target_relation): Stmt(qd), target_relation_(target_relation) {}
+    DescribeTableStmt(QueryState* qd, Token target_relation): Stmt(qd), target_relation_(target_relation), table_(nullptr) {}
     Status Analyze(std::vector<TokenType>& types) override {
-        std::string serialized_table;
-        if (!GetQueryState()->db->GetSerializedTable(target_relation_.lexeme, &serialized_table)) {
-            return Status(false, "Error: Table '" + target_relation_.lexeme + "' does not exist");
-        }
+        Status s = OpenTable(target_relation_.lexeme, &table_);
+        if (!s.Ok())
+            return s;
+
         return Status(true, "ok");
     }
     Status Execute() override {
-        std::string serialized_table;
-        GetQueryState()->db->GetSerializedTable(target_relation_.lexeme, &serialized_table);
-        Table table(target_relation_.lexeme, serialized_table);
-
         std::vector<std::string> tuplefields = std::vector<std::string>();
         tuplefields.push_back("Column");
         tuplefields.push_back("Type");
         tuplefields.push_back("Not Null");
         RowSet* rowset = new RowSet();
 
-        for (const Attribute& a: table.Attrs()) {
+        for (const Attribute& a: table_->Attrs()) {
             std::vector<Datum> data = { Datum(a.name), Datum(TokenTypeToString(a.type)), Datum(a.not_null_constraint) };
             rowset->rows_.push_back(new Row(data));
         }
 
-        std::vector<Datum> pk_data;
-        std::string s = "Primary keys:";
-        pk_data.push_back(Datum(s));
-        for (int i = 0; i < table.PrimaryKeyCount(); i++) {
-            std::string name = table.Attrs().at(table.PrimaryKey(i)).name;
-            pk_data.push_back(Datum(name));
-        }
+        std::vector<Datum> pk_data = table_->PrimaryKeyFields();
         rowset->rows_.push_back(new Row(pk_data));
 
         return Status(true, "table '" + target_relation_.lexeme + "'", rowset);
@@ -593,6 +583,7 @@ public:
 
 private:
     Token target_relation_;
+    Table* table_;
 };
 
 }

@@ -51,18 +51,24 @@ public:
     inline const std::vector<Attribute>& Attrs() const {
         return attrs_;
     }
-    inline int PrimaryKeyCount() {
-        return primary_idx_.key_idxs_.size();
-    }
-
-    inline int PrimaryKey(int i) {
-        return primary_idx_.key_idxs_.at(i);
+    inline std::vector<Datum> PrimaryKeyFields() const {
+        std::vector<Datum> pk_data;
+        std::string s = "Primary keys:";
+        pk_data.push_back(Datum(s));
+        for (size_t i = 0; i < primary_idx_.key_idxs_.size(); i++) {
+            std::string name = Attrs().at(primary_idx_.key_idxs_.at(i)).name;
+            pk_data.push_back(Datum(name));
+        }
+        return pk_data;
     }
     inline std::string TableName() {
         return table_name_;
     }
     inline int64_t NextRowId() {
         return rowid_counter_++;
+    }
+    inline std::string PrimaryIdxName() {
+        return PrimaryIdxName(table_name_); 
     }
 public:
     static std::string PrimaryIdxName(const std::string& table_name) {

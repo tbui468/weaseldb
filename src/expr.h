@@ -111,6 +111,17 @@ public:
     inline QueryState* GetQueryState() {
         return query_state_;
     }
+    Status OpenTable(const std::string& table_name, Table** table) {
+        std::string serialized_table;
+        bool ok = query_state_->db->Catalogue()->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
+
+        if (!ok)
+            return Status(false, "Error: Table doesn't exist");
+
+        *table = new Table(table_name, serialized_table);
+
+        return Status(true, "ok");
+    }
 private:
     QueryState* query_state_;
 };
@@ -1083,7 +1094,9 @@ public:
 
     Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
         std::string serialized_table;
-        if (!qs->db->GetSerializedTable(tab_name_, &serialized_table)) {
+        bool ok = qs->db->Catalogue()->Get(rocksdb::ReadOptions(), tab_name_, &serialized_table).ok();
+
+        if (!ok) {
             return Status(false, "Error: Table '" + tab_name_ + "' does not exist");
         }
         table_ = new Table(tab_name_, serialized_table);
