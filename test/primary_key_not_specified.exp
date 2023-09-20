@@ -1,0 +1,6 @@
+Mars,2,
+Column,Type,Not Null,
+_rowid,Int8,true,
+name,Text,false,
+moons,Int8,false,
+Primary keys:,_rowid,

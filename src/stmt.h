@@ -54,6 +54,9 @@ public:
             }
         }
 
+        if (primary_keys_.empty())
+            primary_keys_.push_back(Token("_rowid", TokenType::Identifier));
+        
         Table table(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_);
         for (Token t: primary_keys_) {
             if (table.GetAttrIdx(t.lexeme) == -1) {
@@ -561,11 +564,15 @@ public:
         return Status(true, "ok");
     }
     Status Execute() override {
-        std::vector<std::string> tuplefields = std::vector<std::string>();
-        tuplefields.push_back("Column");
-        tuplefields.push_back("Type");
-        tuplefields.push_back("Not Null");
+        std::vector<Datum> tuplefields;
+        std::string col = "Column";
+        tuplefields.emplace_back(col);
+        std::string type = "Type";
+        tuplefields.emplace_back(type);
+        std::string not_null = "Not Null";
+        tuplefields.emplace_back(not_null);
         RowSet* rowset = new RowSet();
+        rowset->rows_.push_back(new Row(tuplefields));
 
         for (const Attribute& a: table_->Attrs()) {
             std::vector<Datum> data = { Datum(a.name), Datum(TokenTypeToString(a.type)), Datum(a.not_null_constraint) };

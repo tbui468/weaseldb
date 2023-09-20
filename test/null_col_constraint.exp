@@ -1,3 +1,4 @@
+Column,Type,Not Null,
 _rowid,Int8,true,
 name,Text,true,
 moons,Int4,false,
