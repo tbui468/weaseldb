@@ -244,11 +244,15 @@ Stmt* Parser::ParseStmt() {
             std::vector<Token> types;
             std::vector<bool> not_null_constraints;
             std::vector<Token> pks;
+            std::vector<std::vector<Token>> uniques;
+            std::vector<bool> nulls_distinct;
             while (PeekToken().type != TokenType::RParen) {
                 if (PeekToken().type == TokenType::Primary) {
+                    //TODO: if pks is not empty, should report error since only a single primary key is allowed
                     NextToken(); //primary
                     NextToken(); //key
                     NextToken(); //(
+
                     while (PeekToken().type != TokenType::RParen) {
                         pks.push_back(NextToken());
                         if (PeekToken().type == TokenType::Comma) {
@@ -256,15 +260,25 @@ Stmt* Parser::ParseStmt() {
                         } 
                     }
                     NextToken(); //)
-                    /*
-                } else if (PeekToken().type == TokenType::Foreign) {
-                    NextToken(); //foreign
-                    NextToken(); //key
-                    std::vector<Expr*> cols = ParseTuple();
-                    NextToken(); //references
-                    Token foreign_target = NextToken();
-                    std::vector<Expr*> foreign_cols = ParseTuple();
-                    constraints.push_back(new ForeignKey(cols, foreign_target, foreign_cols));*/
+                } else if (PeekToken().type == TokenType::Unique) {
+                    NextToken(); //(
+
+                    std::vector<Token> cols;
+                    while (PeekToken().type != TokenType::RParen) {
+                        cols.push_back(NextToken());
+                        if (PeekToken().type == TokenType::Comma) {
+                            NextToken();
+                        } 
+                    }
+
+                    NextToken(); //)
+                    NextToken(); //nulls
+                    Token distinct_clause_token = NextToken(); //'not' or 'distinct'
+                    if (distinct_clause_token.type == TokenType::Not)
+                        NextToken();
+
+                    uniques.push_back(cols);
+                    nulls_distinct.push_back(distinct_clause_token.type == TokenType::Distinct);
                 } else {
                     //column name and type
                     names.push_back(NextToken());
@@ -287,7 +301,7 @@ Stmt* Parser::ParseStmt() {
 
             NextToken();//)
             NextToken();//;
-            return new CreateStmt(query_state_, target, names, types, not_null_constraints, pks);
+            return new CreateStmt(query_state_, target, names, types, not_null_constraints, pks, uniques, nulls_distinct);
         }
         case TokenType::Insert: {
             NextToken(); //into

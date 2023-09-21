@@ -23,13 +23,17 @@ public:
                std::vector<Token> names, 
                std::vector<Token> types, 
                std::vector<bool> not_null_constraints, 
-               std::vector<Token> primary_keys):
+               std::vector<Token> primary_keys,
+               std::vector<std::vector<Token>> uniques,
+               std::vector<bool> nulls_distinct):
                     Stmt(qs), 
                     target_(target), 
                     names_(std::move(names)), 
                     types_(std::move(types)), 
                     not_null_constraints_(std::move(not_null_constraints)), 
-                    primary_keys_(std::move(primary_keys)) {}
+                    primary_keys_(std::move(primary_keys)),
+                    uniques_(std::move(uniques)),
+                    nulls_distinct_(std::move(nulls_distinct)) {}
 
     Status Analyze(std::vector<TokenType>& types) override {
         Table* table_ptr;
@@ -54,32 +58,39 @@ public:
             }
         }
 
+        //use _rowid if user doesn't specify primary key
         if (primary_keys_.empty())
             primary_keys_.push_back(Token("_rowid", TokenType::Identifier));
-        
-        Table table(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_);
-        for (Token t: primary_keys_) {
-            if (table.GetAttrIdx(t.lexeme) == -1) {
-                return Status(false, "Error: Column '" + t.lexeme + "' not declared in table '" + target_.lexeme + "'");
-            } 
 
-            //set 'not null' for primary key columns in case not already set
-            not_null_constraints_.at(table.GetAttrIdx(t.lexeme)) = true;
+        if (!TokensSubsetOf(primary_keys_, names_))
+            return Status(false, "Error: Primary key column not in table declaration");
+
+        for (size_t i = 0; i < uniques_.size(); i++) {
+            std::vector<Token>& cols = uniques_.at(i);
+            if (!TokensSubsetOf(cols, names_))
+                return Status(false, "Error: Unique column not in table declaration");
+
+            //add _rowid to unique column group with 'nulls distinct' clause to differentiate between null fields
+            if (nulls_distinct_.at(i))
+                cols.push_back(Token("_rowid", TokenType::Identifier));
         }
 
-        //TODO: verify that foreign table in foreign keys exists
-        //TODO: verify that foreign columns in foreign keys exist
+        //automatically apply 'not null' constraint to columns in column group of primary key
+        for (size_t i = 0; i < names_.size(); i++) {
+            if (TokenIn(names_.at(i), primary_keys_))
+                not_null_constraints_.at(i) = true;
+        }
 
         return Status(true, "ok");
     }
 
     Status Execute() override {
         //put able in catalogue
-        Table table(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_);
+        Table table(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_, uniques_);
         GetQueryState()->db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, table.Serialize());
 
-        //create indexes
         GetQueryState()->db->CreateIdxHandle(table.PrimaryIdxName());
+        //TODO: create secondary indexes here
 
         return Status(true, "CREATE TABLE");
     }
@@ -92,6 +103,8 @@ private:
     std::vector<Token> types_;
     std::vector<bool> not_null_constraints_;
     std::vector<Token> primary_keys_;
+    std::vector<std::vector<Token>> uniques_;
+    std::vector<bool> nulls_distinct_;
 };
 
 class SelectStmt: public Stmt {

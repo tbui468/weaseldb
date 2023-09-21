@@ -183,4 +183,20 @@ bool TokenTypeIsAggregateFunction(TokenType type) {
            type == TokenType::Min;
 }
 
+bool TokensSubsetOf(const std::vector<Token>& left, const std::vector<Token>& right) {
+    for (Token t: left) {
+        if (!TokenIn(t, right))
+            return false;
+    }
+    return true;
+}
+
+bool TokenIn(Token left, const std::vector<Token>& right) {
+    for (Token t: right) {
+        if (left.lexeme.compare(t.lexeme) == 0)
+            return true;
+    }
+    return false;
+}
+
 }

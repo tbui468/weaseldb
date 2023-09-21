@@ -126,7 +126,6 @@ private:
     QueryState* query_state_;
 };
 
-
 //QueryState is saved in both Expr and Stmt, could probably
 //make a single class called QueryNode to store this, and have both Expr and Stmt inherit from that
 class Expr {

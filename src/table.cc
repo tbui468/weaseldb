@@ -27,23 +27,38 @@ std::string Index::Serialize() const {
     return result;
 }
 
-Table::Table(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<bool> not_null_constraints, std::vector<Token> primary_keys) {
-    table_name_ = table_name;
+Table::Table(std::string table_name,
+             std::vector<Token> names,
+             std::vector<Token> types,
+             std::vector<bool> not_null_constraints, 
+             std::vector<Token> primary_keys,
+             std::vector<std::vector<Token>> uniques) {
 
+    table_name_ = table_name;
+    rowid_counter_ = 0;
+
+    //NOTE: index creation requires attrs_ to be filled in beforehand
     for (size_t i = 0; i < names.size(); i++) {
         attrs_.emplace_back(names.at(i).lexeme, types.at(i).type, not_null_constraints.at(i));
     }
 
+    //primary index
     std::vector<int> primary_idx_cols;
     for (Token t: primary_keys) {
         primary_idx_cols.push_back(GetAttrIdx(t.lexeme));
     }
 
-    primary_idx_ = Index(Table::PrimaryIdxName(table_name), primary_idx_cols);
+    primary_idx_ = Index(PrimaryIdxName(), primary_idx_cols);
 
-    //TODO: generate secondary idxs here
+    //secondary indexes
+    for (const std::vector<Token>& col_group: uniques) {
+        std::vector<int> secondary_idx_cols;
+        for (Token t: col_group) {
+            secondary_idx_cols.push_back(GetAttrIdx(t.lexeme));
+        }
 
-    rowid_counter_ = 0;
+        secondary_idxs_.emplace_back(SecondaryIdxName(secondary_idx_cols), secondary_idx_cols);
+    }
 }
 
 Table::Table(std::string table_name, const std::string& buf) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace wsldb {
 
@@ -102,5 +103,8 @@ public:
     std::string lexeme;
     TokenType type;
 };
+
+bool TokensSubsetOf(const std::vector<Token>& left, const std::vector<Token>& right);
+bool TokenIn(Token left, const std::vector<Token>& right);
 
 }

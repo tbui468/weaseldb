@@ -35,7 +35,12 @@ public:
 
 class Table {
 public:
-    Table(std::string table_name, std::vector<Token> names, std::vector<Token> types, std::vector<bool> not_null_constraints, std::vector<Token> primary_keys);
+    Table(std::string table_name,
+          std::vector<Token> names,
+          std::vector<Token> types,
+          std::vector<bool> not_null_constraints, 
+          std::vector<Token> primary_keys,
+          std::vector<std::vector<Token>> uniques);
     Table(std::string table_name, const std::string& buf);
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
@@ -68,17 +73,13 @@ public:
         return rowid_counter_++;
     }
     inline std::string PrimaryIdxName() {
-        return PrimaryIdxName(table_name_); 
+        return table_name_ + "_primary";
     }
-public:
-    static std::string PrimaryIdxName(const std::string& table_name) {
-        return table_name + "_primary";
-    }
-    static std::string SecondaryIdxName(const std::string& table_name, const std::vector<Attribute>& attrs, const std::vector<int>& idxs) {
-        std::string result = table_name + "_secondary";
+    inline std::string SecondaryIdxName(const std::vector<int>& idxs) {
+        std::string result = table_name_ + "_secondary";
 
         for (int i: idxs) {
-            result += "_" + attrs.at(i).name;            
+            result += "_" + attrs_.at(i).name;            
         }
 
         return result;
@@ -90,8 +91,6 @@ private:
     rocksdb::Iterator* it_;
     Index primary_idx_;
     std::vector<Index> secondary_idxs_;
-    //std::vector<int> fk_attr_idxs_;
-    //std::string fk_ref_;
 };
 
 struct WorkingAttribute: public Attribute {
