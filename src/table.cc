@@ -31,7 +31,6 @@ Table::Table(std::string table_name,
              std::vector<Token> names,
              std::vector<Token> types,
              std::vector<bool> not_null_constraints, 
-             std::vector<Token> primary_keys,
              std::vector<std::vector<Token>> uniques) {
 
     table_name_ = table_name;
@@ -42,22 +41,14 @@ Table::Table(std::string table_name,
         attrs_.emplace_back(names.at(i).lexeme, types.at(i).type, not_null_constraints.at(i));
     }
 
-    //primary index
-    std::vector<int> primary_idx_cols;
-    for (Token t: primary_keys) {
-        primary_idx_cols.push_back(GetAttrIdx(t.lexeme));
-    }
-
-    primary_idx_ = Index(PrimaryIdxName(), primary_idx_cols);
-
-    //secondary indexes
+    //indexes
     for (const std::vector<Token>& col_group: uniques) {
-        std::vector<int> secondary_idx_cols;
+        std::vector<int> idx_cols;
         for (Token t: col_group) {
-            secondary_idx_cols.push_back(GetAttrIdx(t.lexeme));
+            idx_cols.push_back(GetAttrIdx(t.lexeme));
         }
 
-        secondary_idxs_.emplace_back(SecondaryIdxName(secondary_idx_cols), secondary_idx_cols);
+        idxs_.emplace_back(IdxName(idx_cols), idx_cols);
     }
 }
 
@@ -88,11 +79,12 @@ Table::Table(std::string table_name, const std::string& buf) {
         attrs_.emplace_back(name, type, not_null_constraint);
     }
 
-    //primary idx
-    primary_idx_ = Index(buf, &off);
-
-    //secondary idxs
-
+    //deserialize indexes
+    int idx_count = *((int*)(buf.data() + off));
+    off += sizeof(int);
+    for (int i = 0; i < idx_count; i++) {
+        idxs_.emplace_back(buf, &off);
+    }
 }
 
 std::string Table::Serialize() {
@@ -112,11 +104,12 @@ std::string Table::Serialize() {
         buf.append((char*)&a.not_null_constraint, sizeof(bool));
     }
 
-    //primary idx
-    buf += primary_idx_.Serialize();
-
-    //secondary idxs
-    //count, followed by serialized index
+    //serialize indexes
+    int idx_count = idxs_.size();
+    buf.append((char*)&idx_count, sizeof(int));
+    for (Index& i: idxs_) {
+        buf += i.Serialize();
+    }
 
     return buf;
 }
@@ -131,15 +124,6 @@ std::vector<Datum> Table::DeserializeData(const std::string& value) {
     return data;
 }
 
-//TODO: Generalize to work with primary and secondary idxs
-std::string Table::GetKeyFromData(const std::vector<Datum>& data) {
-    std::string primary_key;
-    for (int i: primary_idx_.key_idxs_) {
-        primary_key += data.at(i).Serialize();
-    }
-    return primary_key;
-}
-
 int Table::GetAttrIdx(const std::string& name) {
     for (size_t i = 0; i < attrs_.size(); i++) {
         if (name.compare(attrs_.at(i).name) == 0) {
@@ -151,7 +135,7 @@ int Table::GetAttrIdx(const std::string& name) {
 }
 
 Status Table::BeginScan(DB* db) {
-    it_ = db->GetIdxHandle(PrimaryIdxName())->NewIterator(rocksdb::ReadOptions());
+    it_ = db->GetIdxHandle(Idx(0).name_)->NewIterator(rocksdb::ReadOptions());
     it_->SeekToFirst();
 
     return Status(true, "ok");
@@ -169,16 +153,16 @@ Status Table::NextRow(DB* db, Row** r) {
 Status Table::DeletePrev(DB* db) {
     it_->Prev();
     std::string key = it_->key().ToString();
-    db->GetIdxHandle(PrimaryIdxName())->Delete(rocksdb::WriteOptions(), key);
+    db->GetIdxHandle(Idx(0).name_)->Delete(rocksdb::WriteOptions(), key);
     it_->Next();
     return Status(true, "ok");
 }
 Status Table::UpdatePrev(DB* db, Row* r) {
     it_->Prev();
     std::string old_key = it_->key().ToString();
-    std::string new_key = GetKeyFromData(r->data_);
+    std::string new_key = Idx(0).GetKeyFromFields(r->data_);
 
-    rocksdb::DB* tab_handle = db->GetIdxHandle(PrimaryIdxName());
+    rocksdb::DB* tab_handle = db->GetIdxHandle(Idx(0).name_);
     if (old_key.compare(new_key) != 0) {
         tab_handle->Delete(rocksdb::WriteOptions(), old_key);
     }
@@ -187,14 +171,14 @@ Status Table::UpdatePrev(DB* db, Row* r) {
     return Status(true, "ok");
 }
 Status Table::Insert(DB* db, std::vector<Datum>& data) {
-    rocksdb::DB* tab_handle = db->GetIdxHandle(PrimaryIdxName());
+    rocksdb::DB* tab_handle = db->GetIdxHandle(Idx(0).name_);
 
     //insert _rowid
     int64_t rowid = NextRowId();
     data.at(0) = Datum(rowid);
 
     std::string value = Datum::SerializeData(data);
-    std::string key = GetKeyFromData(data);
+    std::string key = Idx(0).GetKeyFromFields(data);
 
     std::string test_value;
     rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), key, &test_value);

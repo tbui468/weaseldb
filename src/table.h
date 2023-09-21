@@ -26,8 +26,15 @@ class Index {
 public:
     Index(const std::string& name, std::vector<int> key_idxs): name_(name), key_idxs_(std::move(key_idxs)) {}
     Index(const std::string& buf, int* offset);
-    Index(): name_(""), key_idxs_({}) {} //Default constructor so that Index can be created/copied in Table constructor - this is ugly
     std::string Serialize() const;
+
+    std::string GetKeyFromFields(const std::vector<Datum>& data) const {
+        std::string primary_key;
+        for (int i: key_idxs_) {
+            primary_key += data.at(i).Serialize();
+        }
+        return primary_key;
+    }
 public:
     std::string name_;
     std::vector<int> key_idxs_;
@@ -39,13 +46,10 @@ public:
           std::vector<Token> names,
           std::vector<Token> types,
           std::vector<bool> not_null_constraints, 
-          std::vector<Token> primary_keys,
           std::vector<std::vector<Token>> uniques);
     Table(std::string table_name, const std::string& buf);
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
-    //TODO: Generalize to work with primary and secondary idxs
-    std::string GetKeyFromData(const std::vector<Datum>& data);
     int GetAttrIdx(const std::string& name);
     Status BeginScan(DB* db);
     Status NextRow(DB* db, Row** r);
@@ -56,12 +60,12 @@ public:
     inline const std::vector<Attribute>& Attrs() const {
         return attrs_;
     }
-    inline std::vector<Datum> PrimaryKeyFields() const {
+    inline std::vector<Datum> PrimaryKeyCols() const {
         std::vector<Datum> pk_data;
         std::string s = "Primary keys:";
         pk_data.push_back(Datum(s));
-        for (size_t i = 0; i < primary_idx_.key_idxs_.size(); i++) {
-            std::string name = Attrs().at(primary_idx_.key_idxs_.at(i)).name;
+        for (size_t i = 0; i < idxs_.at(0).key_idxs_.size(); i++) {
+            std::string name = Attrs().at(idxs_.at(0).key_idxs_.at(i)).name;
             pk_data.push_back(Datum(name));
         }
         return pk_data;
@@ -72,11 +76,8 @@ public:
     inline int64_t NextRowId() {
         return rowid_counter_++;
     }
-    inline std::string PrimaryIdxName() {
-        return table_name_ + "_primary";
-    }
-    inline std::string SecondaryIdxName(const std::vector<int>& idxs) {
-        std::string result = table_name_ + "_secondary";
+    inline std::string IdxName(const std::vector<int>& idxs) {
+        std::string result = table_name_ + "_idxon";
 
         for (int i: idxs) {
             result += "_" + attrs_.at(i).name;            
@@ -84,13 +85,15 @@ public:
 
         return result;
     }
+    inline const Index& Idx(int i) const {
+        return idxs_.at(i);
+    }
 private:
     std::string table_name_;
     std::vector<Attribute> attrs_;
     int64_t rowid_counter_;
     rocksdb::Iterator* it_;
-    Index primary_idx_;
-    std::vector<Index> secondary_idxs_;
+    std::vector<Index> idxs_;
 };
 
 struct WorkingAttribute: public Attribute {

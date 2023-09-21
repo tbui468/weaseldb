@@ -31,9 +31,35 @@ public:
                     names_(std::move(names)), 
                     types_(std::move(types)), 
                     not_null_constraints_(std::move(not_null_constraints)), 
-                    primary_keys_(std::move(primary_keys)),
-                    uniques_(std::move(uniques)),
-                    nulls_distinct_(std::move(nulls_distinct)) {}
+                    uniques_(std::move(uniques)) {
+
+        //insert internal column _rowid
+        not_null_constraints_.insert(not_null_constraints_.begin(), true);
+        names_.insert(names_.begin(), Token("_rowid", TokenType::Identifier));
+        types_.insert(types_.begin(), Token("int8", TokenType::Int8));
+
+        //use _rowid if user doesn't specify primary key
+        if (primary_keys.empty())
+            primary_keys.push_back(Token("_rowid", TokenType::Identifier));
+
+        for (size_t i = 0; i < uniques_.size(); i++) {
+            std::vector<Token>& cols = uniques_.at(i);
+
+            //add _rowid to unique column group with 'nulls distinct' clause to differentiate between null fields
+            if (nulls_distinct.at(i))
+                cols.push_back(Token("_rowid", TokenType::Identifier));
+        }
+
+        //an index is created on all uniques, so primary key is decomposed into the 'unique' + 'not null' constraints
+        //automatically apply 'not null' constraint to columns in column group of primary key
+        for (size_t i = 0; i < names_.size(); i++) {
+            if (TokenIn(names_.at(i), primary_keys))
+                not_null_constraints_.at(i) = true;
+        }
+
+        //insert primary key column group into uniques
+        uniques_.insert(uniques_.begin(), primary_keys);
+    }
 
     Status Analyze(std::vector<TokenType>& types) override {
         Table* table_ptr;
@@ -41,11 +67,6 @@ public:
         if (s.Ok()) {
             return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
         }
-
-        //insert internal column _rowid
-        not_null_constraints_.insert(not_null_constraints_.begin(), true);
-        names_.insert(names_.begin(), Token("_rowid", TokenType::Identifier));
-        types_.insert(types_.begin(), Token("int8", TokenType::Int8));
 
         for (size_t i = 0; i < names_.size(); i++) {
             Token name = names_.at(i);
@@ -58,27 +79,10 @@ public:
             }
         }
 
-        //use _rowid if user doesn't specify primary key
-        if (primary_keys_.empty())
-            primary_keys_.push_back(Token("_rowid", TokenType::Identifier));
-
-        if (!TokensSubsetOf(primary_keys_, names_))
-            return Status(false, "Error: Primary key column not in table declaration");
-
         for (size_t i = 0; i < uniques_.size(); i++) {
             std::vector<Token>& cols = uniques_.at(i);
             if (!TokensSubsetOf(cols, names_))
-                return Status(false, "Error: Unique column not in table declaration");
-
-            //add _rowid to unique column group with 'nulls distinct' clause to differentiate between null fields
-            if (nulls_distinct_.at(i))
-                cols.push_back(Token("_rowid", TokenType::Identifier));
-        }
-
-        //automatically apply 'not null' constraint to columns in column group of primary key
-        for (size_t i = 0; i < names_.size(); i++) {
-            if (TokenIn(names_.at(i), primary_keys_))
-                not_null_constraints_.at(i) = true;
+                return Status(false, "Error: Referenced column not in table declaration");
         }
 
         return Status(true, "ok");
@@ -86,10 +90,10 @@ public:
 
     Status Execute() override {
         //put able in catalogue
-        Table table(target_.lexeme, names_, types_, not_null_constraints_, primary_keys_, uniques_);
+        Table table(target_.lexeme, names_, types_, not_null_constraints_, uniques_);
         GetQueryState()->db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, table.Serialize());
 
-        GetQueryState()->db->CreateIdxHandle(table.PrimaryIdxName());
+        GetQueryState()->db->CreateIdxHandle(table.Idx(0).name_);
         //TODO: create secondary indexes here
 
         return Status(true, "CREATE TABLE");
@@ -102,9 +106,7 @@ private:
     std::vector<Token> names_;
     std::vector<Token> types_;
     std::vector<bool> not_null_constraints_;
-    std::vector<Token> primary_keys_;
     std::vector<std::vector<Token>> uniques_;
-    std::vector<bool> nulls_distinct_;
 };
 
 class SelectStmt: public Stmt {
@@ -556,7 +558,7 @@ public:
         //TODO: go through all indexes and drop them here
         //TODO: should get full index name here before passing to DropIdxHandle
         if (table_)
-            GetQueryState()->db->DropIdxHandle(table_->PrimaryIdxName());
+            GetQueryState()->db->DropIdxHandle(table_->Idx(0).name_);
 
         return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");
     }
@@ -595,7 +597,7 @@ public:
             rowset->rows_.push_back(new Row(data));
         }
 
-        std::vector<Datum> pk_data = table_->PrimaryKeyFields();
+        std::vector<Datum> pk_data = table_->PrimaryKeyCols();
         rowset->rows_.push_back(new Row(pk_data));
 
         return Status(true, "table '" + target_relation_.lexeme + "'", rowset);
