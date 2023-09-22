@@ -93,7 +93,10 @@ public:
         Table table(target_.lexeme, names_, types_, not_null_constraints_, uniques_);
         GetQueryState()->db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, table.Serialize());
 
-        GetQueryState()->db->CreateIdxHandle(table.Idx(0).name_);
+        //GetQueryState()->db->CreateIdxHandle(table.Idx(0).name_);
+        for (const Index& i: table.idxs_) {
+            GetQueryState()->db->CreateIdxHandle(i.name_);
+        }
         //TODO: create secondary indexes here
 
         return Status(true, "CREATE TABLE");
@@ -555,10 +558,12 @@ public:
         if (!idx_existed)
             return Status(true, "(table '" + target_relation_.lexeme + "' doesn't exist and not dropped)");
 
-        //TODO: go through all indexes and drop them here
-        //TODO: should get full index name here before passing to DropIdxHandle
-        if (table_)
-            GetQueryState()->db->DropIdxHandle(table_->Idx(0).name_);
+        //skip if table doesn't exist - error should be reported in the semantic analysis stage if missing table is error
+        if (table_) {
+            for (const Index& i: table_->idxs_) {
+                GetQueryState()->db->DropIdxHandle(i.name_);
+            }
+        }
 
         return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");
     }
@@ -582,23 +587,21 @@ public:
         return Status(true, "ok");
     }
     Status Execute() override {
-        std::vector<Datum> tuplefields;
-        std::string col = "Column";
-        tuplefields.emplace_back(col);
-        std::string type = "Type";
-        tuplefields.emplace_back(type);
-        std::string not_null = "Not Null";
-        tuplefields.emplace_back(not_null);
         RowSet* rowset = new RowSet();
-        rowset->rows_.push_back(new Row(tuplefields));
 
+        std::string not_null = "not null";
         for (const Attribute& a: table_->Attrs()) {
-            std::vector<Datum> data = { Datum(a.name), Datum(TokenTypeToString(a.type)), Datum(a.not_null_constraint) };
+            std::vector<Datum> data = { Datum(a.name), Datum(TokenTypeToString(a.type)) };
+            if (a.not_null_constraint) {
+                data.emplace_back(not_null);
+            }
             rowset->rows_.push_back(new Row(data));
         }
 
-        std::vector<Datum> pk_data = table_->PrimaryKeyCols();
-        rowset->rows_.push_back(new Row(pk_data));
+        for (const Index& i: table_->idxs_) {
+            std::vector<Datum> index_name = {Datum(i.name_)};
+            rowset->rows_.push_back(new Row(index_name));
+        }
 
         return Status(true, "table '" + target_relation_.lexeme + "'", rowset);
     }

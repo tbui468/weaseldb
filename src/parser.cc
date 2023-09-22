@@ -261,6 +261,7 @@ Stmt* Parser::ParseStmt() {
                     }
                     NextToken(); //)
                 } else if (PeekToken().type == TokenType::Unique) {
+                    NextToken(); //unique
                     NextToken(); //(
 
                     std::vector<Token> cols;

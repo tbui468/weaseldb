@@ -60,16 +60,6 @@ public:
     inline const std::vector<Attribute>& Attrs() const {
         return attrs_;
     }
-    inline std::vector<Datum> PrimaryKeyCols() const {
-        std::vector<Datum> pk_data;
-        std::string s = "Primary keys:";
-        pk_data.push_back(Datum(s));
-        for (size_t i = 0; i < idxs_.at(0).key_idxs_.size(); i++) {
-            std::string name = Attrs().at(idxs_.at(0).key_idxs_.at(i)).name;
-            pk_data.push_back(Datum(name));
-        }
-        return pk_data;
-    }
     inline std::string TableName() {
         return table_name_;
     }
@@ -93,6 +83,7 @@ private:
     std::vector<Attribute> attrs_;
     int64_t rowid_counter_;
     rocksdb::Iterator* it_;
+public:
     std::vector<Index> idxs_;
 };
 
