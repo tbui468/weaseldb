@@ -43,6 +43,7 @@ public:
     }
 
     inline void ResetAggState() {
+        is_agg = false;
         first_ = true;
         sum_ = Datum(0);
         count_ = Datum(0);
@@ -89,6 +90,7 @@ private:
     }
 public:
     DB* db;
+    bool is_agg;
     //state for aggregate functions
     Datum min_;
     Datum max_;
@@ -104,16 +106,13 @@ private:
 //but putting it in stmt.h would cause a circular dependency
 class Stmt {
 public:
-    Stmt(QueryState* qs): query_state_(qs) {}
-    virtual Status Analyze(std::vector<TokenType>& types) = 0;
-    virtual Status Execute() = 0;
+    virtual Status Analyze(QueryState& qs, std::vector<TokenType>& types) = 0;
+    virtual Status Execute(QueryState& qs) = 0;
     virtual std::string ToString() = 0;
-    inline QueryState* GetQueryState() {
-        return query_state_;
-    }
-    Status OpenTable(const std::string& table_name, Table** table) {
+    //Why is this here?
+    Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {
         std::string serialized_table;
-        bool ok = query_state_->db->Catalogue()->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
+        bool ok = qs.db->Catalogue()->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
 
         if (!ok)
             return Status(false, "Error: Table doesn't exist");
@@ -122,39 +121,32 @@ public:
 
         return Status(true, "ok");
     }
-private:
-    QueryState* query_state_;
 };
 
 //QueryState is saved in both Expr and Stmt, could probably
 //make a single class called QueryNode to store this, and have both Expr and Stmt inherit from that
 class Expr {
 public:
-    Expr(QueryState* qs): query_state_(qs) {}
-    virtual inline Status Eval(Row* r, Datum* result, bool* is_agg) = 0;
+    //TODO: reuslt and is_agg can be put inside of query state
+    virtual inline Status Eval(QueryState& qs, Row* r, Datum* result) = 0;
     virtual std::string ToString() = 0;
-    virtual Status Analyze(QueryState* qs, TokenType* evaluated_type) = 0;
-    inline QueryState* GetQueryState() {
-        return query_state_;
-    }
-private:
-    QueryState* query_state_;
+    virtual Status Analyze(QueryState& qs, TokenType* evaluated_type) = 0;
 };
 
 class Literal: public Expr {
 public:
-    Literal(QueryState* qs, Token t): Expr(qs), t_(t) {}
-    Literal(QueryState* qs, bool b): Expr(qs), t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
-    Literal(QueryState* qs, int i): Expr(qs), t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
-    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
-        *is_agg = false;
+    Literal(Token t): t_(t) {}
+    Literal(bool b): t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
+    Literal(int i): t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
+    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+        qs.is_agg = false;
         *result = Datum(t_);
         return Status(true, "ok");
     }
     std::string ToString() override {
         return t_.lexeme;
     }
-    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
         *evaluated_type = Datum(t_).Type();
         return Status(true, "ok");
     }
@@ -164,19 +156,17 @@ private:
 
 class Binary: public Expr {
 public:
-    Binary(QueryState* qs, Token op, Expr* left, Expr* right):
-        Expr(qs), op_(op), left_(left), right_(right) {}
-    inline Status Eval(Row* row, Datum* result, bool* is_agg) override {
-        *is_agg = false;
+    Binary(Token op, Expr* left, Expr* right):
+        op_(op), left_(left), right_(right) {}
+    inline Status Eval(QueryState& qs, Row* row, Datum* result) override {
+        qs.is_agg = false;
 
         Datum l;
-        bool left_agg;
-        Status s1 = left_->Eval(row, &l, &left_agg);
+        Status s1 = left_->Eval(qs, row, &l);
         if (!s1.Ok()) return s1;
 
         Datum r;
-        bool right_agg;
-        Status s2 = right_->Eval(row, &r, &right_agg);
+        Status s2 = right_->Eval(qs, row, &r);
         if (!s2.Ok()) return s2;
 
         if (l.Type() == TokenType::Null || r.Type() == TokenType::Null) {
@@ -205,7 +195,7 @@ public:
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
     }
-    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
         TokenType left_type;
         {
             Status s = left_->Analyze(qs, &left_type);
@@ -267,13 +257,12 @@ private:
 
 class Unary: public Expr {
 public:
-    Unary(QueryState* qs, Token op, Expr* right): Expr(qs), op_(op), right_(right) {}
-    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
-        *is_agg = false;
+    Unary(Token op, Expr* right): op_(op), right_(right) {}
+    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+        qs.is_agg = false;
 
         Datum right;
-        bool inner_agg;
-        Status s = right_->Eval(r, &right, &inner_agg);
+        Status s = right_->Eval(qs, r, &right);
         if (!s.Ok()) return s;
 
         switch (op_.type) {
@@ -293,7 +282,7 @@ public:
     std::string ToString() override {
         return "(" + op_.lexeme + " " + right_->ToString() + ")";
     }
-    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
         TokenType type;
         {
             Status s = right_->Analyze(qs, &type);
@@ -328,19 +317,19 @@ private:
 
 class ColRef: public Expr {
 public:
-    ColRef(QueryState* qs, Token t): Expr(qs), t_(t), table_ref_(""), idx_(-1), scope_(-1) {}
-    ColRef(QueryState* qs, Token t, Token table_ref): Expr(qs), t_(t), table_ref_(table_ref.lexeme), idx_(-1), scope_(-1) {}
-    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
-        *is_agg = false;
-        *result = GetQueryState()->ScopeRowAt(scope_)->data_.at(idx_);
+    ColRef(Token t): t_(t), table_ref_(""), idx_(-1), scope_(-1) {}
+    ColRef(Token t, Token table_ref): t_(t), table_ref_(table_ref.lexeme), idx_(-1), scope_(-1) {}
+    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+        qs.is_agg = false;
+        *result = qs.ScopeRowAt(scope_)->data_.at(idx_);
         return Status(true, "ok");
     }
     std::string ToString() override {
         return t_.lexeme;
     }
-    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
         WorkingAttribute a;
-        Status s = qs->GetWorkingAttribute(&a, table_ref_, t_.lexeme);
+        Status s = qs.GetWorkingAttribute(&a, table_ref_, t_.lexeme);
         if (!s.Ok())
             return s;
 
@@ -361,14 +350,13 @@ private:
 //Used for both InsertStmt and UpdateStmt
 class ColAssign: public Expr {
 public:
-    ColAssign(QueryState* qs, Token col, Expr* right): 
-        Expr(qs), col_(col), right_(right), scope_(-1), idx_(-1), physical_type_(TokenType::Null) {}
-    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
-        *is_agg = false;
+    ColAssign(Token col, Expr* right): 
+        col_(col), right_(right), scope_(-1), idx_(-1), physical_type_(TokenType::Null) {}
+    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+        qs.is_agg = false;
 
         Datum right;
-        bool right_agg;
-        Status s = right_->Eval(r, &right, &right_agg);
+        Status s = right_->Eval(qs, r, &right);
         if (!s.Ok()) return s;
 
         //demote int8 (working integer type in wsldb) evaluated type to fit physical type on disk
@@ -385,7 +373,7 @@ public:
     std::string ToString() override {
         return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
     }
-    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
         TokenType type;
         {
             Status s = right_->Analyze(qs, &type);
@@ -396,7 +384,7 @@ public:
         WorkingAttribute a;
         {
             std::string table_ref = "";
-            Status s = qs->GetWorkingAttribute(&a, table_ref, col_.lexeme);
+            Status s = qs.GetWorkingAttribute(&a, table_ref, col_.lexeme);
             if (!s.Ok())
                 return s;
         }
@@ -431,57 +419,55 @@ struct OrderCol {
 
 struct Call: public Expr {
 public:
-    Call(QueryState* qs, Token fcn, Expr* arg): Expr(qs), fcn_(fcn), arg_(arg) {}
-    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
-        *is_agg = true;
+    Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
+    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
 
-        bool arg_agg;
         Datum arg;
-        Status s = arg_->Eval(r, &arg, &arg_agg);
+        Status s = arg_->Eval(qs, r, &arg);
         if (!s.Ok())
             return s;
 
-        QueryState* qs = GetQueryState();
-
         switch (fcn_.type) {
             case TokenType::Avg:
-                qs->sum_ += arg;
-                qs->count_ += Datum(1);
-                *result = qs->sum_ / qs->count_;
+                qs.sum_ += arg;
+                qs.count_ += Datum(1);
+                *result = qs.sum_ / qs.count_;
                 break;
             case TokenType::Count:
-                qs->count_ += Datum(1);
-                *result = qs->count_;
+                qs.count_ += Datum(1);
+                *result = qs.count_;
                 break;
             case TokenType::Max:
-                if (qs->first_ || arg > qs->max_) {
-                    qs->max_ = arg;
-                    qs->first_ = false;
+                if (qs.first_ || arg > qs.max_) {
+                    qs.max_ = arg;
+                    qs.first_ = false;
                 }
-                *result = qs->max_;
+                *result = qs.max_;
                 break;
             case TokenType::Min:
-                if (qs->first_ || arg < qs->min_) {
-                    qs->min_ = arg;
-                    qs->first_ = false;
+                if (qs.first_ || arg < qs.min_) {
+                    qs.min_ = arg;
+                    qs.first_ = false;
                 }
-                *result = qs->min_;
+                *result = qs.min_;
                 break;
             case TokenType::Sum:
-                qs->sum_ += arg;
-                *result = qs->sum_;
+                qs.sum_ += arg;
+                *result = qs.sum_;
                 break;
             default:
                 return Status(false, "Error: Invalid function name");
                 break;
         }
 
+        //Calling Eval on argument may set qs.is_agg to false, so need to set it after evaluating argument
+        qs.is_agg = true;
         return Status(true, "ok");
     }
     std::string ToString() override {
         return fcn_.lexeme + arg_->ToString();
     }
-    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
         {
             Status s = arg_->Analyze(qs, evaluated_type);
             if (!s.Ok()) {
@@ -500,13 +486,12 @@ private:
 
 class IsNull: public Expr {
 public:
-    IsNull(QueryState* qs, Expr* left): Expr(qs), left_(left) {}
-    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
-        *is_agg = false;
+    IsNull(Expr* left): left_(left) {}
+    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+        qs.is_agg = false;
 
         Datum d;
-        bool left_agg;
-        Status s = left_->Eval(r, &d, &left_agg);
+        Status s = left_->Eval(qs, r, &d);
         if (!s.Ok())
             return s;
 
@@ -521,7 +506,7 @@ public:
     std::string ToString() override {
         return "IsNull";
     }
-    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
         *evaluated_type = TokenType::Bool;
 
         TokenType left_type;
@@ -537,13 +522,12 @@ private:
 
 class IsNotNull: public Expr {
 public:
-    IsNotNull(QueryState* qs, Expr* left): Expr(qs), left_(left) {}
-    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
-        *is_agg = false;
+    IsNotNull(Expr* left): left_(left) {}
+    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+        qs.is_agg = false;
 
         Datum d;
-        bool left_agg;
-        Status s = left_->Eval(r, &d, &left_agg);
+        Status s = left_->Eval(qs, r, &d);
         if (!s.Ok())
             return s;
 
@@ -558,7 +542,7 @@ public:
     std::string ToString() override {
         return "IsNotNull";
     }
-    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
         *evaluated_type = TokenType::Bool;
 
         TokenType left_type;
@@ -574,11 +558,11 @@ private:
 
 class ScalarSubquery: public Expr {
 public:
-    ScalarSubquery(QueryState* qs, Stmt* stmt): Expr(qs), stmt_(stmt) {}
-    inline Status Eval(Row* r, Datum* result, bool* is_agg) override {
-        *is_agg = false;
+    ScalarSubquery(Stmt* stmt): stmt_(stmt) {}
+    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+        qs.is_agg = false;
 
-        Status s = stmt_->Execute();
+        Status s = stmt_->Execute(qs);
         if (!s.Ok())
             return s;
 
@@ -596,10 +580,10 @@ public:
     std::string ToString() override {
         return "scalar subquery";
     }
-    Status Analyze(QueryState* qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
         std::vector<TokenType> types;
         {
-            Status s = stmt_->Analyze(types);
+            Status s = stmt_->Analyze(qs, types);
             if (!s.Ok())
                 return s;
         }
@@ -620,15 +604,15 @@ private:
 
 class WorkTable {
 public:
-    virtual Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) = 0;
-    virtual Status BeginScan(DB* db) = 0;
-    virtual Status NextRow(DB* db, Row** r) = 0;
+    virtual Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) = 0;
+    virtual Status BeginScan(QueryState& qs) = 0;
+    virtual Status NextRow(QueryState& qs, Row** r) = 0;
 };
 
 class LeftJoin: public WorkTable {
 public:
     LeftJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
+    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         WorkingAttributeSet* left_attrs;
         {
             Status s = left_->Analyze(qs, &left_attrs);
@@ -652,7 +636,7 @@ public:
                 return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
         }
 
-        qs->PushAnalysisScope(*working_attrs);
+        qs.PushAnalysisScope(*working_attrs);
         {
             TokenType type;
             Status s = condition_->Analyze(qs, &type);
@@ -663,27 +647,27 @@ public:
                 return Status(false, "Error: Inner join condition must evaluate to a boolean type");
             }
         }
-        qs->PopAnalysisScope();
+        qs.PopAnalysisScope();
 
         return Status(true, "ok");
     }
-    Status BeginScan(DB* db) override {
-        left_->BeginScan(db);
-        right_->BeginScan(db);
+    Status BeginScan(QueryState& qs) override {
+        left_->BeginScan(qs);
+        right_->BeginScan(qs);
 
         //initialize left row
-        Status s = left_->NextRow(db, &left_row_);
+        Status s = left_->NextRow(qs, &left_row_);
         lefts_inserted_ = 0;
         if (!s.Ok())
             return Status(false, "No more rows");
 
         return Status(true, "ok");
     }
-    Status NextRow(DB* db, Row** r) override {
+    Status NextRow(QueryState& qs, Row** r) override {
         Row* right_row;
 
         while (true) {
-            Status s = right_->NextRow(db, &right_row);
+            Status s = right_->NextRow(qs, &right_row);
             if (!s.Ok()) {
                 //get new left
                 {
@@ -699,15 +683,15 @@ public:
                         return Status(true, "ok");
                     }
 
-                    Status s = left_->NextRow(db, &left_row_);
+                    Status s = left_->NextRow(qs, &left_row_);
                     lefts_inserted_ = 0;
                     if (!s.Ok())
                         return Status(false, "No more rows");
                 }
 
                 {
-                    right_->BeginScan(db);
-                    Status s = right_->NextRow(db, &right_row);
+                    right_->BeginScan(qs);
+                    Status s = right_->NextRow(qs, &right_row);
                     if (!s.Ok())
                         return Status(false, "No more rows");
                 } 
@@ -719,11 +703,10 @@ public:
 
                 *r = new Row(result);
                 Datum d;
-                bool is_agg;
 
-                condition_->GetQueryState()->PushScopeRow(*r);
-                Status s = condition_->Eval(*r, &d, &is_agg);
-                condition_->GetQueryState()->PopScopeRow();
+                qs.PushScopeRow(*r);
+                Status s = condition_->Eval(qs, *r, &d);
+                qs.PopScopeRow();
 
                 if (d.AsBool()) {
                     lefts_inserted_++;
@@ -753,7 +736,7 @@ public:
     FullJoin(WorkTable* left, WorkTable* right, Expr* condition): 
         left_(left), right_(right), condition_(condition), right_join_(new LeftJoin(right, left, condition)) {}
 
-    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
+    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         Status s = right_join_->Analyze(qs, working_attrs);
 
         if (!s.Ok())
@@ -763,25 +746,25 @@ public:
 
         return s;
     }
-    Status BeginScan(DB* db) override {
-        right_join_->BeginScan(db);
+    Status BeginScan(QueryState& qs) override {
+        right_join_->BeginScan(qs);
         do_right_ = true;
 
         return Status(true, "ok");
     }
-    Status NextRow(DB* db, Row** r) override {
+    Status NextRow(QueryState& qs, Row** r) override {
         //attempt grabbing row from right_join_
         //if none left, initialize left_ and right_, and start processing left join but only use values with nulled right sides
         if (do_right_) {
-            Status s = right_join_->NextRow(db, r);
+            Status s = right_join_->NextRow(qs, r);
             if (s.Ok()) {
                 return s;
             } else {
                 //reset to begin augmented left outer join scan
                 do_right_ = false;
-                left_->BeginScan(db);
-                right_->BeginScan(db);
-                Status s = left_->NextRow(db, &left_row_);
+                left_->BeginScan(qs);
+                right_->BeginScan(qs);
+                Status s = left_->NextRow(qs, &left_row_);
                 lefts_inserted_ = 0;
                 if (!s.Ok())
                     return Status(false, "No more rows");
@@ -793,7 +776,7 @@ public:
         Row* right_row;
 
         while (true) {
-            Status s = right_->NextRow(db, &right_row);
+            Status s = right_->NextRow(qs, &right_row);
             if (!s.Ok()) {
                 //get new left
                 if (lefts_inserted_ == 0) {
@@ -812,15 +795,15 @@ public:
                 }
 
                 {
-                    Status s = left_->NextRow(db, &left_row_);
+                    Status s = left_->NextRow(qs, &left_row_);
                     lefts_inserted_ = 0;
                     if (!s.Ok())
                         return Status(false, "No more rows");
                 }
 
                 {
-                    right_->BeginScan(db);
-                    Status s = right_->NextRow(db, &right_row);
+                    right_->BeginScan(qs);
+                    Status s = right_->NextRow(qs, &right_row);
                     if (!s.Ok())
                         return Status(false, "No more rows");
                 } 
@@ -836,11 +819,10 @@ public:
 
                 Row temp(result);
                 Datum d;
-                bool is_agg;
 
-                condition_->GetQueryState()->PushScopeRow(&temp);
-                Status s = condition_->Eval(&temp, &d, &is_agg);
-                condition_->GetQueryState()->PopScopeRow();
+                qs.PushScopeRow(&temp);
+                Status s = condition_->Eval(qs, &temp, &d);
+                qs.PopScopeRow();
 
                 //TODO: optimization opportunity here
                 //if a left join row has a matching right side here, no need to check the
@@ -873,7 +855,7 @@ private:
 class InnerJoin: public WorkTable {
 public:
     InnerJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
+    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         WorkingAttributeSet* left_attrs;
         {
             Status s = left_->Analyze(qs, &left_attrs);
@@ -900,7 +882,7 @@ public:
         //called once entire WorkTable is Analyzed an at least a single WorkingAttributeSet is in QueryState,
         //but InnerJoins have an Expr embedded as part of the WorkTable (the 'on' clause), so this is needed
         //Something similar is done in InnerJoin::NextRow
-        qs->PushAnalysisScope(*working_attrs);
+        qs.PushAnalysisScope(*working_attrs);
         {
             TokenType type;
             Status s = condition_->Analyze(qs, &type);
@@ -911,37 +893,37 @@ public:
                 return Status(false, "Error: Inner join condition must evaluate to a boolean type");
             }
         }
-        qs->PopAnalysisScope();
+        qs.PopAnalysisScope();
 
         return Status(true, "ok");
     }
-    Status BeginScan(DB* db) override {
-        left_->BeginScan(db);
-        right_->BeginScan(db);
+    Status BeginScan(QueryState& qs) override {
+        left_->BeginScan(qs);
+        right_->BeginScan(qs);
 
         //initialize left row
-        Status s = left_->NextRow(db, &left_row_);
+        Status s = left_->NextRow(qs, &left_row_);
         if (!s.Ok())
             return Status(false, "No more rows");
 
         return Status(true, "ok");
     }
-    Status NextRow(DB* db, Row** r) override {
+    Status NextRow(QueryState& qs, Row** r) override {
         Row* right_row;
 
         while (true) {
-            Status s = right_->NextRow(db, &right_row);
+            Status s = right_->NextRow(qs, &right_row);
             if (!s.Ok()) {
                 //get new left
                 {
-                    Status s = left_->NextRow(db, &left_row_);
+                    Status s = left_->NextRow(qs, &left_row_);
                     if (!s.Ok())
                         return Status(false, "No more rows");
                 }
 
                 {
-                    right_->BeginScan(db);
-                    Status s = right_->NextRow(db, &right_row);
+                    right_->BeginScan(qs);
+                    Status s = right_->NextRow(qs, &right_row);
                     if (!s.Ok())
                         return Status(false, "No more rows");
                 } 
@@ -954,13 +936,12 @@ public:
 
                 *r = new Row(result);
                 Datum d;
-                bool is_agg;
 
                 //this is ugly, we need to do this since Expr::Eval is needed to generate a working table
                 //something similar is done in InnerJoin::Analyze
-                condition_->GetQueryState()->PushScopeRow(*r);
-                Status s = condition_->Eval(*r, &d, &is_agg);
-                condition_->GetQueryState()->PopScopeRow();
+                qs.PushScopeRow(*r);
+                Status s = condition_->Eval(qs, *r, &d);
+                qs.PopScopeRow();
 
                 if (d.AsBool())
                     return Status(true, "ok");
@@ -980,7 +961,7 @@ private:
 class CrossJoin: public WorkTable {
 public:
     CrossJoin(WorkTable* left, WorkTable* right): left_(left), right_(right), left_row_(nullptr) {}
-    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
+    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         WorkingAttributeSet* left_attrs;
         {
             Status s = left_->Analyze(qs, &left_attrs);
@@ -1004,30 +985,30 @@ public:
 
         return Status(true, "ok");
     }
-    Status BeginScan(DB* db) override {
-        left_->BeginScan(db);
-        right_->BeginScan(db);
+    Status BeginScan(QueryState& qs) override {
+        left_->BeginScan(qs);
+        right_->BeginScan(qs);
 
         //initialize left row
-        Status s = left_->NextRow(db, &left_row_);
+        Status s = left_->NextRow(qs, &left_row_);
         if (!s.Ok())
             return Status(false, "No more rows");
 
         return Status(true, "ok");
     }
-    Status NextRow(DB* db, Row** r) override {
+    Status NextRow(QueryState& qs, Row** r) override {
         Row* right_row;
-        Status s = right_->NextRow(db, &right_row);
+        Status s = right_->NextRow(qs, &right_row);
         if (!s.Ok()) {
             {
-                Status s = left_->NextRow(db, &left_row_);
+                Status s = left_->NextRow(qs, &left_row_);
                 if (!s.Ok())
                     return Status(false, "No more rows");
             }
 
             {
-                right_->BeginScan(db);
-                Status s = right_->NextRow(db, &right_row);
+                right_->BeginScan(qs);
+                Status s = right_->NextRow(qs, &right_row);
                 if (!s.Ok())
                     return Status(false, "No more rows");
             } 
@@ -1048,7 +1029,7 @@ private:
 class ConstantTable: public WorkTable {
 public:
     ConstantTable(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
-    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
+    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         std::vector<std::string> names;
         std::vector<TokenType> types;
         for (Expr* e: target_cols_) {
@@ -1064,11 +1045,11 @@ public:
 
         return Status(true, "ok");
     }
-    Status BeginScan(DB* db) override {
+    Status BeginScan(QueryState& qs) override {
         cur_ = 0;
         return Status(true, "ok");
     }
-    Status NextRow(DB* db, Row** r) override {
+    Status NextRow(QueryState& qs, Row** r) override {
         if (cur_ > 0)
             return Status(false, "No more rows");
 
@@ -1091,9 +1072,9 @@ public:
     //if an alias is not provided, the reference name is the same as the physical table name
     PrimaryTable(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
 
-    Status Analyze(QueryState* qs, WorkingAttributeSet** working_attrs) override {
+    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         std::string serialized_table;
-        bool ok = qs->db->Catalogue()->Get(rocksdb::ReadOptions(), tab_name_, &serialized_table).ok();
+        bool ok = qs.db->Catalogue()->Get(rocksdb::ReadOptions(), tab_name_, &serialized_table).ok();
 
         if (!ok) {
             return Status(false, "Error: Table '" + tab_name_ + "' does not exist");
@@ -1104,11 +1085,11 @@ public:
 
         return Status(true, "ok");
     }
-    Status BeginScan(DB* db) override {
-        return table_->BeginScan(db);
+    Status BeginScan(QueryState& qs) override {
+        return table_->BeginScan(qs.db);
     }
-    Status NextRow(DB* db, Row** r) override {
-        return table_->NextRow(db, r);
+    Status NextRow(QueryState& qs, Row** r) override {
+        return table_->NextRow(qs.db, r);
     }
 private:
     std::string tab_name_;

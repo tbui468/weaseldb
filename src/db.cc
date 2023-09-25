@@ -3,6 +3,7 @@
 #include "db.h"
 #include "tokenizer.h"
 #include "parser.h"
+#include "interpreter.h"
 
 namespace wsldb {
 
@@ -44,36 +45,6 @@ std::vector<Stmt*> DB::parse(const std::vector<Token>& tokens) {
     return parser.ParseStmts(this);
 }
 
-//TODO: need to reimplement this since we changed alot during the writing of ExecuteScript
-rocksdb::Status DB::execute(const std::string& query) {
-    std::vector<Token> tokens = tokenize(query);
-    std::vector<Stmt*> ptree = parse(tokens);
-    /*
-    for (Stmt* s: ptree) {
-        std::cout << s->ToString() << std::endl;
-    }*/
-
-    for (Stmt* s: ptree) {
-        std::vector<TokenType> types;
-        Status status = s->Analyze(types);
-
-        if (status.Ok())
-            status = s->Execute();
-           
-        if (status.Ok()) { 
-            RowSet* tupleset = status.Tuples();
-            if (tupleset) {
-                tupleset->Print();
-            }
-        }
-
-        if (!status.Ok())
-            std::cout << status.Msg() << std::endl;
-    }
-
-    return status_;
-}
-
 wsldb::Status DB::ExecuteScript(const std::string& path) {
     std::string line;
     std::ifstream script(path);
@@ -92,6 +63,10 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
 
     std::vector<Stmt*> ptree = parse(tokens);
 
+    Interpreter interp(path_);
+    Status s = interp.ExecuteStmts(ptree, this);
+
+    /*
     for (Stmt* s: ptree) {
         std::vector<TokenType> types;
         Status status = s->Analyze(types);
@@ -108,9 +83,9 @@ wsldb::Status DB::ExecuteScript(const std::string& path) {
 
         if (!status.Ok())
             std::cout << status.Msg() << std::endl;
-    }
+    }*/
 
-    return Status(true, "ok");
+    return s;
 }
 
 void DB::CreateIdxHandle(const std::string& idx_name) {

@@ -9,7 +9,6 @@ std::vector<Stmt*> Parser::ParseStmts(DB* db) {
     std::vector<Stmt*> stmts = std::vector<Stmt*>();
 
     while (PeekToken().type != TokenType::Eof) {
-        query_state_ = new QueryState(db);
         stmts.push_back(ParseStmt());    
     }
     
@@ -24,15 +23,15 @@ Expr* Parser::ParsePrimary() {
         case TokenType::TrueLiteral:
         case TokenType::FalseLiteral:
         case TokenType::Null:
-            return new Literal(query_state_, NextToken());
+            return new Literal(NextToken());
         case TokenType::Identifier: {
             Token ref = NextToken();
             if (PeekToken().type == TokenType::Dot) {
                 NextToken(); //.
                 Token col = NextToken();
-                return new ColRef(query_state_, col, ref);
+                return new ColRef(col, ref);
             }
-            return new ColRef(query_state_, ref);
+            return new ColRef(ref);
         }
         case TokenType::LParen: {
             NextToken(); //(
@@ -46,7 +45,7 @@ Expr* Parser::ParsePrimary() {
                 NextToken(); //(
                 Expr* arg = ParseExpr();
                 NextToken(); //)
-                return new Call(query_state_, fcn, arg);
+                return new Call(fcn, arg);
             }
             return NULL;
     }
@@ -57,7 +56,7 @@ Expr* Parser::ParseUnary() {
     if (PeekToken().type == TokenType::Minus ||
            PeekToken().type == TokenType::Not) {
         Token op = NextToken();
-        return new Unary(query_state_, op, ParseUnary());
+        return new Unary(op, ParseUnary());
     }
 
     return ParsePrimary();
@@ -69,7 +68,7 @@ Expr* Parser::ParseMultiplicative() {
     while (PeekToken().type == TokenType::Star ||
            PeekToken().type == TokenType::Slash) {
         Token op = NextToken();
-        left = new Binary(query_state_, op, left, ParseUnary());
+        left = new Binary(op, left, ParseUnary());
     }
 
     return left;
@@ -81,7 +80,7 @@ Expr* Parser::ParseAdditive() {
     while (PeekToken().type == TokenType::Plus ||
            PeekToken().type == TokenType::Minus) {
         Token op = NextToken();
-        left = new Binary(query_state_, op, left, ParseMultiplicative());
+        left = new Binary(op, left, ParseMultiplicative());
     }
 
     return left;
@@ -95,7 +94,7 @@ Expr* Parser::ParseRelational() {
            PeekToken().type == TokenType::Greater ||
            PeekToken().type == TokenType::GreaterEqual) {
         Token op = NextToken();
-        left = new Binary(query_state_, op, left, ParseAdditive());
+        left = new Binary(op, left, ParseAdditive());
     }
 
     return left;
@@ -112,13 +111,13 @@ Expr* Parser::ParseEquality() {
         if (op.type == TokenType::Is) {
             Token t = NextToken();
             if (t.type == TokenType::Null) {
-                left = new IsNull(query_state_, left);
+                left = new IsNull(left);
             } else { //t.type must be 'not'
                 NextToken(); //null
-                left = new IsNotNull(query_state_, left);
+                left = new IsNotNull(left);
             } 
         } else {
-            left = new Binary(query_state_, op, left, ParseRelational());
+            left = new Binary(op, left, ParseRelational());
         }
     }
 
@@ -130,7 +129,7 @@ Expr* Parser::ParseAnd() {
 
     while (PeekToken().type == TokenType::And) {
         Token op = NextToken();
-        left = new Binary(query_state_, op, left, ParseEquality());
+        left = new Binary(op, left, ParseEquality());
     }
 
     return left;
@@ -141,7 +140,7 @@ Expr* Parser::ParseOr() {
 
     while (PeekToken().type == TokenType::Or) {
         Token op = NextToken();
-        left = new Binary(query_state_, op, left, ParseAnd());
+        left = new Binary(op, left, ParseAnd());
     }
 
     return left;
@@ -149,7 +148,7 @@ Expr* Parser::ParseOr() {
 
 Expr* Parser::ParseExpr() {
     if (PeekToken().type == TokenType::Select) {
-        return new ScalarSubquery(query_state_, ParseStmt());
+        return new ScalarSubquery(ParseStmt());
     }
 
     return ParseOr();
@@ -302,7 +301,7 @@ Stmt* Parser::ParseStmt() {
 
             NextToken();//)
             NextToken();//;
-            return new CreateStmt(query_state_, target, names, types, not_null_constraints, pks, uniques, nulls_distinct);
+            return new CreateStmt(target, names, types, not_null_constraints, pks, uniques, nulls_distinct);
         }
         case TokenType::Insert: {
             NextToken(); //into
@@ -324,7 +323,7 @@ Stmt* Parser::ParseStmt() {
 
                 NextToken(); //(
                 for (Token col: cols) {
-                    tuple.push_back(new ColAssign(query_state_, col, ParseExpr()));
+                    tuple.push_back(new ColAssign(col, ParseExpr()));
                     if (PeekToken().type == TokenType::Comma)
                         NextToken(); //,
                 }
@@ -337,7 +336,7 @@ Stmt* Parser::ParseStmt() {
                 }
             }
             NextToken(); //;
-            return new InsertStmt(query_state_, target, col_values);
+            return new InsertStmt(target, col_values);
         }
         case TokenType::Select: {
             bool remove_duplicates = false;
@@ -366,7 +365,7 @@ Stmt* Parser::ParseStmt() {
                 NextToken(); //where
                 where_clause = ParseExpr(); 
             } else {
-                where_clause = new Literal(query_state_, true);
+                where_clause = new Literal(true);
             }
 
             std::vector<OrderCol> order_cols;
@@ -376,13 +375,13 @@ Stmt* Parser::ParseStmt() {
 
                 Expr* col = ParseExpr();
                 Token asc = NextToken();
-                order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(query_state_, true) : new Literal(query_state_, false)});
+                order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
 
                 while (PeekToken().type == TokenType::Comma) {
                     NextToken();
                     Expr* col = ParseExpr();
                     Token asc = NextToken();
-                    order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(query_state_, true) : new Literal(query_state_, false)});
+                    order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
                 }
             }
 
@@ -391,13 +390,13 @@ Stmt* Parser::ParseStmt() {
                 NextToken(); //limit
                 limit = ParseExpr();
             } else {
-                limit = new Literal(query_state_, -1); //no limit
+                limit = new Literal(-1); //no limit
             } 
 
             //if the select statement is a subquery, it will not end with a semicolon
             if (PeekToken().type == TokenType::SemiColon) 
                 NextToken(); //;
-            return new SelectStmt(query_state_, target, target_cols, where_clause, order_cols, limit, remove_duplicates);
+            return new SelectStmt(target, target_cols, where_clause, order_cols, limit, remove_duplicates);
         }
 
         case TokenType::Update: {
@@ -408,7 +407,7 @@ Stmt* Parser::ParseStmt() {
             while (!(PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Where)) {
                 Token col = NextToken();
                 NextToken();
-                assigns.push_back(new ColAssign(query_state_, col, ParseExpr()));
+                assigns.push_back(new ColAssign(col, ParseExpr()));
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken(); //,
                 }
@@ -419,11 +418,11 @@ Stmt* Parser::ParseStmt() {
                 NextToken(); //where
                 where_clause = ParseExpr(); 
             } else {
-                where_clause = new Literal(query_state_, true);
+                where_clause = new Literal(true);
             }
             NextToken(); //;
 
-            return new UpdateStmt(query_state_, target, assigns, where_clause);
+            return new UpdateStmt(target, assigns, where_clause);
         }
         case TokenType::Delete: {
             NextToken(); //from
@@ -434,10 +433,10 @@ Stmt* Parser::ParseStmt() {
                 NextToken(); //where
                 where_clause = ParseExpr(); 
             } else {
-                where_clause = new Literal(query_state_, true);
+                where_clause = new Literal(true);
             }
             NextToken(); //;
-            return new DeleteStmt(query_state_, target, where_clause);
+            return new DeleteStmt(target, where_clause);
         }
         case TokenType::Drop: {
             NextToken(); //table
@@ -449,13 +448,13 @@ Stmt* Parser::ParseStmt() {
             }
             Token target = NextToken();
             NextToken(); //;
-            return new DropTableStmt(query_state_, target, has_if_exists);
+            return new DropTableStmt(target, has_if_exists);
         }
         case TokenType::Describe: {
             NextToken(); //table
             Token target = NextToken();
             NextToken(); //;
-            return new DescribeTableStmt(query_state_, target);
+            return new DescribeTableStmt(target);
         }
         default:
             return NULL;

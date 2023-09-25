@@ -15,7 +15,6 @@ public:
     virtual ~DB();
     std::vector<Token> tokenize(const std::string& query);
     std::vector<Stmt*> parse(const std::vector<Token>& tokens);
-    rocksdb::Status execute(const std::string& query);
     wsldb::Status ExecuteScript(const std::string& path);
 
     void CreateIdxHandle(const std::string& idx_name);

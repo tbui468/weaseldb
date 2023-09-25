@@ -8,7 +8,7 @@ namespace wsldb {
 
 class Parser {
 public:
-    Parser(std::vector<Token> tokens): tokens_(std::move(tokens)), idx_(0), query_state_(nullptr) {}
+    Parser(std::vector<Token> tokens): tokens_(std::move(tokens)), idx_(0) {}
 
     std::vector<Stmt*> ParseStmts(DB* db);
 private:
@@ -38,7 +38,6 @@ private:
 private:
     std::vector<Token> tokens_;
     int idx_;
-    QueryState* query_state_;
 };
 
 }

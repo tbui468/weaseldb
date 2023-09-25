@@ -18,15 +18,13 @@ namespace wsldb {
 
 class CreateStmt: public Stmt {
 public:
-    CreateStmt(QueryState* qs, 
-               Token target, 
+    CreateStmt(Token target, 
                std::vector<Token> names, 
                std::vector<Token> types, 
                std::vector<bool> not_null_constraints, 
                std::vector<Token> primary_keys,
                std::vector<std::vector<Token>> uniques,
                std::vector<bool> nulls_distinct):
-                    Stmt(qs), 
                     target_(target), 
                     names_(std::move(names)), 
                     types_(std::move(types)), 
@@ -61,9 +59,9 @@ public:
         uniques_.insert(uniques_.begin(), primary_keys);
     }
 
-    Status Analyze(std::vector<TokenType>& types) override {
+    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
         Table* table_ptr;
-        Status s = OpenTable(target_.lexeme, &table_ptr);
+        Status s = OpenTable(qs, target_.lexeme, &table_ptr);
         if (s.Ok()) {
             return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
         }
@@ -88,14 +86,14 @@ public:
         return Status(true, "ok");
     }
 
-    Status Execute() override {
+    Status Execute(QueryState& qs) override {
         //put able in catalogue
         Table table(target_.lexeme, names_, types_, not_null_constraints_, uniques_);
-        GetQueryState()->db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, table.Serialize());
+        qs.db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, table.Serialize());
 
         //GetQueryState()->db->CreateIdxHandle(table.Idx(0).name_);
         for (const Index& i: table.idxs_) {
-            GetQueryState()->db->CreateIdxHandle(i.name_);
+            qs.db->CreateIdxHandle(i.name_);
         }
         //TODO: create secondary indexes here
 
@@ -114,13 +112,12 @@ private:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(QueryState* qd, WorkTable* target, 
+    SelectStmt(WorkTable* target, 
                std::vector<Expr*> projs,
                Expr* where_clause, 
                std::vector<OrderCol> order_cols,
                Expr* limit,
                bool remove_duplicates):
-                    Stmt(qd),
                     target_(target),
                     projs_(std::move(projs)),
                     where_clause_(where_clause),
@@ -128,19 +125,19 @@ public:
                     limit_(limit),
                     remove_duplicates_(remove_duplicates) {}
 
-    Status Analyze(std::vector<TokenType>& types) override {
+    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
         WorkingAttributeSet* working_attrs;
         {
-            Status s = target_->Analyze(GetQueryState(), &working_attrs);
+            Status s = target_->Analyze(qs, &working_attrs);
             if (!s.Ok())
                 return s;
-            GetQueryState()->PushAnalysisScope(working_attrs);
+            qs.PushAnalysisScope(working_attrs);
         }
 
         //projection
         for (Expr* e: projs_) {
             TokenType type;
-            Status s = e->Analyze(GetQueryState(), &type);
+            Status s = e->Analyze(qs, &type);
             if (!s.Ok()) {
                 return s;
             }
@@ -150,7 +147,7 @@ public:
         //where clause
         {
             TokenType type;
-            Status s = where_clause_->Analyze(GetQueryState(), &type);
+            Status s = where_clause_->Analyze(qs, &type);
             if (!s.Ok()) {
                 return s;
             }
@@ -164,14 +161,14 @@ public:
         for (OrderCol oc: order_cols_) {
             {
                 TokenType type;
-                Status s = oc.col->Analyze(GetQueryState(), &type);
+                Status s = oc.col->Analyze(qs, &type);
                 if (!s.Ok())
                     return s;
             }
 
             {
                 TokenType type;
-                Status s = oc.asc->Analyze(GetQueryState(), &type);
+                Status s = oc.asc->Analyze(qs, &type);
                 if (!s.Ok()) {
                     return s;
                 }
@@ -181,7 +178,7 @@ public:
         //limit
         {
             TokenType type;
-            Status s = limit_->Analyze(GetQueryState(), &type);
+            Status s = limit_->Analyze(qs, &type);
             if (!s.Ok()) {
                 return s;
             }
@@ -191,22 +188,21 @@ public:
             }
         }
 
-        GetQueryState()->PopAnalysisScope();
+        qs.PopAnalysisScope();
 
         return Status(true, "ok");
     }
-    Status Execute() override {
+    Status Execute(QueryState& qs) override {
         RowSet* rs = new RowSet();
-        target_->BeginScan(GetQueryState()->db);
+        target_->BeginScan(qs);
 
         Row* r;
-        while (target_->NextRow(GetQueryState()->db, &r).Ok()) {
+        while (target_->NextRow(qs, &r).Ok()) {
             Datum d;
-            bool is_agg;
             
-            GetQueryState()->PushScopeRow(r);
-            Status s = where_clause_->Eval(r, &d, &is_agg);
-            GetQueryState()->PopScopeRow();
+            qs.PushScopeRow(r);
+            Status s = where_clause_->Eval(qs, r, &d);
+            qs.PopScopeRow();
 
             if (!s.Ok()) 
                 return s;
@@ -220,32 +216,28 @@ public:
         //sort filtered rows in-place
         if (!order_cols_.empty()) {
             std::vector<OrderCol>& order_cols = order_cols_; //lambdas can only capture non-member variable
-            QueryState* qs = GetQueryState();
 
             std::sort(rs->rows_.begin(), rs->rows_.end(), 
                         //No error checking in lambda...
                         //do scope rows need to be pushed/popped of query state stack here???
-                        [order_cols, qs](Row* t1, Row* t2) -> bool { 
+                        [order_cols, &qs](Row* t1, Row* t2) -> bool { 
                             for (OrderCol oc: order_cols) {
                                 Datum d1;
-                                bool t1_agg;
-                                qs->PushScopeRow(t1);
-                                oc.col->Eval(t1, &d1, &t1_agg);
-                                qs->PopScopeRow();
+                                qs.PushScopeRow(t1);
+                                oc.col->Eval(qs, t1, &d1);
+                                qs.PopScopeRow();
 
                                 Datum d2;
-                                bool t2_agg;
-                                qs->PushScopeRow(t2);
-                                oc.col->Eval(t2, &d2, &t2_agg);
-                                qs->PopScopeRow();
+                                qs.PushScopeRow(t2);
+                                oc.col->Eval(qs, t2, &d2);
+                                qs.PopScopeRow();
 
                                 if (d1 == d2)
                                     continue;
 
                                 Row* r = nullptr;
                                 Datum d;
-                                bool asc_agg;
-                                oc.asc->Eval(r, &d, &asc_agg);
+                                oc.asc->Eval(qs, r, &d);
                                 if (d.AsBool()) {
                                     return d1 < d2;
                                 }
@@ -265,21 +257,21 @@ public:
         for (Expr* e: projs_) {
             std::vector<Datum> col;
             Datum result;
-            bool is_agg;
 
             for (Row* r: rs->rows_) {
-                GetQueryState()->PushScopeRow(r);
-                Status s = e->Eval(r, &result, &is_agg);
-                GetQueryState()->PopScopeRow();
+                qs.PushScopeRow(r);
+                Status s = e->Eval(qs, r, &result);
+                qs.PopScopeRow();
 
                 if (!s.Ok())
                     return s;
-                if (!is_agg)
+                if (!qs.is_agg)
                     col.push_back(result);
             }
-            if (is_agg) {
+
+            if (qs.is_agg) {
                 col.push_back(result);
-                GetQueryState()->ResetAggState();
+                qs.ResetAggState();
             }
 
             if (col.size() < proj_rs->rows_.size()) {
@@ -311,10 +303,9 @@ public:
         //limit in-place
         Row dummy_row({});
         Datum d;
-        bool dummy_agg;
         //do rows need to be pushed/popped on query state row stack here?
         //should scalar subqueries be allowed in the limit clause?
-        Status s = limit_->Eval(&dummy_row, &d, &dummy_agg);
+        Status s = limit_->Eval(qs, &dummy_row, &d);
         if (!s.Ok()) return s;
 
         size_t limit = d == -1 ? std::numeric_limits<size_t>::max() : WSLDB_INTEGER_LITERAL(d);
@@ -343,33 +334,33 @@ private:
 
 class InsertStmt: public Stmt {
 public:
-    InsertStmt(QueryState* qs, Token target, std::vector<std::vector<Expr*>> col_assigns):
-        Stmt(qs), target_(target), col_assigns_(std::move(col_assigns)) {}
+    InsertStmt(Token target, std::vector<std::vector<Expr*>> col_assigns):
+        target_(target), col_assigns_(std::move(col_assigns)) {}
 
-    Status Analyze(std::vector<TokenType>& types) override {
-        Status s = OpenTable(target_.lexeme, &table_);
+    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+        Status s = OpenTable(qs, target_.lexeme, &table_);
         if (!s.Ok())
             return s;
        
         WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //does postgresql allow table aliases on insert?
 
-        GetQueryState()->PushAnalysisScope(working_attrs);
+        qs.PushAnalysisScope(working_attrs);
 
         for (const std::vector<Expr*>& assigns: col_assigns_) {
             for (Expr* e: assigns) {
                 TokenType type;
-                Status s = e->Analyze(GetQueryState(), &type);
+                Status s = e->Analyze(qs, &type);
                 if (!s.Ok())
                     return s;
             }
         }
 
-        GetQueryState()->PopAnalysisScope();
+        qs.PopAnalysisScope();
 
         return Status(true, "ok");
     }
 
-    Status Execute() override {
+    Status Execute(QueryState& qs) override {
         for (std::vector<Expr*> exprs: col_assigns_) {
             //fill call fields with default null
             std::vector<Datum> nulls;
@@ -380,12 +371,11 @@ public:
 
             for (Expr* e: exprs) {
                 Datum d;
-                bool is_agg;
-                Status s = e->Eval(&row, &d, &is_agg); //result d is not used
+                Status s = e->Eval(qs, &row, &d); //result d is not used
                 if (!s.Ok()) return s;
             }
 
-            Status s = table_->Insert(GetQueryState()->db, row.data_);
+            Status s = table_->Insert(qs.db, row.data_);
             if (!s.Ok())
                 return s;
         }
@@ -404,21 +394,21 @@ private:
 
 class UpdateStmt: public Stmt {
 public:
-    UpdateStmt(QueryState* qs, Token target, std::vector<Expr*> assigns, Expr* where_clause):
-        Stmt(qs), target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
+    UpdateStmt(Token target, std::vector<Expr*> assigns, Expr* where_clause):
+        target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
 
-    Status Analyze(std::vector<TokenType>& types) override {
-        Status s = OpenTable(target_.lexeme, &table_);
+    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+        Status s = OpenTable(qs, target_.lexeme, &table_);
         if (!s.Ok())
             return s;
        
         WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //Does postgresql allow table aliases on update?
 
-        GetQueryState()->PushAnalysisScope(working_attrs);
+        qs.PushAnalysisScope(working_attrs);
 
         {
             TokenType type;
-            Status s = where_clause_->Analyze(GetQueryState(), &type);
+            Status s = where_clause_->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
             if (type != TokenType::Bool)
@@ -427,26 +417,25 @@ public:
 
         for (Expr* e: assigns_) {
             TokenType type;
-            Status s = e->Analyze(GetQueryState(), &type);
+            Status s = e->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
         }
 
-        GetQueryState()->PopAnalysisScope();
+        qs.PopAnalysisScope();
         
         return Status(true, "ok");
     }
-    Status Execute() override {
-        table_->BeginScan(GetQueryState()->db);
+    Status Execute(QueryState& qs) override {
+        table_->BeginScan(qs.db);
 
         Row* r;
         int update_count = 0;
         Datum d;
-        while (table_->NextRow(GetQueryState()->db, &r).Ok()) {
-            bool is_agg;
-            GetQueryState()->PushScopeRow(r);
-            Status s = where_clause_->Eval(r, &d, &is_agg);
-            GetQueryState()->PopScopeRow();
+        while (table_->NextRow(qs.db, &r).Ok()) {
+            qs.PushScopeRow(r);
+            Status s = where_clause_->Eval(qs, r, &d);
+            qs.PopScopeRow();
 
             if (!s.Ok()) 
                 return s;
@@ -455,15 +444,14 @@ public:
                 continue;
 
             for (Expr* e: assigns_) {
-                bool is_agg;
-                GetQueryState()->PushScopeRow(r);
-                Status s = e->Eval(r, &d, &is_agg); //returned Datum of ColAssign expressions are ignored
-                GetQueryState()->PopScopeRow();
+                qs.PushScopeRow(r);
+                Status s = e->Eval(qs, r, &d); //returned Datum of ColAssign expressions are ignored
+                qs.PopScopeRow();
 
                 if (!s.Ok()) 
                     return s;
             }
-            table_->UpdatePrev(GetQueryState()->db, r);
+            table_->UpdatePrev(qs.db, r);
             update_count++;
         }
 
@@ -481,43 +469,42 @@ private:
 
 class DeleteStmt: public Stmt {
 public:
-    DeleteStmt(QueryState* qs, Token target, Expr* where_clause): 
-        Stmt(qs), target_(target), where_clause_(where_clause) {}
+    DeleteStmt(Token target, Expr* where_clause): 
+        target_(target), where_clause_(where_clause) {}
 
-    Status Analyze(std::vector<TokenType>& types) override {
-        Status s = OpenTable(target_.lexeme, &table_);
+    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+        Status s = OpenTable(qs, target_.lexeme, &table_);
         if (!s.Ok())
             return s;
        
         WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //Does postgresql allow table aliases on delete?
 
-        GetQueryState()->PushAnalysisScope(working_attrs);
+        qs.PushAnalysisScope(working_attrs);
 
         {
             TokenType type;
-            Status s = where_clause_->Analyze(GetQueryState(), &type);
+            Status s = where_clause_->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
             if (type != TokenType::Bool)
                 return Status(false, "Error: 'where' clause must evaluated to a boolean value");
         }
 
-        GetQueryState()->PopAnalysisScope();
+        qs.PopAnalysisScope();
 
         return Status(true, "ok");
     }
-    Status Execute() override {
-        table_->BeginScan(GetQueryState()->db);
+    Status Execute(QueryState& qs) override {
+        table_->BeginScan(qs.db);
 
         Row* r;
         int delete_count = 0;
         Datum d;
-        while (table_->NextRow(GetQueryState()->db, &r).Ok()) {
-            bool is_agg;
+        while (table_->NextRow(qs.db, &r).Ok()) {
 
-            GetQueryState()->PushScopeRow(r);
-            Status s = where_clause_->Eval(r, &d, &is_agg);
-            GetQueryState()->PopScopeRow();
+            qs.PushScopeRow(r);
+            Status s = where_clause_->Eval(qs, r, &d);
+            qs.PopScopeRow();
 
             if (!s.Ok()) 
                 return s;
@@ -525,7 +512,7 @@ public:
             if (!d.AsBool())
                 continue;
 
-            table_->DeletePrev(GetQueryState()->db);
+            table_->DeletePrev(qs.db);
             delete_count++;
         }
 
@@ -542,26 +529,26 @@ private:
 
 class DropTableStmt: public Stmt {
 public:
-    DropTableStmt(QueryState* qd, Token target_relation, bool has_if_exists):
-        Stmt(qd), target_relation_(target_relation), has_if_exists_(has_if_exists), table_(nullptr) {}
+    DropTableStmt(Token target_relation, bool has_if_exists):
+        target_relation_(target_relation), has_if_exists_(has_if_exists), table_(nullptr) {}
 
-    Status Analyze(std::vector<TokenType>& types) override {
-        Status s = OpenTable(target_relation_.lexeme, &table_);
+    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+        Status s = OpenTable(qs, target_relation_.lexeme, &table_);
         if (!s.Ok() && !has_if_exists_)
             return s;
 
         return Status(true, "ok");
     }
-    Status Execute() override {
+    Status Execute(QueryState& qs) override {
         //drop table name from catalogue
-        bool idx_existed = GetQueryState()->db->Catalogue()->Delete(rocksdb::WriteOptions(), target_relation_.lexeme).ok();
+        bool idx_existed = qs.db->Catalogue()->Delete(rocksdb::WriteOptions(), target_relation_.lexeme).ok();
         if (!idx_existed)
             return Status(true, "(table '" + target_relation_.lexeme + "' doesn't exist and not dropped)");
 
         //skip if table doesn't exist - error should be reported in the semantic analysis stage if missing table is error
         if (table_) {
             for (const Index& i: table_->idxs_) {
-                GetQueryState()->db->DropIdxHandle(i.name_);
+                qs.db->DropIdxHandle(i.name_);
             }
         }
 
@@ -578,15 +565,15 @@ private:
 
 class DescribeTableStmt: public Stmt {
 public:
-    DescribeTableStmt(QueryState* qd, Token target_relation): Stmt(qd), target_relation_(target_relation), table_(nullptr) {}
-    Status Analyze(std::vector<TokenType>& types) override {
-        Status s = OpenTable(target_relation_.lexeme, &table_);
+    DescribeTableStmt(Token target_relation): target_relation_(target_relation), table_(nullptr) {}
+    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+        Status s = OpenTable(qs, target_relation_.lexeme, &table_);
         if (!s.Ok())
             return s;
 
         return Status(true, "ok");
     }
-    Status Execute() override {
+    Status Execute(QueryState& qs) override {
         RowSet* rowset = new RowSet();
 
         std::string not_null = "not null";
