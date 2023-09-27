@@ -8,7 +8,7 @@
 #include "row.h"
 #include "table.h"
 #include "status.h"
-#include "db.h"
+#include "storage.h"
 
 namespace wsldb {
 
@@ -18,7 +18,7 @@ namespace wsldb {
 //is stored during execution in case a subquery needs access to a column in the outer scope.
 struct QueryState {
 public:
-    QueryState(DB* db): db(db) {
+    QueryState(Storage* storage): storage(storage) {
         ResetAggState();
     }
 
@@ -89,7 +89,7 @@ private:
         return Status(true, "ok");
     }
 public:
-    DB* db;
+    Storage* storage;
     bool is_agg;
     //state for aggregate functions
     Datum min_;
@@ -112,7 +112,7 @@ public:
     //Why is this here?
     Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {
         std::string serialized_table;
-        bool ok = qs.db->Catalogue()->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
+        bool ok = qs.storage->Catalogue()->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
 
         if (!ok)
             return Status(false, "Error: Table doesn't exist");
@@ -1074,7 +1074,7 @@ public:
 
     Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         std::string serialized_table;
-        bool ok = qs.db->Catalogue()->Get(rocksdb::ReadOptions(), tab_name_, &serialized_table).ok();
+        bool ok = qs.storage->Catalogue()->Get(rocksdb::ReadOptions(), tab_name_, &serialized_table).ok();
 
         if (!ok) {
             return Status(false, "Error: Table '" + tab_name_ + "' does not exist");
@@ -1086,10 +1086,10 @@ public:
         return Status(true, "ok");
     }
     Status BeginScan(QueryState& qs) override {
-        return table_->BeginScan(qs.db);
+        return table_->BeginScan(qs.storage);
     }
     Status NextRow(QueryState& qs, Row** r) override {
-        return table_->NextRow(qs.db, r);
+        return table_->NextRow(qs.storage, r);
     }
 private:
     std::string tab_name_;

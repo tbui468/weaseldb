@@ -7,8 +7,8 @@
 #include "token.h"
 #include "datum.h"
 #include "status.h"
-#include "db.h"
 #include "row.h"
+#include "storage.h"
 #include "rocksdb/db.h"
 
 namespace wsldb {
@@ -51,11 +51,11 @@ public:
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
     int GetAttrIdx(const std::string& name);
-    Status BeginScan(DB* db);
-    Status NextRow(DB* db, Row** r);
-    Status DeletePrev(DB* db);
-    Status UpdatePrev(DB* db, Row* r);
-    Status Insert(DB* db, std::vector<Datum>& data);
+    Status BeginScan(Storage* storage);
+    Status NextRow(Storage* storage, Row** r);
+    Status DeletePrev(Storage* storage);
+    Status UpdatePrev(Storage* storage, Row* r);
+    Status Insert(Storage* storage, std::vector<Datum>& data);
 
     inline const std::vector<Attribute>& Attrs() const {
         return attrs_;

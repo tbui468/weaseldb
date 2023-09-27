@@ -134,13 +134,13 @@ int Table::GetAttrIdx(const std::string& name) {
     return -1;
 }
 
-Status Table::BeginScan(DB* db) {
-    it_ = db->GetIdxHandle(Idx(0).name_)->NewIterator(rocksdb::ReadOptions());
+Status Table::BeginScan(Storage* storage) {
+    it_ = storage->GetIdxHandle(Idx(0).name_)->NewIterator(rocksdb::ReadOptions());
     it_->SeekToFirst();
 
     return Status(true, "ok");
 }
-Status Table::NextRow(DB* db, Row** r) {
+Status Table::NextRow(Storage* storage, Row** r) {
     if (!it_->Valid()) return Status(false, "no more record");
 
     std::string value = it_->value().ToString();
@@ -150,19 +150,19 @@ Status Table::NextRow(DB* db, Row** r) {
     return Status(true, "ok");
 }
 
-Status Table::DeletePrev(DB* db) {
+Status Table::DeletePrev(Storage* storage) {
     it_->Prev();
     std::string key = it_->key().ToString();
-    db->GetIdxHandle(Idx(0).name_)->Delete(rocksdb::WriteOptions(), key);
+    storage->GetIdxHandle(Idx(0).name_)->Delete(rocksdb::WriteOptions(), key);
     it_->Next();
     return Status(true, "ok");
 }
-Status Table::UpdatePrev(DB* db, Row* r) {
+Status Table::UpdatePrev(Storage* storage, Row* r) {
     it_->Prev();
     std::string old_key = it_->key().ToString();
     std::string new_key = Idx(0).GetKeyFromFields(r->data_);
 
-    rocksdb::DB* tab_handle = db->GetIdxHandle(Idx(0).name_);
+    rocksdb::DB* tab_handle = storage->GetIdxHandle(Idx(0).name_);
     if (old_key.compare(new_key) != 0) {
         tab_handle->Delete(rocksdb::WriteOptions(), old_key);
     }
@@ -170,8 +170,8 @@ Status Table::UpdatePrev(DB* db, Row* r) {
     it_->Next();
     return Status(true, "ok");
 }
-Status Table::Insert(DB* db, std::vector<Datum>& data) {
-    rocksdb::DB* tab_handle = db->GetIdxHandle(Idx(0).name_);
+Status Table::Insert(Storage* storage, std::vector<Datum>& data) {
+    rocksdb::DB* tab_handle = storage->GetIdxHandle(Idx(0).name_);
 
     //insert _rowid
     int64_t rowid = NextRowId();
@@ -190,7 +190,7 @@ Status Table::Insert(DB* db, std::vector<Datum>& data) {
 
     //Writing table back to disk to ensure autoincrementing rowid is updated
     //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
-    db->Catalogue()->Put(rocksdb::WriteOptions(), table_name_, Serialize());
+    storage->Catalogue()->Put(rocksdb::WriteOptions(), table_name_, Serialize());
     return Status(true, "ok");
 }
 

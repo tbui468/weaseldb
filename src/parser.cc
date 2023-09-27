@@ -4,8 +4,7 @@
 
 namespace wsldb {
 
-
-std::vector<Stmt*> Parser::ParseStmts(DB* db) {
+std::vector<Stmt*> Parser::ParseStmts() {
     std::vector<Stmt*> stmts = std::vector<Stmt*>();
 
     while (PeekToken().type != TokenType::Eof) {

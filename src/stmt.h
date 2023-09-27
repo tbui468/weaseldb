@@ -6,7 +6,6 @@
 
 #include "expr.h"
 #include "token.h"
-#include "db.h"
 #include "table.h"
 #include "status.h"
 #include "rocksdb/db.h"
@@ -15,6 +14,11 @@ namespace wsldb {
 
 //Moved class Stmt declaration to expr.h since we need it there,
 //but including stmt.h would cause a circular dependency
+
+struct Txn {
+    Txn(std::vector<Stmt*> stmts): stmts(std::move(stmts)) {}
+    std::vector<Stmt*> stmts;
+};
 
 class CreateStmt: public Stmt {
 public:
@@ -89,11 +93,11 @@ public:
     Status Execute(QueryState& qs) override {
         //put able in catalogue
         Table table(target_.lexeme, names_, types_, not_null_constraints_, uniques_);
-        qs.db->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, table.Serialize());
+        qs.storage->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, table.Serialize());
 
         //GetQueryState()->db->CreateIdxHandle(table.Idx(0).name_);
         for (const Index& i: table.idxs_) {
-            qs.db->CreateIdxHandle(i.name_);
+            qs.storage->CreateIdxHandle(i.name_);
         }
         //TODO: create secondary indexes here
 
@@ -375,7 +379,7 @@ public:
                 if (!s.Ok()) return s;
             }
 
-            Status s = table_->Insert(qs.db, row.data_);
+            Status s = table_->Insert(qs.storage, row.data_);
             if (!s.Ok())
                 return s;
         }
@@ -427,12 +431,12 @@ public:
         return Status(true, "ok");
     }
     Status Execute(QueryState& qs) override {
-        table_->BeginScan(qs.db);
+        table_->BeginScan(qs.storage);
 
         Row* r;
         int update_count = 0;
         Datum d;
-        while (table_->NextRow(qs.db, &r).Ok()) {
+        while (table_->NextRow(qs.storage, &r).Ok()) {
             qs.PushScopeRow(r);
             Status s = where_clause_->Eval(qs, r, &d);
             qs.PopScopeRow();
@@ -451,7 +455,7 @@ public:
                 if (!s.Ok()) 
                     return s;
             }
-            table_->UpdatePrev(qs.db, r);
+            table_->UpdatePrev(qs.storage, r);
             update_count++;
         }
 
@@ -495,12 +499,12 @@ public:
         return Status(true, "ok");
     }
     Status Execute(QueryState& qs) override {
-        table_->BeginScan(qs.db);
+        table_->BeginScan(qs.storage);
 
         Row* r;
         int delete_count = 0;
         Datum d;
-        while (table_->NextRow(qs.db, &r).Ok()) {
+        while (table_->NextRow(qs.storage, &r).Ok()) {
 
             qs.PushScopeRow(r);
             Status s = where_clause_->Eval(qs, r, &d);
@@ -512,7 +516,7 @@ public:
             if (!d.AsBool())
                 continue;
 
-            table_->DeletePrev(qs.db);
+            table_->DeletePrev(qs.storage);
             delete_count++;
         }
 
@@ -541,14 +545,14 @@ public:
     }
     Status Execute(QueryState& qs) override {
         //drop table name from catalogue
-        bool idx_existed = qs.db->Catalogue()->Delete(rocksdb::WriteOptions(), target_relation_.lexeme).ok();
+        bool idx_existed = qs.storage->Catalogue()->Delete(rocksdb::WriteOptions(), target_relation_.lexeme).ok();
         if (!idx_existed)
             return Status(true, "(table '" + target_relation_.lexeme + "' doesn't exist and not dropped)");
 
         //skip if table doesn't exist - error should be reported in the semantic analysis stage if missing table is error
         if (table_) {
             for (const Index& i: table_->idxs_) {
-                qs.db->DropIdxHandle(i.name_);
+                qs.storage->DropIdxHandle(i.name_);
             }
         }
 
