@@ -150,27 +150,26 @@ Status Table::NextRow(Storage* storage, Row** r) {
     return Status(true, "ok");
 }
 
-Status Table::DeletePrev(Storage* storage) {
+Status Table::DeletePrev(Storage* storage, Batch* batch) {
     it_->Prev();
     std::string key = it_->key().ToString();
-    storage->GetIdxHandle(Idx(0).name_)->Delete(rocksdb::WriteOptions(), key);
+    batch->Delete(Idx(0).name_, key);
     it_->Next();
     return Status(true, "ok");
 }
-Status Table::UpdatePrev(Storage* storage, Row* r) {
+Status Table::UpdatePrev(Storage* storage, Batch* batch, Row* r) {
     it_->Prev();
     std::string old_key = it_->key().ToString();
     std::string new_key = Idx(0).GetKeyFromFields(r->data_);
 
-    rocksdb::DB* tab_handle = storage->GetIdxHandle(Idx(0).name_);
     if (old_key.compare(new_key) != 0) {
-        tab_handle->Delete(rocksdb::WriteOptions(), old_key);
+        batch->Delete(Idx(0).name_, old_key);
     }
-    tab_handle->Put(rocksdb::WriteOptions(), new_key, Datum::SerializeData(r->data_));
+    batch->Put(Idx(0).name_, new_key, Datum::SerializeData(r->data_));
     it_->Next();
     return Status(true, "ok");
 }
-Status Table::Insert(Storage* storage, std::vector<Datum>& data) {
+Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
     rocksdb::DB* tab_handle = storage->GetIdxHandle(Idx(0).name_);
 
     //insert _rowid
@@ -186,11 +185,11 @@ Status Table::Insert(Storage* storage, std::vector<Datum>& data) {
         return Status(false, "Error: A record with the same primary key already exists");
     }
 
-    tab_handle->Put(rocksdb::WriteOptions(), key, value);
+    batch->Put(Idx(0).name_, key, value);
 
     //Writing table back to disk to ensure autoincrementing rowid is updated
     //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
-    storage->Catalogue()->Put(rocksdb::WriteOptions(), table_name_, Serialize());
+    batch->Put(storage->CataloguePath(), table_name_, Serialize());
     return Status(true, "ok");
 }
 

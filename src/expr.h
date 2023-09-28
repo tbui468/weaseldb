@@ -18,7 +18,7 @@ namespace wsldb {
 //is stored during execution in case a subquery needs access to a column in the outer scope.
 struct QueryState {
 public:
-    QueryState(Storage* storage): storage(storage) {
+    QueryState(Storage* storage, Batch* batch): storage(storage), batch(batch) {
         ResetAggState();
     }
 
@@ -90,6 +90,7 @@ private:
     }
 public:
     Storage* storage;
+    Batch* batch;
     bool is_agg;
     //state for aggregate functions
     Datum min_;
@@ -109,7 +110,6 @@ public:
     virtual Status Analyze(QueryState& qs, std::vector<TokenType>& types) = 0;
     virtual Status Execute(QueryState& qs) = 0;
     virtual std::string ToString() = 0;
-    //Why is this here?
     Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {
         std::string serialized_table;
         bool ok = qs.storage->Catalogue()->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();

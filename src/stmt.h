@@ -93,13 +93,11 @@ public:
     Status Execute(QueryState& qs) override {
         //put able in catalogue
         Table table(target_.lexeme, names_, types_, not_null_constraints_, uniques_);
-        qs.storage->Catalogue()->Put(rocksdb::WriteOptions(), target_.lexeme, table.Serialize());
+        qs.batch->Put(qs.storage->CataloguePath(), target_.lexeme, table.Serialize()); 
 
-        //GetQueryState()->db->CreateIdxHandle(table.Idx(0).name_);
         for (const Index& i: table.idxs_) {
             qs.storage->CreateIdxHandle(i.name_);
         }
-        //TODO: create secondary indexes here
 
         return Status(true, "CREATE TABLE");
     }
@@ -379,7 +377,7 @@ public:
                 if (!s.Ok()) return s;
             }
 
-            Status s = table_->Insert(qs.storage, row.data_);
+            Status s = table_->Insert(qs.storage, qs.batch, row.data_);
             if (!s.Ok())
                 return s;
         }
@@ -455,7 +453,7 @@ public:
                 if (!s.Ok()) 
                     return s;
             }
-            table_->UpdatePrev(qs.storage, r);
+            table_->UpdatePrev(qs.storage, qs.batch, r);
             update_count++;
         }
 
@@ -516,7 +514,7 @@ public:
             if (!d.AsBool())
                 continue;
 
-            table_->DeletePrev(qs.storage);
+            table_->DeletePrev(qs.storage, qs.batch);
             delete_count++;
         }
 
@@ -545,12 +543,13 @@ public:
     }
     Status Execute(QueryState& qs) override {
         //drop table name from catalogue
-        bool idx_existed = qs.storage->Catalogue()->Delete(rocksdb::WriteOptions(), target_relation_.lexeme).ok();
-        if (!idx_existed)
+        if (!table_) {
             return Status(true, "(table '" + target_relation_.lexeme + "' doesn't exist and not dropped)");
+        }
 
         //skip if table doesn't exist - error should be reported in the semantic analysis stage if missing table is error
         if (table_) {
+            qs.batch->Delete(qs.storage->CataloguePath(), target_relation_.lexeme);
             for (const Index& i: table_->idxs_) {
                 qs.storage->DropIdxHandle(i.name_);
             }

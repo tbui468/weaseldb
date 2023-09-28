@@ -23,15 +23,7 @@ Status Server::RunQuery(const std::string& query, Storage* storage) {
     Interpreter interp(storage);
 
     for (Txn txn: txns) {
-        std::unordered_map<std::string, rocksdb::WriteBatch*> batches;
-        Status s = interp.ExecuteTxn(txn, batches);
-
-        //TODO: currently not writing data to batches in Stmt::Execute - need to do this for transactions to work
-        /*
-        for (const std::pair<const std::string, rocksdb::WriteBatch*>& p: batches) {
-            rocksdb::DB* handle = storage->GetIdxHandle(p.first);
-            handle->Write(rocksdb::WriteOptions(), p.second);
-        }*/
+        Status s = interp.ExecuteTxn(txn);
         
         if (!s.Ok())
             return s;
