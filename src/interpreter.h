@@ -52,10 +52,12 @@ public:
                 }
             } else {
                 std::cout << status.Msg() << std::endl;
-                return status; //for now just ending stmt execution if any goes wrong
+                continue;
             }
         }
 
+        //TODO: what status do we return if some transactions fail, but some succeed?
+        //Could return a vector of Status objects, one for each transaction
         return Status(true, "ok");
     }
 private:
