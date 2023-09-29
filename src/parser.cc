@@ -4,14 +4,42 @@
 
 namespace wsldb {
 
-std::vector<Stmt*> Parser::ParseStmts() {
-    std::vector<Stmt*> stmts = std::vector<Stmt*>();
+std::vector<Txn> Parser::ParseTxns() {
+    std::vector<Txn> txns;
 
     while (PeekToken().type != TokenType::Eof) {
-        stmts.push_back(ParseStmt());    
+        txns.push_back(ParseTxn());
     }
-    
-    return stmts;
+
+    return txns;
+}
+
+Txn Parser::ParseTxn() {
+    std::vector<Stmt*> stmts;
+
+    bool single_stmt_txn = true;
+    bool commit_on_success = true;
+    if (PeekToken().type == TokenType::Begin) {
+        single_stmt_txn = false;
+        NextToken(); //begin
+        NextToken(); //;
+    }
+
+    while (PeekToken().type != TokenType::Eof) {
+        if (PeekToken().type == TokenType::Commit || PeekToken().type == TokenType::Rollback) {
+            if (PeekToken().type == TokenType::Rollback) {
+                commit_on_success = false;
+            }
+            NextToken(); //commit/rollback
+            NextToken(); //;
+            break; //TODO: need to cache whether commit or rollback 
+        }
+        stmts.push_back(ParseStmt());
+        if (single_stmt_txn)
+            break;
+    }
+
+    return {stmts, commit_on_success};
 }
 
 Expr* Parser::ParsePrimary() {

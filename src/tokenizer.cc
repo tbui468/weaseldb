@@ -191,6 +191,12 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Unique;
     } else if (len == 5 && strncmp(&query_.at(idx), "nulls", len) == 0) {
         type = TokenType::Nulls;
+    } else if (len == 5 && strncmp(&query_.at(idx), "begin", len) == 0) {
+        type = TokenType::Begin;
+    } else if (len == 6 && strncmp(&query_.at(idx), "commit", len) == 0) {
+        type = TokenType::Commit;
+    } else if (len == 8 && strncmp(&query_.at(idx), "rollback", len) == 0) {
+        type = TokenType::Rollback;
     } else {
         type = TokenType::Identifier;
     }

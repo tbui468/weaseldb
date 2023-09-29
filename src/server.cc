@@ -8,6 +8,7 @@
 
 namespace wsldb {
 
+//TODO: Sever shouldn't be doing this - should spawn a backend process to handle query
 Status Server::RunQuery(const std::string& query, Storage* storage) {
     Tokenizer tokenizer(query);
     std::vector<Token> tokens = std::vector<Token>();
@@ -17,16 +18,12 @@ Status Server::RunQuery(const std::string& query, Storage* storage) {
     } while (tokens.back().type != TokenType::Eof);
 
     Parser parser(tokens);
-    std::vector<Stmt*> stmts = parser.ParseStmts();
-    std::vector<Txn> txns = Parser::GroupIntoTxns(stmts);
+    std::vector<Txn> txns = parser.ParseTxns();
 
     Interpreter interp(storage);
 
     for (Txn txn: txns) {
         Status s = interp.ExecuteTxn(txn);
-        
-        if (!s.Ok())
-            return s;
     }
 
     return Status(true, "ok");

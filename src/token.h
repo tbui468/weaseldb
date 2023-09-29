@@ -58,6 +58,9 @@ enum class TokenType {
     Full,
     Unique,
     Nulls,
+    Begin,
+    Commit,
+    Rollback,
 
     /* user-defined identifier */
     Identifier,

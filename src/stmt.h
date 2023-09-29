@@ -16,8 +16,9 @@ namespace wsldb {
 //but including stmt.h would cause a circular dependency
 
 struct Txn {
-    Txn(std::vector<Stmt*> stmts): stmts(std::move(stmts)) {}
+    Txn(std::vector<Stmt*> stmts, bool commit_on_success): stmts(std::move(stmts)), commit_on_success(commit_on_success) {}
     std::vector<Stmt*> stmts;
+    bool commit_on_success;
 };
 
 class CreateStmt: public Stmt {

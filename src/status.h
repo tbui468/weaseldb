@@ -6,6 +6,7 @@ class RowSet;
 
 class Status {
 public:
+    Status(): ok_(true), msg_(""), tuples_(nullptr) {}
     Status(bool ok, std::string msg): ok_(ok), msg_(std::move(msg)), tuples_(nullptr) {}
     Status(bool ok, std::string msg, RowSet* tuples): ok_(ok), msg_(std::move(msg)), tuples_(tuples) {}
 
