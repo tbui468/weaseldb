@@ -92,13 +92,14 @@ public:
     }
 
     Status Execute(QueryState& qs) override {
-        //put able in catalogue
+        //put table in catalogue
         Table table(target_.lexeme, names_, types_, not_null_constraints_, uniques_);
-        qs.batch->Put(qs.storage->CataloguePath(), target_.lexeme, table.Serialize()); 
 
-        for (const Index& i: table.idxs_) {
-            qs.storage->CreateIdxHandle(i.name_);
-        }
+        int default_column_family_idx = 0;
+        TableHandle catalogue = qs.storage->GetTableHandle(qs.storage->CatalogueTableName());
+        qs.batch->Put(qs.storage->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), target_.lexeme, table.Serialize()); 
+
+        qs.storage->CreateTableHandle(target_.lexeme, table.idxs_);
 
         return Status(true, "CREATE TABLE");
     }
@@ -550,10 +551,10 @@ public:
 
         //skip if table doesn't exist - error should be reported in the semantic analysis stage if missing table is error
         if (table_) {
-            qs.batch->Delete(qs.storage->CataloguePath(), target_relation_.lexeme);
-            for (const Index& i: table_->idxs_) {
-                qs.storage->DropIdxHandle(i.name_);
-            }
+            int default_column_family_idx = 0;
+            TableHandle catalogue = qs.storage->GetTableHandle(qs.storage->CatalogueTableName());
+            qs.batch->Delete(qs.storage->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), target_relation_.lexeme);
+            qs.storage->DropTableHandle(target_relation_.lexeme);
         }
 
         return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");

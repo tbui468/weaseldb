@@ -135,11 +135,16 @@ int Table::GetAttrIdx(const std::string& name) {
 }
 
 Status Table::BeginScan(Storage* storage) {
-    it_ = storage->GetIdxHandle(Idx(0).name_)->NewIterator(rocksdb::ReadOptions());
+    int idx_idx = 0;
+
+    TableHandle handle = storage->GetTableHandle(table_name_);
+    it_ = handle.db->NewIterator(rocksdb::ReadOptions(), handle.cfs.at(idx_idx));
+
     it_->SeekToFirst();
 
     return Status(true, "ok");
 }
+
 Status Table::NextRow(Storage* storage, Row** r) {
     if (!it_->Valid()) return Status(false, "no more record");
 
@@ -151,27 +156,36 @@ Status Table::NextRow(Storage* storage, Row** r) {
 }
 
 Status Table::DeletePrev(Storage* storage, Batch* batch) {
+    int idx_idx = 0;
+
     it_->Prev();
     std::string key = it_->key().ToString();
-    batch->Delete(Idx(0).name_, key);
+
+    TableHandle handle = storage->GetTableHandle(table_name_);
+    batch->Delete(table_name_, handle.cfs.at(idx_idx), key);
+
     it_->Next();
     return Status(true, "ok");
 }
+
 Status Table::UpdatePrev(Storage* storage, Batch* batch, Row* r) {
+    int idx_idx = 0;
+
     it_->Prev();
     std::string old_key = it_->key().ToString();
     std::string new_key = Idx(0).GetKeyFromFields(r->data_);
 
+    TableHandle handle = storage->GetTableHandle(table_name_);
     if (old_key.compare(new_key) != 0) {
-        batch->Delete(Idx(0).name_, old_key);
+        batch->Delete(table_name_, handle.cfs.at(idx_idx), old_key);
     }
-    batch->Put(Idx(0).name_, new_key, Datum::SerializeData(r->data_));
+    batch->Put(table_name_, handle.cfs.at(idx_idx), new_key, Datum::SerializeData(r->data_));
     it_->Next();
+
     return Status(true, "ok");
 }
-Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
-    rocksdb::DB* tab_handle = storage->GetIdxHandle(Idx(0).name_);
 
+Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
     //insert _rowid
     int64_t rowid = NextRowId();
     data.at(0) = Datum(rowid);
@@ -180,16 +194,22 @@ Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
     std::string key = Idx(0).GetKeyFromFields(data);
 
     std::string test_value;
-    rocksdb::Status status = tab_handle->Get(rocksdb::ReadOptions(), key, &test_value);
+    int idx_idx = 0;
+    TableHandle handle = storage->GetTableHandle(table_name_);
+    rocksdb::Status status = handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(idx_idx), key, &test_value);
+
     if (status.ok()) {
         return Status(false, "Error: A record with the same primary key already exists");
     }
 
-    batch->Put(Idx(0).name_, key, value);
+    batch->Put(table_name_, handle.cfs.at(idx_idx), key, value);
 
     //Writing table back to disk to ensure autoincrementing rowid is updated
     //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
-    batch->Put(storage->CataloguePath(), table_name_, Serialize());
+    int default_name_idx = 0;
+    TableHandle catalogue = storage->GetTableHandle(storage->CatalogueTableName());
+    batch->Put(storage->CatalogueTableName(), catalogue.cfs.at(default_name_idx), table_name_, Serialize());
+
     return Status(true, "ok");
 }
 

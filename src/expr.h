@@ -112,7 +112,8 @@ public:
     virtual std::string ToString() = 0;
     Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {
         std::string serialized_table;
-        bool ok = qs.storage->Catalogue()->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
+        TableHandle catalogue = qs.storage->GetTableHandle(qs.storage->CatalogueTableName());
+        bool ok = catalogue.db->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
 
         if (!ok)
             return Status(false, "Error: Table doesn't exist");
@@ -1074,7 +1075,8 @@ public:
 
     Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         std::string serialized_table;
-        bool ok = qs.storage->Catalogue()->Get(rocksdb::ReadOptions(), tab_name_, &serialized_table).ok();
+        TableHandle catalogue = qs.storage->GetTableHandle(qs.storage->CatalogueTableName());
+        bool ok = catalogue.db->Get(rocksdb::ReadOptions(), tab_name_, &serialized_table).ok();
 
         if (!ok) {
             return Status(false, "Error: Table '" + tab_name_ + "' does not exist");

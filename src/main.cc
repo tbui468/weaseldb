@@ -7,8 +7,10 @@
 #include "storage.h"
 
 int main(int argc, char** argv) {
+
     wsldb::Server server;
 
+    wsldb::Storage::DropDatabase("/tmp/testdb"); //dropping database everytime to simplify testing
     wsldb::Storage storage("/tmp/testdb");
 
     if (argc > 1) {
@@ -25,6 +27,7 @@ int main(int argc, char** argv) {
     } else {
         std::cout << "Currently requires input sql file" << std::endl;
     }
+
 
     return 0;
 }
