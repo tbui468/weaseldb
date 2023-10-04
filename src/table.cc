@@ -41,6 +41,8 @@ Table::Table(std::string table_name,
         attrs_.emplace_back(names.at(i).lexeme, types.at(i).type, not_null_constraints.at(i));
     }
 
+    bool is_primary = true;
+
     //indexes
     for (const std::vector<Token>& col_group: uniques) {
         std::vector<int> idx_cols;
@@ -48,7 +50,13 @@ Table::Table(std::string table_name,
             idx_cols.push_back(GetAttrIdx(t.lexeme));
         }
 
-        idxs_.emplace_back(IdxName(idx_cols), idx_cols);
+        if (is_primary) {
+            idxs_.emplace_back(IdxName("primary", idx_cols), idx_cols);
+            is_primary = false;
+            continue;
+        }
+
+        idxs_.emplace_back(IdxName("secondary", idx_cols), idx_cols);
     }
 }
 
@@ -135,7 +143,7 @@ int Table::GetAttrIdx(const std::string& name) {
 }
 
 Status Table::BeginScan(Storage* storage) {
-    int cf_idx = 1;
+    int cf_idx = 0;
 
     TableHandle handle = storage->GetTableHandle(table_name_);
     it_ = handle.db->NewIterator(rocksdb::ReadOptions(), handle.cfs.at(cf_idx));
@@ -156,7 +164,7 @@ Status Table::NextRow(Storage* storage, Row** r) {
 }
 
 Status Table::DeletePrev(Storage* storage, Batch* batch) {
-    int cf_idx = 1;
+    int cf_idx = 0;
 
     it_->Prev();
     std::string key = it_->key().ToString();
@@ -169,7 +177,7 @@ Status Table::DeletePrev(Storage* storage, Batch* batch) {
 }
 
 Status Table::UpdatePrev(Storage* storage, Batch* batch, Row* r) {
-    int cf_idx = 1;
+    int cf_idx = 0;
 
     it_->Prev();
     std::string old_key = it_->key().ToString();
@@ -186,7 +194,7 @@ Status Table::UpdatePrev(Storage* storage, Batch* batch, Row* r) {
 }
 
 Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
-    int cf_idx = 1;
+    int cf_idx = 0;
     //insert _rowid
     int64_t rowid = NextRowId();
     data.at(0) = Datum(rowid);

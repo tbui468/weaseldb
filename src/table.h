@@ -50,8 +50,8 @@ public:
     inline int64_t NextRowId() {
         return rowid_counter_++;
     }
-    inline std::string IdxName(const std::vector<int>& idxs) {
-        std::string result = table_name_ + "_idxon";
+    inline std::string IdxName(const std::string& prefix, const std::vector<int>& idxs) {
+        std::string result = prefix;
 
         for (int i: idxs) {
             result += "_" + attrs_.at(i).name;            

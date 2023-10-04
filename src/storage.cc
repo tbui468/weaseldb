@@ -37,10 +37,11 @@ void Storage::CreateTableHandle(const std::string& name, const std::vector<Index
         if (!(s = rocksdb::DB::Open(options, PrependDBPath(name), &db)).ok())
             std::cout << "rocksdb::DB::Open failed: " << s.getState() << std::endl;
 
-        for (const Index& idx: idxs) {
+        //default column family will store primary index
+        for (size_t i = 1; i < idxs.size(); i++) {
             rocksdb::ColumnFamilyHandle* cf;
 
-            if (!(s = db->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), idx.name_, &cf)).ok())
+            if (!(s = db->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), idxs.at(i).name_, &cf)).ok())
                 std::cout << "rocksdb::DB::CreateColumnFamily failed: " << s.getState() << std::endl;
 
             db->DestroyColumnFamilyHandle(cf);
@@ -55,8 +56,9 @@ void Storage::CreateTableHandle(const std::string& name, const std::vector<Index
 
         cfds.emplace_back(rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions());
 
-        for (const Index& idx: idxs) {
-            cfds.emplace_back(idx.name_, rocksdb::ColumnFamilyOptions());
+        //default column family will store primary index
+        for (size_t i = 1; i < idxs.size(); i++) {
+            cfds.emplace_back(idxs.at(i).name_, rocksdb::ColumnFamilyOptions());
         }
         
         TableHandle handle;
