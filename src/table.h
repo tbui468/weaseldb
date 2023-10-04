@@ -35,7 +35,7 @@ public:
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
     int GetAttrIdx(const std::string& name);
-    Status BeginScan(Storage* storage);
+    Status BeginScan(Storage* storage, int scan_idx);
     Status NextRow(Storage* storage, Row** r);
     Status DeletePrev(Storage* storage, Batch* batch);
     Status UpdatePrev(Storage* storage, Batch* batch, Row* r);
@@ -67,10 +67,14 @@ private:
     std::vector<Attribute> attrs_;
     int64_t rowid_counter_;
     rocksdb::Iterator* it_;
+    int scan_idx_;
 public:
     std::vector<Index> idxs_;
 };
 
+//WorkTables are (often) a bunch of physical tables concatenated together,
+//WorkingAttribute includes offsets/table names associated with each attribute
+//in case the same attribute name is used across multiple tables
 struct WorkingAttribute: public Attribute {
     //dummy constructor to allow creation on stack (used in WorkingAttributeSet functions)
     WorkingAttribute(): Attribute("", TokenType::Int4, true), idx(-1), scope(-1) {} //placeholders

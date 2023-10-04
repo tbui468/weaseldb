@@ -4,29 +4,6 @@
 
 namespace wsldb {
 
-Index::Index(const std::string& buf, int* offset) {
-    name_ = Datum(buf, offset, TokenType::Text).AsString();
-
-    int count = Datum(buf, offset, TokenType::Int4).AsInt4();
-    for (int i = 0; i < count; i++) {
-        int idx = Datum(buf, offset, TokenType::Int4).AsInt4();
-        key_idxs_.push_back(idx);
-    }
-}
-
-std::string Index::Serialize() const {
-    std::string result = Datum(name_).Serialize();
-
-    int col_count = key_idxs_.size();
-    result += Datum(col_count).Serialize();
-
-    for (int i: key_idxs_) {
-        result += Datum(i).Serialize();
-    }
-
-    return result;
-}
-
 Table::Table(std::string table_name,
              std::vector<Token> names,
              std::vector<Token> types,
@@ -142,11 +119,11 @@ int Table::GetAttrIdx(const std::string& name) {
     return -1;
 }
 
-Status Table::BeginScan(Storage* storage) {
-    int cf_idx = 0;
+Status Table::BeginScan(Storage* storage, int scan_idx) {
+    scan_idx_ = scan_idx;
 
     TableHandle handle = storage->GetTableHandle(table_name_);
-    it_ = handle.db->NewIterator(rocksdb::ReadOptions(), handle.cfs.at(cf_idx));
+    it_ = handle.db->NewIterator(rocksdb::ReadOptions(), handle.cfs.at(scan_idx_));
 
     it_->SeekToFirst();
 
@@ -154,9 +131,19 @@ Status Table::BeginScan(Storage* storage) {
 }
 
 Status Table::NextRow(Storage* storage, Row** r) {
-    if (!it_->Valid()) return Status(false, "no more record");
+    if (!it_->Valid()) return Status(false, "no more records");
 
     std::string value = it_->value().ToString();
+  
+    //if scan is using secondary index, value is primary key
+    //return record stored in primary index
+    int primary_cf = 0; 
+    if (scan_idx_ != primary_cf) {
+        TableHandle handle = storage->GetTableHandle(table_name_);
+        std::string primary_key = value;
+        handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(primary_cf), primary_key, &value);
+    }
+
     *r = new Row(DeserializeData(value));
     it_->Next();
 
@@ -164,6 +151,14 @@ Status Table::NextRow(Storage* storage, Row** r) {
 }
 
 Status Table::DeletePrev(Storage* storage, Batch* batch) {
+    //TODO: need a massive rewrite
+    //if scan_idx_ is primary index
+    //  read record so that secondary keys can be extracted from data
+    //  delete from primary index
+    //  iterate through secondary indexes and delete each key extracted from record
+    //if scan_idx_ is secondary index
+    //  do that same as above, but getting the record will require following an extra pointer
+
     int cf_idx = 0;
 
     it_->Prev();
@@ -177,6 +172,8 @@ Status Table::DeletePrev(Storage* storage, Batch* batch) {
 }
 
 Status Table::UpdatePrev(Storage* storage, Batch* batch, Row* r) {
+    //TODO: need a massive rewrite
+    //see DeletePrev for details - algorithm will be similar
     int cf_idx = 0;
 
     it_->Prev();
@@ -195,10 +192,12 @@ Status Table::UpdatePrev(Storage* storage, Batch* batch, Row* r) {
 
 Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
     int cf_idx = 0;
-    //insert _rowid
+
+    //insertions will leave space at first index for _rowid
     int64_t rowid = NextRowId();
     data.at(0) = Datum(rowid);
 
+    //insert into primary index
     std::string value = Datum::SerializeData(data);
     std::string key = Idx(0).GetKeyFromFields(data);
 
@@ -212,8 +211,18 @@ Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
 
     batch->Put(table_name_, handle.cfs.at(cf_idx), key, value);
 
+    //update secondary indexes
+    for (size_t i = 1; i < idxs_.size(); i++) {
+        std::string secondary_key = Idx(i).GetKeyFromFields(data);
+        if (handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(i), secondary_key, &test_value).ok())
+            return Status(false, "Error: A record with the same secondary key already exists");
+
+        batch->Put(table_name_, handle.cfs.at(i), secondary_key, key);
+    }
+
     //Writing table back to disk to ensure autoincrementing rowid is updated
     //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
+    //!!!Potential problem with lost updates here if multiple processes try to update counter concurrently!!!
     int default_name_idx = 0;
     TableHandle catalogue = storage->GetTableHandle(storage->CatalogueTableName());
     batch->Put(storage->CatalogueTableName(), catalogue.cfs.at(default_name_idx), table_name_, Serialize());
