@@ -1,6 +1,3 @@
-drop table if exists planets;
-drop table if exists moons;
-
 create table planets (id int4, name text, primary key (id));
 insert into planets (id, name) values (1, 'Earth'), (2, 'Mars');
 
@@ -12,6 +9,3 @@ select '----';
 select m1.id, m1.name, m2.id, m2.name from moons as m1 cross join moons as m2;
 select '----';
 select m1.id, m1.name, m2.id, m2.name from planets as m1 cross join planets as m2;
-
-drop table planets;
-drop table moons;

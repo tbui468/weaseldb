@@ -1,4 +1,3 @@
-drop table if exists planets;
 
 select null is null, null is not null;
 select 1 is null, 1 is not null;

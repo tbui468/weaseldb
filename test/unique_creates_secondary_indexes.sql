@@ -1,6 +1,3 @@
-drop table if exists planets;
-drop table if exists moons;
-
 create table planets (system text, name text, unique(system, name) nulls not distinct);
 describe table planets;
 
@@ -9,7 +6,3 @@ describe table moons;
 
 create table moons2 (name text, moons int8, primary key (name, moons), unique(name) nulls not distinct);
 describe table moons2;
-
-drop table moons2;
-drop table moons;
-drop table planets;

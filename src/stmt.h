@@ -103,9 +103,6 @@ public:
 
         return Status(true, "CREATE TABLE");
     }
-    std::string ToString() override {
-        return "create";
-    }
 private:
     Token target_;
     std::vector<Token> names_;
@@ -319,14 +316,6 @@ public:
 
         return Status(true, "(" + std::to_string(final_rs->rows_.size()) + " rows)", final_rs);
     }
-    std::string ToString() override {
-        std::string result = "select ";
-        for (Expr* e: projs_) {
-            result += e->ToString() + " ";
-        }
-        //result += "from " + target_->ToString();
-        return result;
-    }
 private:
     WorkTable* target_;
     std::vector<Expr*> projs_;
@@ -386,9 +375,6 @@ public:
 
         return Status(true, "INSERT " + std::to_string(col_assigns_.size()));
 
-    }
-    std::string ToString() override {
-        return "insert";
     }
 private:
     Token target_;
@@ -461,9 +447,6 @@ public:
 
         return Status(true, "(" + std::to_string(update_count) + " deletes)");
     }
-    std::string ToString() override {
-        return "update";
-    }
 private:
     Token target_;
     Table* table_;
@@ -522,9 +505,6 @@ public:
 
         return Status(true, "(" + std::to_string(delete_count) + " deletes)");
     }
-    std::string ToString() override {
-        return "delete";
-    }
 private:
     Token target_;
     Table* table_;
@@ -558,9 +538,6 @@ public:
         }
 
         return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");
-    }
-    std::string ToString() override {
-        return "drop table";
     }
 private:
     Token target_relation_;
@@ -597,10 +574,6 @@ public:
 
         return Status(true, "table '" + target_relation_.lexeme + "'", rowset);
     }
-    std::string ToString() override {
-        return "describe table";
-    }
-
 private:
     Token target_relation_;
     Table* table_;

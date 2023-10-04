@@ -1,4 +1,3 @@
-drop table if exists pets;
 
 create table pets (id int4, name text, mass float4, primary key (id));
 insert into pets (id, name, mass) values (1, 'cat', 30.0), (2, 'ant', 10.0), (3, 'cat' 20.0);

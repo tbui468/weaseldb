@@ -8,4 +8,3 @@ select id, name from pets order by name desc;
 select id, name from pets order by mass asc;
 select id, name from pets order by mass desc;
 
-drop table pets;

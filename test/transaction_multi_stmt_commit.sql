@@ -1,4 +1,3 @@
-drop table if exists planets;
 
 create table planets (id int4, name text, primary key (id));
 
@@ -24,4 +23,3 @@ commit;
 
 select id, name from planets;
 
-drop table planets;

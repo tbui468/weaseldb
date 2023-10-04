@@ -109,7 +109,6 @@ class Stmt {
 public:
     virtual Status Analyze(QueryState& qs, std::vector<TokenType>& types) = 0;
     virtual Status Execute(QueryState& qs) = 0;
-    virtual std::string ToString() = 0;
     Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {
         std::string serialized_table;
         TableHandle catalogue = qs.storage->GetTableHandle(qs.storage->CatalogueTableName());
