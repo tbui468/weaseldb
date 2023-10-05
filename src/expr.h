@@ -18,7 +18,7 @@ namespace wsldb {
 //is stored during execution in case a subquery needs access to a column in the outer scope.
 struct QueryState {
 public:
-    QueryState(Storage* storage, Batch* batch): storage(storage), batch(batch) {
+    QueryState(Storage* storage, Batch* batch): storage(storage), batch(batch), scan_idx(0) {
         ResetAggState();
     }
 
@@ -98,6 +98,7 @@ public:
     Datum sum_;
     Datum count_;
     bool first_;
+    int scan_idx;
 private:
     std::vector<WorkingAttributeSet*> analysis_scopes_;
     std::vector<Row*> scope_rows_;
@@ -1087,7 +1088,7 @@ public:
         return Status(true, "ok");
     }
     Status BeginScan(QueryState& qs) override {
-        return table_->BeginScan(qs.storage);
+        return table_->BeginScan(qs.storage, qs.scan_idx);
     }
     Status NextRow(QueryState& qs, Row** r) override {
         return table_->NextRow(qs.storage, r);

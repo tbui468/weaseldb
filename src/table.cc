@@ -150,45 +150,57 @@ Status Table::NextRow(Storage* storage, Row** r) {
     return Status(true, "ok");
 }
 
-Status Table::DeletePrev(Storage* storage, Batch* batch) {
-    //TODO: need a massive rewrite
-    //if scan_idx_ is primary index
-    //  read record so that secondary keys can be extracted from data
-    //  delete from primary index
-    //  iterate through secondary indexes and delete each key extracted from record
-    //if scan_idx_ is secondary index
-    //  do that same as above, but getting the record will require following an extra pointer
+Status Table::DeleteRow(Storage* storage, Batch* batch, Row* row) {
+    int primary_cf = 0; 
 
-    int cf_idx = 0;
-
-    it_->Prev();
-    std::string key = it_->key().ToString();
-
+    //delete from primary index
     TableHandle handle = storage->GetTableHandle(table_name_);
-    batch->Delete(table_name_, handle.cfs.at(cf_idx), key);
+    batch->Delete(table_name_, handle.cfs.at(primary_cf), Idx(primary_cf).GetKeyFromFields(row->data_));
 
-    it_->Next();
-    return Status(true, "ok");
-}
-
-Status Table::UpdatePrev(Storage* storage, Batch* batch, Row* r) {
-    //TODO: need a massive rewrite
-    //see DeletePrev for details - algorithm will be similar
-    int cf_idx = 0;
-
-    it_->Prev();
-    std::string old_key = it_->key().ToString();
-    std::string new_key = Idx(0).GetKeyFromFields(r->data_);
-
-    TableHandle handle = storage->GetTableHandle(table_name_);
-    if (old_key.compare(new_key) != 0) {
-        batch->Delete(table_name_, handle.cfs.at(cf_idx), old_key);
+    //delete key/value in all secondary indexes 
+    for (size_t i = 1; i < idxs_.size(); i++) {
+        batch->Delete(table_name_, handle.cfs.at(i), Idx(i).GetKeyFromFields(row->data_)); 
     }
-    batch->Put(table_name_, handle.cfs.at(cf_idx), new_key, Datum::SerializeData(r->data_));
-    it_->Next();
 
     return Status(true, "ok");
 }
+
+//TODO: make sure to complete copy constructor for Row class
+Status Table::UpdateRow(Storage* storage, Batch* batch, Row* updated_row, Row* old_row) {
+    int primary_cf = 0; 
+
+    TableHandle handle = storage->GetTableHandle(table_name_);
+    std::string old_key = Idx(primary_cf).GetKeyFromFields(old_row->data_);
+    std::string updated_primary_key = Idx(primary_cf).GetKeyFromFields(updated_row->data_);
+
+    if (old_key.compare(updated_primary_key) != 0) {
+        std::string tmp_value;
+        if (handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(primary_cf), updated_primary_key, &tmp_value).ok())
+            return Status(false, "Error: A record with the same primary key already exists");
+
+        batch->Delete(table_name_, handle.cfs.at(primary_cf), old_key);
+    }
+
+    batch->Put(table_name_, handle.cfs.at(primary_cf), updated_primary_key, Datum::SerializeData(updated_row->data_));
+
+    for (size_t i = 1; i < idxs_.size(); i++) {
+        std::string old_key = Idx(i).GetKeyFromFields(old_row->data_);
+        std::string updated_key = Idx(i).GetKeyFromFields(updated_row->data_);
+
+        if (old_key.compare(updated_key) != 0) {
+            std::string tmp_value;
+            if (handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(i), updated_key, &tmp_value).ok())
+                return Status(false, "Error: A record with the same secondary key already exists");
+
+            batch->Delete(table_name_, handle.cfs.at(i), old_key);
+        }
+
+        batch->Put(table_name_, handle.cfs.at(i), updated_key, updated_primary_key);
+    }
+
+    return Status(true, "ok");
+}
+
 
 Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
     int cf_idx = 0;
@@ -199,7 +211,7 @@ Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
 
     //insert into primary index
     std::string value = Datum::SerializeData(data);
-    std::string key = Idx(0).GetKeyFromFields(data);
+    std::string key = Idx(cf_idx).GetKeyFromFields(data);
 
     std::string test_value;
     TableHandle handle = storage->GetTableHandle(table_name_);

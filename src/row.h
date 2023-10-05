@@ -12,6 +12,29 @@ namespace wsldb {
 class Row {
 public:
     Row(std::vector<Datum> data): data_(data) {}
+    void Print() {
+        for (Datum d: data_) {
+            if (d.Type() == TokenType::Int4) {
+                std::cout << d.AsInt4() << ",";
+            } else if (d.Type() == TokenType::Int8) {
+                std::cout << d.AsInt8() << ",";
+            } else if (d.Type() == TokenType::Float4) {
+                std::cout << d.AsFloat4() << ",";
+            } else if (d.Type() == TokenType::Text) {
+                std::cout << d.AsString() << ",";
+            } else if (d.Type() == TokenType::Null) {
+                std::cout << "null,";
+            } else if (d.Type() == TokenType::Bool) {
+                if (d.AsBool()) {
+                    std::cout << "true,";
+                } else {
+                    std::cout << "false,";
+                }
+            } else {
+                std::cout << "unsupported data type,";
+            }
+        }
+    }
 public:
     std::vector<Datum> data_;
 };
@@ -26,27 +49,7 @@ public:
         std::cout << std::endl;*/
 
         for (Row* r: rows_) {
-            for (Datum d: r->data_) {
-                if (d.Type() == TokenType::Int4) {
-                    std::cout << d.AsInt4() << ",";
-                } else if (d.Type() == TokenType::Int8) {
-                    std::cout << d.AsInt8() << ",";
-                } else if (d.Type() == TokenType::Float4) {
-                    std::cout << d.AsFloat4() << ",";
-                } else if (d.Type() == TokenType::Text) {
-                    std::cout << d.AsString() << ",";
-                } else if (d.Type() == TokenType::Null) {
-                    std::cout << "null,";
-                } else if (d.Type() == TokenType::Bool) {
-                    if (d.AsBool()) {
-                        std::cout << "true,";
-                    } else {
-                        std::cout << "false,";
-                    }
-                } else {
-                    std::cout << "unsupported data type,";
-                }
-            }
+            r->Print();
             std::cout << std::endl;
         }
     }

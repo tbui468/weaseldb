@@ -417,7 +417,8 @@ public:
         return Status(true, "ok");
     }
     Status Execute(QueryState& qs) override {
-        table_->BeginScan(qs.storage);
+        int scan_idx = 0;
+        table_->BeginScan(qs.storage, scan_idx);
 
         Row* r;
         int update_count = 0;
@@ -433,15 +434,18 @@ public:
             if (!d.AsBool())
                 continue;
 
+            Row updated_row = *r;
+
             for (Expr* e: assigns_) {
-                qs.PushScopeRow(r);
-                Status s = e->Eval(qs, r, &d); //returned Datum of ColAssign expressions are ignored
+                qs.PushScopeRow(&updated_row);
+                Status s = e->Eval(qs, &updated_row, &d); //returned Datum of ColAssign expressions are ignored
                 qs.PopScopeRow();
 
                 if (!s.Ok()) 
                     return s;
             }
-            table_->UpdatePrev(qs.storage, qs.batch, r);
+
+            table_->UpdateRow(qs.storage, qs.batch, &updated_row, r);
             update_count++;
         }
 
@@ -482,7 +486,8 @@ public:
         return Status(true, "ok");
     }
     Status Execute(QueryState& qs) override {
-        table_->BeginScan(qs.storage);
+        int scan_idx = 0;
+        table_->BeginScan(qs.storage, scan_idx);
 
         Row* r;
         int delete_count = 0;
@@ -499,7 +504,7 @@ public:
             if (!d.AsBool())
                 continue;
 
-            table_->DeletePrev(qs.storage, qs.batch);
+            table_->DeleteRow(qs.storage, qs.batch, r);
             delete_count++;
         }
 

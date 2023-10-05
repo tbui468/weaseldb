@@ -37,8 +37,8 @@ public:
     int GetAttrIdx(const std::string& name);
     Status BeginScan(Storage* storage, int scan_idx);
     Status NextRow(Storage* storage, Row** r);
-    Status DeletePrev(Storage* storage, Batch* batch);
-    Status UpdatePrev(Storage* storage, Batch* batch, Row* r);
+    Status DeleteRow(Storage* storage, Batch* batch, Row* row);
+    Status UpdateRow(Storage* storage, Batch* batch, Row* updated_row, Row* old_row);
     Status Insert(Storage* storage, Batch* batch, std::vector<Datum>& data);
 
     inline const std::vector<Attribute>& Attrs() const {
