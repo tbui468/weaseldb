@@ -206,16 +206,30 @@ Token Tokenizer::MakeIdentifier() {
 
 Token Tokenizer::MakeString() {
     idx_++; //skip starting single quote
-    size_t idx = idx_;
+    size_t start_idx = idx_;
     size_t len = 0;
     TokenType type = TokenType::StringLiteral;
-    while (query_.at(idx_) != '\'') {
-        idx_++;
-        len++;
+
+    //single quotes are used as an escape character, so need to skip ''
+    while (true) {
+        char next = query_.at(idx_);
+        if (next == '\'' && idx_ + 1 < query_.length() && query_.at(idx_ + 1) != '\'') {
+            idx_++;
+            break;
+        } else if (next == '\'' && idx_ + 1 < query_.length() && query_.at(idx_ + 1) == '\'') {
+            idx_ += 2;
+            len += 2;
+        } else {
+            idx_++;
+            len++;
+        }
     }
 
-    idx_++; //skip last single quote
-    return Token(query_.substr(idx, len), type);
+    //escape any two single quotes found
+    std::string s = query_.substr(start_idx, len);
+    Tokenizer::ReplaceAll(s, "\'\'", "\'");
+
+    return Token(s, type);
 }
 
 Token Tokenizer::MakeNumber() {

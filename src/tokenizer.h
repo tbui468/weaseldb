@@ -11,6 +11,13 @@ public:
     Tokenizer(const std::string& query): query_(query), idx_(0) {}
     Token NextToken();
     static void DebugPrintTokens(const std::vector<Token>& tokens);
+    static void ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
+        size_t start_pos = 0;
+        while ((start_pos = s.find(from, start_pos)) != std::string::npos) {
+            s.replace(start_pos, from.length(), to);
+            start_pos += to.length();
+        }
+    }
 private:
     Token MakeIdentifier();
     Token MakeString();
