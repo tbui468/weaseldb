@@ -27,12 +27,11 @@ Txn Parser::ParseTxn() {
 
     while (PeekToken().type != TokenType::Eof) {
         if (PeekToken().type == TokenType::Commit || PeekToken().type == TokenType::Rollback) {
-            if (PeekToken().type == TokenType::Rollback) {
+            if (NextToken().type == TokenType::Rollback) { //rollback or commit
                 commit_on_success = false;
             }
-            NextToken(); //commit/rollback
             NextToken(); //;
-            break; //TODO: need to cache whether commit or rollback 
+            break;
         }
         stmts.push_back(ParseStmt());
         if (single_stmt_txn)
@@ -344,26 +343,26 @@ Stmt* Parser::ParseStmt() {
             NextToken(); //)
 
             NextToken(); //values
-            std::vector<std::vector<Expr*>> col_values;
+            std::vector<std::vector<Expr*>> values;
             while (PeekToken().type == TokenType::LParen) {
                 std::vector<Expr*> tuple;
 
                 NextToken(); //(
-                for (Token col: cols) {
-                    tuple.push_back(new ColAssign(col, ParseExpr()));
+                while (PeekToken().type != TokenType::RParen) {
+                    tuple.push_back(ParseExpr());
                     if (PeekToken().type == TokenType::Comma)
                         NextToken(); //,
                 }
                 NextToken(); //)
 
-                col_values.push_back(tuple);
+                values.push_back(tuple);
 
                 if (PeekToken().type == TokenType::Comma) {
                     NextToken(); //,
                 }
             }
             NextToken(); //;
-            return new InsertStmt(target, col_values);
+            return new InsertStmt(target, cols, values);
         }
         case TokenType::Select: {
             bool remove_duplicates = false;

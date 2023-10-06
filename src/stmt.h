@@ -327,8 +327,8 @@ private:
 
 class InsertStmt: public Stmt {
 public:
-    InsertStmt(Token target, std::vector<std::vector<Expr*>> col_assigns):
-        target_(target), col_assigns_(std::move(col_assigns)) {}
+    InsertStmt(Token target, std::vector<Token> attrs, std::vector<std::vector<Expr*>> values):
+        target_(target), attrs_(std::move(attrs)), values_(std::move(values)), col_assigns_({}) {}
 
     Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
         Status s = OpenTable(qs, target_.lexeme, &table_);
@@ -337,8 +337,26 @@ public:
        
         WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //does postgresql allow table aliases on insert?
 
-        qs.PushAnalysisScope(working_attrs);
+        for (Token t: attrs_) {
+            if (!working_attrs->Contains(target_.lexeme, t.lexeme)) {
+                return Status(false, ("Error: Table does not have a matching column name"));
+            }
+        }
 
+        size_t attr_count = working_attrs->WorkingAttributeCount() - 1; //ignore _rowid since caller doesn't explicitly insert that
+
+        for (const std::vector<Expr*>& tuple: values_) {
+            if (attr_count < tuple.size())
+                return Status(false, "Error: Value count must match specified attribute name count");
+
+            std::vector<Expr*> col_assign;
+            for (size_t i = 0; i < attrs_.size(); i++) {
+                col_assign.push_back(new ColAssign(attrs_.at(i), tuple.at(i)));
+            }
+            col_assigns_.push_back(col_assign);
+        }
+
+        qs.PushAnalysisScope(working_attrs);
         for (const std::vector<Expr*>& assigns: col_assigns_) {
             for (Expr* e: assigns) {
                 TokenType type;
@@ -347,7 +365,6 @@ public:
                     return s;
             }
         }
-
         qs.PopAnalysisScope();
 
         return Status(true, "ok");
@@ -379,6 +396,8 @@ public:
 private:
     Token target_;
     Table* table_;
+    std::vector<Token> attrs_;
+    std::vector<std::vector<Expr*>> values_;
     std::vector<std::vector<Expr*>> col_assigns_;
 };
 
