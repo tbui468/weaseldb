@@ -1,6 +1,4 @@
-#include <cassert>
 #include <iostream>
-#include <vector>
 #include <fstream>
 
 #include "server.h"
@@ -9,6 +7,7 @@
 int main(int argc, char** argv) {
 
     wsldb::Server server;
+
 
     wsldb::Storage::DropDatabase("/tmp/testdb"); //dropping database everytime to simplify testing
     wsldb::Storage storage("/tmp/testdb");
@@ -25,7 +24,8 @@ int main(int argc, char** argv) {
 
         server.RunQuery(query, &storage);
     } else {
-        std::cout << "Currently requires input sql file" << std::endl;
+        int listener_fd = server.GetListenerFD("3000");
+        server.ListenAndSpawnClientHandlers(listener_fd);
     }
 
 
