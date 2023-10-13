@@ -108,7 +108,7 @@ private:
 //but putting it in stmt.h would cause a circular dependency
 class Stmt {
 public:
-    virtual Status Analyze(QueryState& qs, std::vector<TokenType>& types) = 0;
+    virtual Status Analyze(QueryState& qs, std::vector<DatumType>& types) = 0;
     virtual Status Execute(QueryState& qs) = 0;
     Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {
         std::string serialized_table;
@@ -131,7 +131,7 @@ public:
     //TODO: reuslt and is_agg can be put inside of query state
     virtual inline Status Eval(QueryState& qs, Row* r, Datum* result) = 0;
     virtual std::string ToString() = 0;
-    virtual Status Analyze(QueryState& qs, TokenType* evaluated_type) = 0;
+    virtual Status Analyze(QueryState& qs, DatumType* evaluated_type) = 0;
 };
 
 class Literal: public Expr {
@@ -141,14 +141,14 @@ public:
     Literal(int i): t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
     inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
         qs.is_agg = false;
-        *result = Datum(t_);
+        *result = Datum(LiteralTokenToDatumType(t_.type), t_.lexeme);
         return Status(true, "ok");
     }
     std::string ToString() override {
         return t_.lexeme;
     }
-    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
-        *evaluated_type = Datum(t_).Type();
+    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
+        *evaluated_type = Datum(LiteralTokenToDatumType(t_.type), t_.lexeme).Type();
         return Status(true, "ok");
     }
 private:
@@ -170,7 +170,7 @@ public:
         Status s2 = right_->Eval(qs, row, &r);
         if (!s2.Ok()) return s2;
 
-        if (l.Type() == TokenType::Null || r.Type() == TokenType::Null) {
+        if (l.IsType(DatumType::Null) || r.IsType(DatumType::Null)) {
             *result = Datum();
             return Status(true, "ok");
         }
@@ -196,22 +196,22 @@ public:
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
     }
-    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
-        TokenType left_type;
+    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
+        DatumType left_type;
         {
             Status s = left_->Analyze(qs, &left_type);
             if (!s.Ok())
                 return s;
         }
-        TokenType right_type;
+        DatumType right_type;
         {
             Status s = right_->Analyze(qs, &right_type);
             if (!s.Ok())
                 return s;
         }
 
-        if (left_type == TokenType::Null || right_type == TokenType::Null) {
-            *evaluated_type = TokenType::Null;
+        if (left_type == DatumType::Null || right_type == DatumType::Null) {
+            *evaluated_type = DatumType::Null;
             return Status(true, "ok");
         }
 
@@ -222,23 +222,23 @@ public:
             case TokenType::LessEqual:
             case TokenType::Greater:
             case TokenType::GreaterEqual:
-                if (!(TokenTypeIsNumeric(left_type) && TokenTypeIsNumeric(right_type)) && left_type != right_type) {
+                if (!(DatumTypeIsNumeric(left_type) && DatumTypeIsNumeric(right_type)) && left_type != right_type) {
                         return Status(false, "Error: Equality and relational operands must be same data types");
                 }
-                *evaluated_type = TokenType::Bool;
+                *evaluated_type = DatumType::Bool;
                 break;
             case TokenType::Or:
             case TokenType::And:
-                if (!(left_type == TokenType::Bool && right_type == TokenType::Bool)) {
+                if (!(left_type == DatumType::Bool && right_type == DatumType::Bool)) {
                     return Status(false, "Error: Logical operator operands must be boolean types");
                 }
-                *evaluated_type = TokenType::Bool;
+                *evaluated_type = DatumType::Bool;
                 break;
             case TokenType::Plus:
             case TokenType::Minus:
             case TokenType::Star:
             case TokenType::Slash:
-                if (!(TokenTypeIsNumeric(left_type) && TokenTypeIsNumeric(right_type))) {
+                if (!(DatumTypeIsNumeric(left_type) && DatumTypeIsNumeric(right_type))) {
                     return Status(false, "Error: The '" + op_.lexeme + "' operator operands must both be a numeric type");
                 } 
                 *evaluated_type = left_type;
@@ -268,7 +268,7 @@ public:
 
         switch (op_.type) {
             case TokenType::Minus:
-                if (TokenTypeIsNumeric(right.Type())) {
+                if (DatumTypeIsNumeric(right.Type())) {
                     *result = Datum(-WSLDB_NUMERIC_LITERAL(right));
                 }
                 break;
@@ -283,8 +283,8 @@ public:
     std::string ToString() override {
         return "(" + op_.lexeme + " " + right_->ToString() + ")";
     }
-    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
-        TokenType type;
+    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
+        DatumType type;
         {
             Status s = right_->Analyze(qs, &type);
             if (!s.Ok())
@@ -292,13 +292,13 @@ public:
         }
         switch (op_.type) {
             case TokenType::Not:
-                if (type != TokenType::Bool) {
+                if (type != DatumType::Bool) {
                     return Status(false, "Error: 'not' operand must be a boolean type.");
                 }
-                *evaluated_type = TokenType::Bool;
+                *evaluated_type = DatumType::Bool;
                 break;
             case TokenType::Minus:
-                if (!TokenTypeIsNumeric(type)) {
+                if (!DatumTypeIsNumeric(type)) {
                     return Status(false, "Error: '-' operator operand must be numeric type");
                 }
                 *evaluated_type = type;
@@ -328,7 +328,7 @@ public:
     std::string ToString() override {
         return t_.lexeme;
     }
-    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
         WorkingAttribute a;
         Status s = qs.GetWorkingAttribute(&a, table_ref_, t_.lexeme);
         if (!s.Ok())
@@ -352,7 +352,7 @@ private:
 class ColAssign: public Expr {
 public:
     ColAssign(Token col, Expr* right): 
-        col_(col), right_(right), scope_(-1), idx_(-1), physical_type_(TokenType::Null) {}
+        col_(col), right_(right), scope_(-1), idx_(-1), physical_type_(DatumType::Null) {}
     inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
         qs.is_agg = false;
 
@@ -361,7 +361,7 @@ public:
         if (!s.Ok()) return s;
 
         //demote int8 (working integer type in wsldb) evaluated type to fit physical type on disk
-        if (right.Type() == TokenType::Int8 && physical_type_ == TokenType::Int4) {
+        if (right.IsType(DatumType::Int8) && physical_type_ == DatumType::Int4) {
             int32_t value = WSLDB_INTEGER_LITERAL(right);
             right = Datum(value);
         }
@@ -374,8 +374,8 @@ public:
     std::string ToString() override {
         return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
     }
-    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
-        TokenType type;
+    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
+        DatumType type;
         {
             Status s = right_->Analyze(qs, &type);
             if (!s.Ok())
@@ -410,7 +410,7 @@ private:
     int idx_;
     //need physical type saved during analyze stage so that
     //the evaluation stage can demote integer working type (int8) to int4 if necessary
-    TokenType physical_type_;
+    DatumType physical_type_;
 };
 
 struct OrderCol {
@@ -468,7 +468,7 @@ public:
     std::string ToString() override {
         return fcn_.lexeme + arg_->ToString();
     }
-    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
+    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
         {
             Status s = arg_->Analyze(qs, evaluated_type);
             if (!s.Ok()) {
@@ -496,7 +496,7 @@ public:
         if (!s.Ok())
             return s;
 
-        if (d.Type() == TokenType::Null) {
+        if (d.IsType(DatumType::Null)) {
             *result = Datum(true);
         } else {
             *result = Datum(false);
@@ -507,10 +507,10 @@ public:
     std::string ToString() override {
         return "IsNull";
     }
-    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
-        *evaluated_type = TokenType::Bool;
+    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
+        *evaluated_type = DatumType::Bool;
 
-        TokenType left_type;
+        DatumType left_type;
         Status s = left_->Analyze(qs, &left_type);
         if (!s.Ok())
             return s;
@@ -532,7 +532,7 @@ public:
         if (!s.Ok())
             return s;
 
-        if (d.Type() != TokenType::Null) {
+        if (!d.IsType(DatumType::Null)) {
             *result = Datum(true);
         } else {
             *result = Datum(false);
@@ -543,10 +543,10 @@ public:
     std::string ToString() override {
         return "IsNotNull";
     }
-    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
-        *evaluated_type = TokenType::Bool;
+    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
+        *evaluated_type = DatumType::Bool;
 
-        TokenType left_type;
+        DatumType left_type;
         Status s = left_->Analyze(qs, &left_type);
         if (!s.Ok())
             return s;
@@ -581,8 +581,8 @@ public:
     std::string ToString() override {
         return "scalar subquery";
     }
-    Status Analyze(QueryState& qs, TokenType* evaluated_type) override {
-        std::vector<TokenType> types;
+    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
+        std::vector<DatumType> types;
         {
             Status s = stmt_->Analyze(qs, types);
             if (!s.Ok())
@@ -608,6 +608,11 @@ public:
     virtual Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) = 0;
     virtual Status BeginScan(QueryState& qs) = 0;
     virtual Status NextRow(QueryState& qs, Row** r) = 0;
+    std::vector<Attribute> GetAttributes() const {
+        return attrs_->GetAttributes();
+    }
+protected:
+    WorkingAttributeSet* attrs_ { nullptr };
 };
 
 class LeftJoin: public WorkTable {
@@ -633,18 +638,19 @@ public:
         {
             bool has_duplicate_tables;
             *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+            attrs_ = *working_attrs;
             if (has_duplicate_tables)
                 return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
         }
 
         qs.PushAnalysisScope(*working_attrs);
         {
-            TokenType type;
+            DatumType type;
             Status s = condition_->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
 
-            if (type != TokenType::Bool) {
+            if (type != DatumType::Bool) {
                 return Status(false, "Error: Inner join condition must evaluate to a boolean type");
             }
         }
@@ -739,6 +745,7 @@ public:
 
     Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         Status s = right_join_->Analyze(qs, working_attrs);
+        attrs_ = *working_attrs;
 
         if (!s.Ok())
             return s;
@@ -874,6 +881,7 @@ public:
         {
             bool has_duplicate_tables;
             *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+            attrs_ = *working_attrs;
             if (has_duplicate_tables)
                 return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
         }
@@ -885,12 +893,12 @@ public:
         //Something similar is done in InnerJoin::NextRow
         qs.PushAnalysisScope(*working_attrs);
         {
-            TokenType type;
+            DatumType type;
             Status s = condition_->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
 
-            if (type != TokenType::Bool) {
+            if (type != DatumType::Bool) {
                 return Status(false, "Error: Inner join condition must evaluate to a boolean type");
             }
         }
@@ -980,6 +988,7 @@ public:
         {
             bool has_duplicate_tables;
             *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+            attrs_ = *working_attrs;
             if (has_duplicate_tables)
                 return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
         }
@@ -1032,9 +1041,9 @@ public:
     ConstantTable(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
     Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         std::vector<std::string> names;
-        std::vector<TokenType> types;
+        std::vector<DatumType> types;
         for (Expr* e: target_cols_) {
-            TokenType type;
+            DatumType type;
             Status s = e->Analyze(qs, &type);      
             if (!s.Ok())
                 return s;
@@ -1043,6 +1052,7 @@ public:
         }
 
         *working_attrs = new WorkingAttributeSet("?table?", names, types);
+        attrs_ = *working_attrs;
 
         return Status(true, "ok");
     }
@@ -1084,6 +1094,7 @@ public:
         table_ = new Table(tab_name_, serialized_table);
 
         *working_attrs = new WorkingAttributeSet(table_, ref_name_);
+        attrs_ = *working_attrs;
 
         return Status(true, "ok");
     }

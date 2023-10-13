@@ -1,17 +1,6 @@
 #include <unordered_map>
 #include <thread>
 
-//C headers/defines for networking code
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <errno.h>
-#define BACKLOG 10
-
 #include "server.h"
 #include "tokenizer.h"
 #include "parser.h"
@@ -20,8 +9,7 @@
 
 namespace wsldb {
 
-
-void sigchld_handler(int s) {
+void Server::SigChildHandler(int s) {
     s = s; //silence warning
 
     int saved_errno = errno;
@@ -31,6 +19,75 @@ void sigchld_handler(int s) {
     errno = saved_errno;
 }
 
+void Server::ConnHandler(ConnHandlerArgs* args) {
+    Storage* storage = args->storage;
+    int conn_fd = args->conn_fd;
+    free(args);
+    //TODO: Should make interpreter, tokenizer and parser once here and reuse
+    //them during entire connection rather than constructing a new one each iteration
+
+    while (true) {
+        //read in message
+        std::vector<Token> tokens = std::vector<Token>();
+        {
+            std::string msg;
+            if (!Recv(conn_fd, msg)) {
+                break;
+            }
+            int len = *((int*)(msg.data() + sizeof(char)));
+            std::string query = msg.substr(sizeof(char) + sizeof(int), len - sizeof(int));
+
+            Tokenizer tokenizer(query);
+            do {
+                tokens.push_back(tokenizer.NextToken());
+            } while (tokens.back().type != TokenType::Eof);
+        }
+
+        Parser parser(tokens);
+        std::vector<Txn> txns = parser.ParseTxns();
+
+        Interpreter interp(storage);
+        for (Txn txn: txns) {
+            //TODO: currently ExecuteTxn is printing out result,
+            //but server should send results to client, and client
+            //should be in charge of printing out results
+            Status s = interp.ExecuteTxn(txn);
+
+            //TODO: if error, send 'E' + message and continue loop
+
+            if (s.Ok() && s.Tuples()) { 
+                std::string row_description = s.Tuples()->SerializeRowDescription();
+                std::string buf = PreparePacket('T', row_description);
+                Send(conn_fd, buf);
+
+                std::vector<std::string> data_rows = s.Tuples()->SerializeDataRows();
+                for (const std::string& r: data_rows) {
+                    std::string buf = PreparePacket('D', r);
+                    Send(conn_fd, buf);
+                }
+            }
+
+            std::string buf = PreparePacket('C', s.Msg());
+            Send(conn_fd, buf);
+        }
+
+        //then iterate over data rows and send them one at a time here
+
+        //if error occured, send here also
+
+        //ready for next query response
+        {
+            std::string buf = PreparePacket('Z', ""); //ready for query
+            Send(conn_fd, buf);
+        }
+
+        
+    }
+
+    std::cout << "connection closed\n";
+
+    close(conn_fd);
+}
 
 int Server::GetListenerFD(const char* port) {
     struct addrinfo hints;
@@ -76,7 +133,7 @@ int Server::GetListenerFD(const char* port) {
 
     //what was this for again?
     struct sigaction sa;
-    sa.sa_handler = sigchld_handler;
+    sa.sa_handler = SigChildHandler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     if (sigaction(SIGCHLD, &sa, NULL) == -1) {
@@ -86,125 +143,37 @@ int Server::GetListenerFD(const char* port) {
     return sockfd;
 }
 
-void tcp_send(int sockfd, char* buf, int len) {
-    ssize_t written = 0;
-    ssize_t n;
+void Server::Listen(const char* port) {
+    int listener_fd_ = GetListenerFD(port);
 
-    while (written < len) {
-        if ((n = send(sockfd, buf + written, len - written, 0)) <= 0) {
-            if (n < 0 && errno == EINTR) //interrupted but not error, so we need to try again
-                n = 0;
-            else {
-                exit(1); //real error
-            }
-        }
-
-        written += n;
-    }
-}
-
-
-bool tcp_recv(int sockfd, char* buf, int len) {
-    ssize_t nread = 0;
-    ssize_t n;
-    while (nread < len) {
-        if ((n = recv(sockfd, buf + nread, len - nread, 0)) < 0) {
-            if (n < 0 && errno == EINTR)
-                n = 0;
-            else
-                exit(1);
-        } else if (n == 0) {
-            //connection ended
-            return false;
-        }
-
-        nread += n;
-    }
-
-    return true;
-}
-
-void handle_client_conn(int conn_fd) {
-    //TODO: start here
-    //handle request here (look at vaquita/server/src/main.c for code that handles clients)
-    while (true) {
-        int32_t request_len;
-        if (!tcp_recv(conn_fd, (char*)&request_len, sizeof(int32_t))) {
-            printf("client disconnected\n");
-            break;
-        }
-
-        //echo back request_len to test
-        std::cout << "client number: " << request_len << std::endl;
-        tcp_send(conn_fd, (char*)&request_len, sizeof(int32_t));
-        break;
-
-        /*
-        char buf[request_len + 1];
-        if (!tcp_recv(conn_fd, buf, request_len)) {
-            printf("client disconnected\n");
-            break;
-        }
-
-        buf[request_len] = '\0';
-
-        //allocate buffer for response sent back to client
-        //execute query, and put response into buffer
-        //send buffer back (be sure to prepend with buffer size)
-
-        c->output->count = 0;
-        uint32_t count = c->output->count;
-        vdbbytelist_append_bytes(c->output, (uint8_t*)&count, sizeof(uint32_t)); //saving space for length
-
-        bool end = vdbserver_execute_query(&h, buf, c->output);
-        *((uint32_t*)(c->output->values)) = (uint32_t)(c->output->count); //filling in bytelist length
-
-        tcp_send(c->conn_fd, (char*)(c->output->values), sizeof(uint32_t));
-        tcp_send(c->conn_fd, (char*)(c->output->values + sizeof(uint32_t)), c->output->count - sizeof(uint32_t));
-
-        if (end) {
-            //printf("client released database handle\n");
-            break;
-        }*/
-    }
-    
-
-    close(conn_fd);
-}
-
-void Server::ListenAndSpawnClientHandlers(int listener_fd) {
     while (true) {
         socklen_t sin_size = sizeof(struct sockaddr_storage);
         struct sockaddr_storage their_addr;
-        int conn_fd = accept(listener_fd, (struct sockaddr*)&their_addr, &sin_size);
+        int conn_fd = accept(listener_fd_, (struct sockaddr*)&their_addr, &sin_size);
 
         if (conn_fd == -1)
             continue;
 
-        std::thread thrd(handle_client_conn, conn_fd);
+        ConnHandlerArgs* args = new ConnHandlerArgs();
+        args->storage = &storage_;
+        args->conn_fd = conn_fd;
+
+        std::thread thrd(ConnHandler, args);
         thrd.detach();
     } 
 }
 
-//TODO: Sever shouldn't be doing this - should spawn a backend process to handle query
-Status Server::RunQuery(const std::string& query, Storage* storage) {
-    Tokenizer tokenizer(query);
-    std::vector<Token> tokens = std::vector<Token>();
+std::string Server::PreparePacket(char type, const std::string& msg) {
+    std::string buf;
 
-    do {
-        tokens.push_back(tokenizer.NextToken());
-    } while (tokens.back().type != TokenType::Eof);
+    buf.append((char*)&type, sizeof(char));
 
-    Parser parser(tokens);
-    std::vector<Txn> txns = parser.ParseTxns();
+    int size = sizeof(int) + msg.size();
+    buf.append((char*)&size, sizeof(int));
 
-    Interpreter interp(storage);
+    buf += msg;
 
-    for (Txn txn: txns) {
-        Status s = interp.ExecuteTxn(txn);
-    }
-
-    return Status(true, "ok");
+    return buf;
 }
 
 }

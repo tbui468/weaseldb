@@ -6,12 +6,14 @@
 
 int main(int argc, char** argv) {
 
-    wsldb::Server server;
-
 
     wsldb::Storage::DropDatabase("/tmp/testdb"); //dropping database everytime to simplify testing
     wsldb::Storage storage("/tmp/testdb");
 
+    wsldb::Server server(storage);
+    server.Listen("3000");
+
+    /*
     if (argc > 1) {
         std::string line;
         std::string query;
@@ -26,7 +28,7 @@ int main(int argc, char** argv) {
     } else {
         int listener_fd = server.GetListenerFD("3000");
         server.ListenAndSpawnClientHandlers(listener_fd);
-    }
+    }*/
 
 
     return 0;

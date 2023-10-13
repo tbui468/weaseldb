@@ -3,150 +3,162 @@
 #include <string>
 #include <iostream>
 #include <limits>
-#include "token.h"
+#include <vector>
 
 namespace wsldb {
 
-#define WSLDB_NUMERIC_LITERAL(d) ((d).Type() == TokenType::Float4 ? (d).AsFloat4() : (d).Type() == TokenType::Int4 ? (d).AsInt4() : (d).AsInt8())
-#define WSLDB_INTEGER_LITERAL(d) ((d).Type() == TokenType::Int4 ? (d).AsInt4() : (d).AsInt8())
+#define WSLDB_NUMERIC_LITERAL(d) ((d).IsType(DatumType::Float4) ? (d).AsFloat4() : (d).IsType(DatumType::Int4) ? (d).AsInt4() : (d).AsInt8())
+#define WSLDB_INTEGER_LITERAL(d) ((d).IsType(DatumType::Int4) ? (d).AsInt4() : (d).AsInt8())
 
+enum class DatumType {
+    Int4,
+    Int8,
+    Float4,
+    Text,
+    Bool,
+    Null
+};
+
+std::string DatumTypeToString(DatumType type);
+bool DatumTypeIsNumeric(DatumType type);
+bool DatumTypeIsInteger(DatumType type);
 
 class Datum {
 public:
-    Datum(Token t) {
-        switch (t.type) {
-            case TokenType::IntLiteral: {
+    Datum(DatumType type, const std::string& lexeme) {
+        type_ = type;
+        switch (type) {
+            case DatumType::Int8: {
                 //all integer literals are evaluated to int8 for processing in wsldb
                 //if schema expects int4, will be demoted to int4 before written to disk inside of class ColAssign
-                type_ = TokenType::Int8;
-                int64_t value = std::stol(t.lexeme);
+                int64_t value = std::stol(lexeme);
                 data_.append((char*)&value, sizeof(int64_t));
                 break;
             }
-            case TokenType::FloatLiteral: {
-                type_ = TokenType::Float4;
-                float value = std::stof(t.lexeme);
+            case DatumType::Float4: {
+                float value = std::stof(lexeme);
                 data_.append((char*)&value, sizeof(float));
                 break;
             }
-            case TokenType::StringLiteral: {
-                type_ = TokenType::Text;
-                data_ += t.lexeme;
+            case DatumType::Text: {
+                data_ += lexeme;
                 break;
             }
-            case TokenType::TrueLiteral: {
-                type_ = TokenType::Bool;
-                bool value = true;
-                data_.append((char*)&value, sizeof(bool));
-                break;
-            }
-            case TokenType::FalseLiteral: {
-                type_ = TokenType::Bool;
+            case DatumType::Bool: {
                 bool value = false;
+                if (lexeme.compare("true") == 0) {
+                    value = true;
+                }
                 data_.append((char*)&value, sizeof(bool));
                 break;
             }
-            case TokenType::Null: {
-                type_ = TokenType::Null;
+            case DatumType::Null: {
                 break;
             }
             default:
                 //TODO: this should report and error rather than printing 
-                std::cout << "invalid token type for initializing datum: " << TokenTypeToString(t.type) << std::endl;
+                //std::cout << "invalid token type for initializing datum: " << TokenTypeToString(t.type) << std::endl;
+                std::cout << "invalid token type for initializing datum: " << std::endl;
                 break;
         }
     }
 
-    Datum(const std::string& buf, int* off, TokenType type) {
+    //type is the expected datum type based on schema, not the actual type (which may be a null)
+    Datum(const std::string& buf, int* off, DatumType type) {
         bool is_null = *((bool*)(buf.data() + *off));
         *off += sizeof(bool);
 
         if (is_null) {
-            type_ = TokenType::Null;
+            type_ = DatumType::Null;
             data_ = "";
             return;
         }
 
         type_ = type;
         switch (type) {
-            case TokenType::Int4: {
+            case DatumType::Int4: {
                 data_.append((char*)(buf.data() + *off), sizeof(int));
                 *off += sizeof(int);
                 break;
             }
-            case TokenType::Int8: {
+            case DatumType::Int8: {
                 data_.append((char*)(buf.data() + *off), sizeof(int64_t));
                 *off += sizeof(int64_t);
                 break;
             }
-            case TokenType::Float4: {
+            case DatumType::Float4: {
                 data_.append((char*)(buf.data() + *off), sizeof(float));
                 *off += sizeof(float);
                 break;
             }
-            case TokenType::Text: {
+            case DatumType::Text: {
                 int size = *((int*)(buf.data() + *off));
                 *off += sizeof(int);
                 data_.append(buf.data() + *off, size);
                 *off += size;
                 break;
             }
-            case TokenType::Bool: {
+            case DatumType::Bool: {
                 data_.append((char*)(buf.data() + *off), sizeof(bool));
                 *off += sizeof(bool);
                 break;
             }
             default:
-                std::cout << "invalid buffer data for initializing datum: " << TokenTypeToString(type) << std::endl;
+                //std::cout << "invalid buffer data for initializing datum: " << TokenTypeToString(type) << std::endl;
+                std::cout << "invalid buffer data for initializing datum: " << std::endl;
                 break;
         } 
     }
 
     Datum() {
-        type_ = TokenType::Null;
+        type_ = DatumType::Null;
         data_ = "";
     }
 
     //TODO: change this to int32_t, and fix any warnings/errors that occur in program
     Datum(int i) {
-        type_ = TokenType::Int4;
+        type_ = DatumType::Int4;
         data_.append((char*)&i, sizeof(int));
     }
 
     Datum(int64_t i) {
-        type_ = TokenType::Int8;
+        type_ = DatumType::Int8;
         data_.append((char*)&i, sizeof(int64_t));
     }
 
     Datum(float f) {
-        type_ = TokenType::Float4;
+        type_ = DatumType::Float4;
         data_.append((char*)&f, sizeof(float));
     }
 
     Datum(bool b) {
-        type_ = TokenType::Bool;
+        type_ = DatumType::Bool;
         data_.append((char*)&b, sizeof(bool));
     }
 
     Datum(const std::string& s) {
-        type_ = TokenType::Text;
+        type_ = DatumType::Text;
         data_ = s;
     }
 
-    TokenType Type() const {
+    bool IsType(DatumType type) const {
+        return type_ == type;
+    }
+
+    DatumType Type() const {
         return type_;
     }
 
     std::string Serialize() const {
         std::string result;
         bool is_null = false;
-        if (type_ == TokenType::Null) {
+        if (type_ == DatumType::Null) {
             is_null = true;
         }
 
         result.append((char*)&is_null, sizeof(bool));
 
-        if (type_ == TokenType::Text) {
+        if (type_ == DatumType::Text) {
             int size = data_.size();
             result.append((char*)&size, sizeof(int));
         }
@@ -214,16 +226,17 @@ public:
 
     bool operator==(const Datum& d) {
         switch (type_) {
-            case TokenType::Int4:
-            case TokenType::Int8:
-            case TokenType::Float4:
+            case DatumType::Int4:
+            case DatumType::Int8:
+            case DatumType::Float4:
                 return WSLDB_NUMERIC_LITERAL(*this) - WSLDB_NUMERIC_LITERAL(d) == 0;
-            case TokenType::Bool:
+            case DatumType::Bool:
                 return AsBool() - d.AsBool() == 0;
-            case TokenType::Text:
+            case DatumType::Text:
                 return AsString().compare(d.AsString()) == 0;
             default:
-                std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
+                //std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
+                std::cout << "invalid type for comparing data: " << std::endl;
                 break;
         }        
         return false;
@@ -235,16 +248,17 @@ public:
 
     bool operator<(const Datum& d) {
         switch (type_) {
-            case TokenType::Int4:
-            case TokenType::Int8:
-            case TokenType::Float4:
+            case DatumType::Int4:
+            case DatumType::Int8:
+            case DatumType::Float4:
                 return WSLDB_NUMERIC_LITERAL(*this) - WSLDB_NUMERIC_LITERAL(d) < 0;
-            case TokenType::Bool:
+            case DatumType::Bool:
                 return AsBool() - d.AsBool() < 0;
-            case TokenType::Text:
+            case DatumType::Text:
                 return AsString().compare(d.AsString()) < 0;
             default:
-                std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
+                //std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
+                std::cout << "invalid type for comparing data: " << std::endl;
                 break;
         }        
         return false;
@@ -279,7 +293,7 @@ public:
     }
 
 private:
-    TokenType type_;
+    DatumType type_;
     std::string data_;
 };
 

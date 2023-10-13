@@ -66,22 +66,23 @@ public:
             std::string response;
             bool result = RecvResponse(response);
             char code = *((char*)(response.data()));
+            int len = *((int*)(response.data() + sizeof(char)));
+            std::string msg = response.substr(sizeof(char) + sizeof(int), len - sizeof(int));
             //read first byte
             switch (code) {
                 case 'T':
-                    //row description
-                    //print out row description
+                    std::cout << "row description" << std::endl;
+                    //TODO: deserialize row description from msg and print out here
                     break;
                 case 'D':
+                    std::cout << "data row" << std::endl;
                     //data row
                     //print out row data
                     break;
                 case 'C': {
                     //command complete
                     //do any clean up after transaction is done
-                    int len = *((int*)(response.data() + sizeof(char)));
-                    std::string msg = response.substr(sizeof(char) + sizeof(int), len - sizeof(int));
-                    std::cout << "Response: " << msg << std::endl;
+                    std::cout << msg << std::endl;
                     break;
                 }
                 case 'E':

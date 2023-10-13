@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <cassert>
+#include <algorithm>
 
 #include "token.h"
 #include "datum.h"
@@ -13,16 +14,6 @@
 #include "rocksdb/db.h"
 
 namespace wsldb {
-
-struct Attribute {
-    Attribute(const std::string& name, TokenType type, bool not_null_constraint):
-        name(name), type(type), not_null_constraint(not_null_constraint) {}
-
-    std::string name;
-    TokenType type;
-    bool not_null_constraint;
-};
-
 
 class Table {
 public:
@@ -62,6 +53,9 @@ public:
     inline const Index& Idx(int i) const {
         return idxs_.at(i);
     }
+    inline std::vector<Attribute> GetAttributes() const {
+        return attrs_;
+    }
 private:
     std::string table_name_;
     std::vector<Attribute> attrs_;
@@ -77,20 +71,20 @@ public:
 //in case the same attribute name is used across multiple tables
 struct WorkingAttribute: public Attribute {
     //dummy constructor to allow creation on stack (used in WorkingAttributeSet functions)
-    WorkingAttribute(): Attribute("", TokenType::Int4, true), idx(-1), scope(-1) {} //placeholders
+    WorkingAttribute(): Attribute("", DatumType::Int4, true), idx(-1), scope(-1) {} //placeholders
     WorkingAttribute(Attribute a, int idx): Attribute(a.name, a.type, a.not_null_constraint), idx(idx), scope(-1) {} //scope is placeholder
 
     int idx; //attributes of later tables are offset if multiple tables are joined into a single working table
     int scope; //default is -1.  Should be filled in with correct relative scope position during semantic analysis phase
 
-    Status CheckConstraints(TokenType type) {
-        if (not_null_constraint && type == TokenType::Null) {
+    Status CheckConstraints(DatumType type) {
+        if (not_null_constraint && type == DatumType::Null) {
             return Status(false, "Error: Value violates column 'not null' constraint");
         }
 
-        bool will_demote_int8_literal_later = this->type == TokenType::Int4 && type == TokenType::Int8;
+        bool will_demote_int8_literal_later = this->type == DatumType::Int4 && type == DatumType::Int8;
 
-        if (!will_demote_int8_literal_later && type != TokenType::Null && type != this->type) {
+        if (!will_demote_int8_literal_later && type != DatumType::Null && type != this->type) {
             return Status(false, "Error: Value type does not match column type in table");
         }
 
@@ -103,7 +97,7 @@ struct WorkingAttribute: public Attribute {
 class WorkingAttributeSet {
 public:
     //This constructor is only used for ConstantTables, since a Physical table will use a table
-    WorkingAttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<TokenType> types) {
+    WorkingAttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<DatumType> types) {
         std::vector<WorkingAttribute>* attrs_vector = new std::vector<WorkingAttribute>();
         for (size_t i = 0; i < names.size(); i++) {
             //not_null_constraint not used in ConstantTables, so just setting it to true
@@ -194,9 +188,24 @@ public:
         return count;
     }
 
+    std::vector<Attribute> GetAttributes() const {
+        std::vector<Attribute> ret;
+        for (int i = 0; i < WorkingAttributeCount(); i++) {
+            ret.emplace_back("", DatumType::Int4, true); //placeholder just so that vector is correct size (probably a better way to do this)
+        }
+
+        for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: attrs_) {
+            for (const WorkingAttribute& a: *(p.second)) {
+                ret.at(a.idx) = Attribute(a.name, a.type, true); //not_null_constraint no used, so arbitrarily setting it to true
+            }
+        }
+
+        return ret;
+    }
+
 public:
     std::unordered_map<std::string, std::vector<WorkingAttribute>*> attrs_;
-    int offset_ = 0;
+    int offset_ = 0; //used to offset Attributes when multiple tables are joined - can just use WorkingAttribute.idx directly 
 };
 
 }

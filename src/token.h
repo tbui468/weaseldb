@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "datum.h"
 
 namespace wsldb {
 
@@ -95,8 +96,8 @@ enum class TokenType {
 };
 
 std::string TokenTypeToString(TokenType type);
-bool TokenTypeIsNumeric(TokenType type);
-bool TokenTypeIsInteger(TokenType type);
+DatumType LiteralTokenToDatumType(TokenType type);
+DatumType TypeTokenToDatumType(TokenType type);
 bool TokenTypeValidDataType(TokenType type);
 bool TokenTypeIsAggregateFunction(TokenType type);
 

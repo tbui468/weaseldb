@@ -64,7 +64,7 @@ public:
         uniques_.insert(uniques_.begin(), primary_keys);
     }
 
-    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
         Table* table_ptr;
         Status s = OpenTable(qs, target_.lexeme, &table_ptr);
         if (s.Ok()) {
@@ -126,7 +126,7 @@ public:
                     limit_(limit),
                     remove_duplicates_(remove_duplicates) {}
 
-    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
         WorkingAttributeSet* working_attrs;
         {
             Status s = target_->Analyze(qs, &working_attrs);
@@ -137,7 +137,7 @@ public:
 
         //projection
         for (Expr* e: projs_) {
-            TokenType type;
+            DatumType type;
             Status s = e->Analyze(qs, &type);
             if (!s.Ok()) {
                 return s;
@@ -147,13 +147,13 @@ public:
 
         //where clause
         {
-            TokenType type;
+            DatumType type;
             Status s = where_clause_->Analyze(qs, &type);
             if (!s.Ok()) {
                 return s;
             }
 
-            if (type != TokenType::Bool) {
+            if (type != DatumType::Bool) {
                 return Status(false, "Error: Where clause must be a boolean expression");
             }
         }
@@ -161,14 +161,14 @@ public:
         //order cols
         for (OrderCol oc: order_cols_) {
             {
-                TokenType type;
+                DatumType type;
                 Status s = oc.col->Analyze(qs, &type);
                 if (!s.Ok())
                     return s;
             }
 
             {
-                TokenType type;
+                DatumType type;
                 Status s = oc.asc->Analyze(qs, &type);
                 if (!s.Ok()) {
                     return s;
@@ -178,13 +178,13 @@ public:
 
         //limit
         {
-            TokenType type;
+            DatumType type;
             Status s = limit_->Analyze(qs, &type);
             if (!s.Ok()) {
                 return s;
             }
 
-            if (!TokenTypeIsInteger(type)) {
+            if (!DatumTypeIsInteger(type)) {
                 return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
             }
         }
@@ -194,7 +194,7 @@ public:
         return Status(true, "ok");
     }
     Status Execute(QueryState& qs) override {
-        RowSet* rs = new RowSet();
+        RowSet* rs = new RowSet(target_->GetAttributes());
         target_->BeginScan(qs);
 
         Row* r;
@@ -250,7 +250,7 @@ public:
         }
 
         //projection
-        RowSet* proj_rs = new RowSet();
+        RowSet* proj_rs = new RowSet(target_->GetAttributes());
         for (size_t i = 0; i < rs->rows_.size(); i++) {
             proj_rs->rows_.push_back(new Row({}));
         }
@@ -287,7 +287,7 @@ public:
         }
 
         //remove duplicates
-        RowSet* final_rs = new RowSet();
+        RowSet* final_rs = new RowSet(target_->GetAttributes());
         if (remove_duplicates_) {
             std::unordered_map<std::string, bool> map;
             for (Row* r: proj_rs->rows_) {
@@ -330,7 +330,7 @@ public:
     InsertStmt(Token target, std::vector<Token> attrs, std::vector<std::vector<Expr*>> values):
         target_(target), attrs_(std::move(attrs)), values_(std::move(values)), col_assigns_({}) {}
 
-    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
         Status s = OpenTable(qs, target_.lexeme, &table_);
         if (!s.Ok())
             return s;
@@ -359,7 +359,7 @@ public:
         qs.PushAnalysisScope(working_attrs);
         for (const std::vector<Expr*>& assigns: col_assigns_) {
             for (Expr* e: assigns) {
-                TokenType type;
+                DatumType type;
                 Status s = e->Analyze(qs, &type);
                 if (!s.Ok())
                     return s;
@@ -406,7 +406,7 @@ public:
     UpdateStmt(Token target, std::vector<Expr*> assigns, Expr* where_clause):
         target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
 
-    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
         Status s = OpenTable(qs, target_.lexeme, &table_);
         if (!s.Ok())
             return s;
@@ -416,16 +416,16 @@ public:
         qs.PushAnalysisScope(working_attrs);
 
         {
-            TokenType type;
+            DatumType type;
             Status s = where_clause_->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
-            if (type != TokenType::Bool)
+            if (type != DatumType::Bool)
                 return Status(false, "Error: 'where' clause must evaluated to a boolean value");
         }
 
         for (Expr* e: assigns_) {
-            TokenType type;
+            DatumType type;
             Status s = e->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
@@ -482,7 +482,7 @@ public:
     DeleteStmt(Token target, Expr* where_clause): 
         target_(target), where_clause_(where_clause) {}
 
-    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
         Status s = OpenTable(qs, target_.lexeme, &table_);
         if (!s.Ok())
             return s;
@@ -492,11 +492,11 @@ public:
         qs.PushAnalysisScope(working_attrs);
 
         {
-            TokenType type;
+            DatumType type;
             Status s = where_clause_->Analyze(qs, &type);
             if (!s.Ok())
                 return s;
-            if (type != TokenType::Bool)
+            if (type != DatumType::Bool)
                 return Status(false, "Error: 'where' clause must evaluated to a boolean value");
         }
 
@@ -540,7 +540,7 @@ public:
     DropTableStmt(Token target_relation, bool has_if_exists):
         target_relation_(target_relation), has_if_exists_(has_if_exists), table_(nullptr) {}
 
-    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
         Status s = OpenTable(qs, target_relation_.lexeme, &table_);
         if (!s.Ok() && !has_if_exists_)
             return s;
@@ -572,7 +572,7 @@ private:
 class DescribeTableStmt: public Stmt {
 public:
     DescribeTableStmt(Token target_relation): target_relation_(target_relation), table_(nullptr) {}
-    Status Analyze(QueryState& qs, std::vector<TokenType>& types) override {
+    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
         Status s = OpenTable(qs, target_relation_.lexeme, &table_);
         if (!s.Ok())
             return s;
@@ -580,11 +580,11 @@ public:
         return Status(true, "ok");
     }
     Status Execute(QueryState& qs) override {
-        RowSet* rowset = new RowSet();
+        RowSet* rowset = new RowSet(table_->GetAttributes());
 
         std::string not_null = "not null";
         for (const Attribute& a: table_->Attrs()) {
-            std::vector<Datum> data = { Datum(a.name), Datum(TokenTypeToString(a.type)) };
+            std::vector<Datum> data = { Datum(a.name), Datum(DatumTypeToString(a.type)) };
             if (a.not_null_constraint) {
                 data.emplace_back(not_null);
             }

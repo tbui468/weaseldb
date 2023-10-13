@@ -20,7 +20,7 @@ public:
         Status s;
         for (Stmt* stmt: txn.stmts) {
             QueryState qs(storage_, &batch);
-            std::vector<TokenType> types;
+            std::vector<DatumType> types;
             s = stmt->Analyze(qs, types);
 
             if (s.Ok()) {

@@ -1,0 +1,26 @@
+g++ -fno-rtti -Wall main.cc tokenizer.cc parser.cc token.cc table.cc server.cc storage.cc index.cc datum.cc -o wsldb ../../rocksdb/librocksdb.a -I../../rocksdb/include -O2 -std=c++17 -lpthread -lrt -ldl -lgflags -lz -lbz2 -llz4 -lzstd -lnuma -std=c++17  -faligned-new -DHAVE_ALIGNED_NEW -DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX  -DOS_LINUX -fno-builtin-memcmp -DROCKSDB_FALLOCATE_PRESENT -DGFLAGS=1 -DZLIB -DBZIP2 -DLZ4 -DZSTD -DNUMA -DROCKSDB_MALLOC_USABLE_SIZE -DROCKSDB_PTHREAD_ADAPTIVE_MUTEX -DROCKSDB_BACKTRACE -DROCKSDB_RANGESYNC_PRESENT -DROCKSDB_SCHED_GETCPU_PRESENT -DROCKSDB_AUXV_GETAUXVAL_PRESENT -march=native  -DHAVE_UINT128_EXTENSION   -ldl -lpthread
+In file included from datum.cc:1:
+datum.h:379:49: error: ‘vector’ in namespace ‘std’ does not name a template type
+  379 |     static std::string SerializeData(const std::vector<Datum>& data) {
+      |                                                 ^~~~~~
+In file included from datum.cc:1:
+datum.h:5:1: note: ‘std::vector’ is defined in header ‘<vector>’; did you forget to ‘#include <vector>’?
+    4 | #include <iostream>
+  +++ |+#include <vector>
+    5 | #include <limits>
+In file included from datum.cc:1:
+datum.h:379:55: error: expected ‘,’ or ‘...’ before ‘<’ token
+  379 |     static std::string SerializeData(const std::vector<Datum>& data) {
+      |                                                       ^
+datum.h: In static member function ‘static std::string wsldb::Datum::SerializeData(int)’:
+datum.h:381:23: error: ‘data’ was not declared in this scope; did you mean ‘std::data’?
+  381 |         for (Datum d: data) {
+      |                       ^~~~
+      |                       std::data
+In file included from /usr/include/c++/9/string:54,
+                 from datum.h:3,
+                 from datum.cc:1:
+/usr/include/c++/9/bits/range_access.h:318:5: note: ‘std::data’ declared here
+  318 |     data(initializer_list<_Tp> __il) noexcept
+      |     ^~~~
+make: *** [Makefile:22: main] Error 1

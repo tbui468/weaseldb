@@ -14,8 +14,8 @@ namespace wsldb {
 class TCPEndPoint {
 public:
     static void Send(int sockfd, const std::string& buf) {
-        ssize_t written = 0;
-        ssize_t n;
+        size_t written = 0;
+        size_t n;
 
         while (written < buf.size()) {
             if ((n = send(sockfd, buf.data() + written, buf.size() - written, 0)) <= 0) {
@@ -38,6 +38,7 @@ public:
         }
 
         char type = *((char*)(header)); //Not used now
+        type = type; //keeping compiler warnings quiet for now
         int size = *((int*)(header + sizeof(char)));
         int remaining_size = size - sizeof(int);
 

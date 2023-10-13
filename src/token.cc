@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include "token.h"
 
 
@@ -156,15 +158,41 @@ std::string TokenTypeToString(TokenType type) {
     }
 }
 
-bool TokenTypeIsNumeric(TokenType type) {
-    return type == TokenType::Int4 ||
-           type == TokenType::Int8 ||
-           type == TokenType::Float4;
+DatumType LiteralTokenToDatumType(TokenType type) {
+    switch (type) {
+        case TokenType::IntLiteral:
+            return DatumType::Int8;
+        case TokenType::FloatLiteral:
+            return DatumType::Float4;
+        case TokenType::StringLiteral:
+            return DatumType::Text;
+        case TokenType::TrueLiteral:
+        case TokenType::FalseLiteral:
+            return DatumType::Bool;
+        case TokenType::Null:
+            return DatumType::Null;
+        default:
+            std::cout << "Unrecognized token: " << TokenTypeToString(type) << std::endl;
+            return DatumType::Null;
+    }
 }
 
-bool TokenTypeIsInteger(TokenType type) {
-    return type == TokenType::Int4 ||
-           type == TokenType::Int8;
+DatumType TypeTokenToDatumType(TokenType type) {
+    switch (type) {
+        case TokenType::Int8:
+            return DatumType::Int8;
+        case TokenType::Int4:
+            return DatumType::Int4;
+        case TokenType::Float4:
+            return DatumType::Float4;
+        case TokenType::Text:
+            return DatumType::Text;
+        case TokenType::Bool:
+            return DatumType::Bool;
+        default:
+            std::cout << "Unrecognized token: " << TokenTypeToString(type) << std::endl;
+            return DatumType::Null;
+    }
 }
 
 bool TokenTypeValidDataType(TokenType type) {

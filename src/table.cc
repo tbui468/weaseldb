@@ -15,7 +15,7 @@ Table::Table(std::string table_name,
 
     //NOTE: index creation requires attrs_ to be filled in beforehand
     for (size_t i = 0; i < names.size(); i++) {
-        attrs_.emplace_back(names.at(i).lexeme, types.at(i).type, not_null_constraints.at(i));
+        attrs_.emplace_back(names.at(i).lexeme, TypeTokenToDatumType(types.at(i).type), not_null_constraints.at(i));
     }
 
     bool is_primary = true;
@@ -50,8 +50,8 @@ Table::Table(std::string table_name, const std::string& buf) {
     off += sizeof(int);
 
     for (int i = 0; i < count; i++) {
-        TokenType type = *((TokenType*)(buf.data() + off));
-        off += sizeof(TokenType);
+        DatumType type = *((DatumType*)(buf.data() + off));
+        off += sizeof(DatumType);
 
         int str_size = *((int*)(buf.data() + off));
         off += sizeof(int);
@@ -82,7 +82,7 @@ std::string Table::Serialize() {
     buf.append((char*)&count, sizeof(count));
 
     for (const Attribute& a: attrs_) {
-        buf.append((char*)&a.type, sizeof(TokenType));
+        buf.append((char*)&a.type, sizeof(DatumType));
         int str_size = a.name.length();
         buf.append((char*)&str_size, sizeof(int));
         buf += a.name;

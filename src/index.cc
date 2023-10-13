@@ -4,11 +4,11 @@
 namespace wsldb {
 
 Index::Index(const std::string& buf, int* offset) {
-    name_ = Datum(buf, offset, TokenType::Text).AsString();
+    name_ = Datum(buf, offset, DatumType::Text).AsString();
 
-    int count = Datum(buf, offset, TokenType::Int4).AsInt4();
+    int count = Datum(buf, offset, DatumType::Int4).AsInt4();
     for (int i = 0; i < count; i++) {
-        int idx = Datum(buf, offset, TokenType::Int4).AsInt4();
+        int idx = Datum(buf, offset, DatumType::Int4).AsInt4();
         key_idxs_.push_back(idx);
     }
 }
