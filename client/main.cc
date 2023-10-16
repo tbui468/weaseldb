@@ -3,6 +3,7 @@
 #include <fstream>
 
 #include "../include/tcp.h"
+#include "../include/datum.h"
 
 namespace wsldb {
 
@@ -61,6 +62,8 @@ public:
     bool ProcessQuery(const std::string& query) {
         SendQuery(query);
         //TODO: if query is 'exit;', exit this loop so that client disconnects (or should be explicitly tell server we are disconnecting?)
+        
+        std::vector<DatumType> types;
 
         while (true) {
             std::string response;
@@ -70,19 +73,83 @@ public:
             std::string msg = response.substr(sizeof(char) + sizeof(int), len - sizeof(int));
             //read first byte
             switch (code) {
-                case 'T':
-                    std::cout << "row description" << std::endl;
-                    //TODO: deserialize row description from msg and print out here
+                case 'T': {
+                    int off = 0;
+                    int count = *((int*)(msg.data()));
+                    off += sizeof(int);
+
+                    for (int i = 0; i < count; i++) {
+                        DatumType type = *((DatumType*)(msg.data() + off));
+                        types.push_back(type);
+                        off += sizeof(DatumType);
+                        int name_size = *((int*)(msg.data() + off));
+                        off += sizeof(int);
+                        std::string name = msg.substr(off, name_size);
+                        off += name_size;
+
+                        //std::cout << name << ": " << Datum::TypeToString(type) << std::endl;
+                    }
+
                     break;
-                case 'D':
-                    std::cout << "data row" << std::endl;
-                    //data row
-                    //print out row data
+                }
+                case 'D': {
+                    int off = 0;
+                    for (DatumType type: types) {
+                        bool is_null = *((bool*)(msg.data() + off));
+                        off += sizeof(bool);
+                        if (is_null) {
+                            std::cout << "null,";
+                        } else {
+                            switch (type) {
+                                case DatumType::Int4: {
+                                    int value = *((int*)(msg.data() + off));
+                                    off += sizeof(int);
+                                    std::cout << value << ",";
+                                    break;
+                                }
+                                case DatumType::Int8: {
+                                    int64_t value = *((int64_t*)(msg.data() + off));
+                                    off += sizeof(int64_t);
+                                    std::cout << value << ",";
+                                    break;
+                                }
+                                case DatumType::Float4: {
+                                    float value = *((float*)(msg.data() + off));
+                                    off += sizeof(float);
+                                    std::cout << value << ",";
+                                    break;
+                                }
+                                case DatumType::Text: {
+                                    int len = *((int*)(msg.data() + off));
+                                    off += sizeof(int);
+                                    std::string s = msg.substr(off, len);
+                                    off += len;
+                                    std::cout << s << ",";
+                                    break;
+                                }
+                                case DatumType::Bool: {
+                                    bool value = *((bool*)(msg.data() + off));
+                                    off += sizeof(bool);
+                                    if (value) {
+                                        std::cout << "true,";
+                                    } else {
+                                        std::cout << "false,";
+                                    }
+                                    break;
+                                }
+                                default:
+                                    std::cout << "[Error],";
+                                    break;
+                            }
+                        }
+                    }
+                    std::cout << std::endl;
                     break;
+                }
                 case 'C': {
                     //command complete
                     //do any clean up after transaction is done
-                    std::cout << msg << std::endl;
+                    //std::cout << msg << std::endl;
                     break;
                 }
                 case 'E':

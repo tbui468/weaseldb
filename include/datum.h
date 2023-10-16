@@ -19,9 +19,10 @@ enum class DatumType {
     Null
 };
 
+/*
 std::string DatumTypeToString(DatumType type);
 bool DatumTypeIsNumeric(DatumType type);
-bool DatumTypeIsInteger(DatumType type);
+bool DatumTypeIsInteger(DatumType type);*/
 
 class Datum {
 public:
@@ -152,8 +153,12 @@ public:
     std::string Serialize() const {
         std::string result;
         bool is_null = false;
+
+        //if null, don't include data (since it won't be valid anyway)
         if (type_ == DatumType::Null) {
             is_null = true;
+            result.append((char*)&is_null, sizeof(bool));
+            return result;
         }
 
         result.append((char*)&is_null, sizeof(bool));
@@ -284,6 +289,7 @@ public:
         return (*this).AsBool() && d.AsBool();
     }
 
+public:
     static std::string SerializeData(const std::vector<Datum>& data) {
         std::string value;
         for (Datum d: data) {
@@ -291,6 +297,37 @@ public:
         }
         return value;
     }
+
+static std::string TypeToString(DatumType type) {
+    switch (type) {
+        case DatumType::Int4:
+            return "int4";
+        case DatumType::Int8:
+            return "int8";
+        case DatumType::Float4:
+            return "float4";
+        case DatumType::Text:
+            return "text";
+        case DatumType::Bool:
+            return "bool";
+        case DatumType::Null:
+            return "null";
+        default:
+            return "invalid datum type";
+    }
+}
+
+static bool TypeIsNumeric(DatumType type) {
+    return type == DatumType::Int4 ||
+           type == DatumType::Int8 ||
+           type == DatumType::Float4;
+}
+
+
+static bool TypeIsInteger(DatumType type) {
+    return type == DatumType::Int4 ||
+           type == DatumType::Int8;
+}
 
 private:
     DatumType type_;

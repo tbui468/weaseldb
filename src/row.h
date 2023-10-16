@@ -70,8 +70,8 @@ public:
     std::string SerializeRowDescription() {
         std::string ret;
 
-        int size = attrs_.size();
-        ret.append((char*)&size, sizeof(int));
+        int count = attrs_.size();
+        ret.append((char*)&count, sizeof(int));
 
         for (const Attribute& a: attrs_) {
             ret.append((char*)&a.type, sizeof(DatumType));

@@ -48,9 +48,6 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
 
         Interpreter interp(storage);
         for (Txn txn: txns) {
-            //TODO: currently ExecuteTxn is printing out result,
-            //but server should send results to client, and client
-            //should be in charge of printing out results
             Status s = interp.ExecuteTxn(txn);
 
             //TODO: if error, send 'E' + message and continue loop

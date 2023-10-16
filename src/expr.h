@@ -222,7 +222,7 @@ public:
             case TokenType::LessEqual:
             case TokenType::Greater:
             case TokenType::GreaterEqual:
-                if (!(DatumTypeIsNumeric(left_type) && DatumTypeIsNumeric(right_type)) && left_type != right_type) {
+                if (!(Datum::TypeIsNumeric(left_type) && Datum::TypeIsNumeric(right_type)) && left_type != right_type) {
                         return Status(false, "Error: Equality and relational operands must be same data types");
                 }
                 *evaluated_type = DatumType::Bool;
@@ -238,7 +238,7 @@ public:
             case TokenType::Minus:
             case TokenType::Star:
             case TokenType::Slash:
-                if (!(DatumTypeIsNumeric(left_type) && DatumTypeIsNumeric(right_type))) {
+                if (!(Datum::TypeIsNumeric(left_type) && Datum::TypeIsNumeric(right_type))) {
                     return Status(false, "Error: The '" + op_.lexeme + "' operator operands must both be a numeric type");
                 } 
                 *evaluated_type = left_type;
@@ -268,7 +268,7 @@ public:
 
         switch (op_.type) {
             case TokenType::Minus:
-                if (DatumTypeIsNumeric(right.Type())) {
+                if (Datum::TypeIsNumeric(right.Type())) {
                     *result = Datum(-WSLDB_NUMERIC_LITERAL(right));
                 }
                 break;
@@ -298,7 +298,7 @@ public:
                 *evaluated_type = DatumType::Bool;
                 break;
             case TokenType::Minus:
-                if (!DatumTypeIsNumeric(type)) {
+                if (!Datum::TypeIsNumeric(type)) {
                     return Status(false, "Error: '-' operator operand must be numeric type");
                 }
                 *evaluated_type = type;

@@ -27,13 +27,7 @@ public:
                 s = stmt->Execute(qs);
             }
            
-            if (s.Ok()) { 
-                RowSet* tupleset = s.Tuples();
-                if (tupleset) {
-                    tupleset->Print();
-                }
-            } else {
-                std::cout << s.Msg() << std::endl;
+            if (!s.Ok()) { 
                 break;
             }
         }

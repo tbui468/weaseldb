@@ -124,7 +124,8 @@ public:
                     where_clause_(where_clause),
                     order_cols_(std::move(order_cols)),
                     limit_(limit),
-                    remove_duplicates_(remove_duplicates) {}
+                    remove_duplicates_(remove_duplicates),
+                    row_description_({}) {}
 
     Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
         WorkingAttributeSet* working_attrs;
@@ -143,6 +144,9 @@ public:
                 return s;
             }
             types.push_back(type);
+
+            //fill in row description for usage during execution stage
+            row_description_.emplace_back(e->ToString(), type, false);
         }
 
         //where clause
@@ -184,7 +188,7 @@ public:
                 return s;
             }
 
-            if (!DatumTypeIsInteger(type)) {
+            if (!Datum::TypeIsInteger(type)) {
                 return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
             }
         }
@@ -194,7 +198,8 @@ public:
         return Status(true, "ok");
     }
     Status Execute(QueryState& qs) override {
-        RowSet* rs = new RowSet(target_->GetAttributes());
+        //scan table(s) and filter using 'where' clause
+        RowSet* rs = new RowSet(row_description_);
         target_->BeginScan(qs);
 
         Row* r;
@@ -250,7 +255,8 @@ public:
         }
 
         //projection
-        RowSet* proj_rs = new RowSet(target_->GetAttributes());
+        RowSet* proj_rs = new RowSet(row_description_);
+
         for (size_t i = 0; i < rs->rows_.size(); i++) {
             proj_rs->rows_.push_back(new Row({}));
         }
@@ -287,7 +293,15 @@ public:
         }
 
         //remove duplicates
-        RowSet* final_rs = new RowSet(target_->GetAttributes());
+        //TODO: attributes here will just be the stringified projection expressions
+        //TODO: could just make a std::vector<Attribute> here and pass it to RowSet
+        //rowset only uses to produce the row description - why is this even part of RowSet in that case
+        //need to rethink a lot of this structure
+        //the resulting type of each projection NEEDS to be cached from the analyze stage
+        //in fact, we could cache the std::vector<Attribute> entirely during Analyze, and then just use it here
+
+        //RowSet* final_rs = new RowSet(target_->GetAttributes());
+        RowSet* final_rs = new RowSet(row_description_);
         if (remove_duplicates_) {
             std::unordered_map<std::string, bool> map;
             for (Row* r: proj_rs->rows_) {
@@ -323,6 +337,7 @@ private:
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
     bool remove_duplicates_;
+    std::vector<Attribute> row_description_;
 };
 
 class InsertStmt: public Stmt {
@@ -584,7 +599,7 @@ public:
 
         std::string not_null = "not null";
         for (const Attribute& a: table_->Attrs()) {
-            std::vector<Datum> data = { Datum(a.name), Datum(DatumTypeToString(a.type)) };
+            std::vector<Datum> data = { Datum(a.name), Datum(Datum::TypeToString(a.type)) };
             if (a.not_null_constraint) {
                 data.emplace_back(not_null);
             }
