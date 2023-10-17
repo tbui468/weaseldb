@@ -261,6 +261,8 @@ public:
             proj_rs->rows_.push_back(new Row({}));
         }
 
+        int idx = 0;
+
         for (Expr* e: projs_) {
             std::vector<Datum> col;
             Datum result;
@@ -278,6 +280,11 @@ public:
 
             if (qs.is_agg) {
                 col.push_back(result);
+
+                //if aggregate function, determine the DatumType here (DatumType::Null is used as placeholder in Analyze)
+                Attribute a = row_description_.at(idx);
+                row_description_.at(idx) = Attribute(a.name, result.Type(), a.not_null_constraint);
+
                 qs.ResetAggState();
             }
 
@@ -290,17 +297,11 @@ public:
             for (size_t i = 0; i < col.size(); i++) {
                 proj_rs->rows_.at(i)->data_.push_back(col.at(i));
             }
+
+            idx++;
         }
 
         //remove duplicates
-        //TODO: attributes here will just be the stringified projection expressions
-        //TODO: could just make a std::vector<Attribute> here and pass it to RowSet
-        //rowset only uses to produce the row description - why is this even part of RowSet in that case
-        //need to rethink a lot of this structure
-        //the resulting type of each projection NEEDS to be cached from the analyze stage
-        //in fact, we could cache the std::vector<Attribute> entirely during Analyze, and then just use it here
-
-        //RowSet* final_rs = new RowSet(target_->GetAttributes());
         RowSet* final_rs = new RowSet(row_description_);
         if (remove_duplicates_) {
             std::unordered_map<std::string, bool> map;
@@ -312,7 +313,7 @@ public:
                 }
             }
         } else {
-            final_rs = proj_rs;
+            final_rs->rows_ = proj_rs->rows_;
         }
 
         //limit in-place

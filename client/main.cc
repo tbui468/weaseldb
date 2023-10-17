@@ -149,7 +149,7 @@ public:
                 case 'C': {
                     //command complete
                     //do any clean up after transaction is done
-                    //std::cout << msg << std::endl;
+                    types.clear(); //clear row description types so that next query can start fresh
                     break;
                 }
                 case 'E':

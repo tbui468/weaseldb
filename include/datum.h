@@ -19,11 +19,6 @@ enum class DatumType {
     Null
 };
 
-/*
-std::string DatumTypeToString(DatumType type);
-bool DatumTypeIsNumeric(DatumType type);
-bool DatumTypeIsInteger(DatumType type);*/
-
 class Datum {
 public:
     Datum(DatumType type, const std::string& lexeme) {
@@ -194,6 +189,10 @@ public:
     }
 
     Datum operator+(const Datum& d) {
+        if (TypeIsInteger(this->Type()) && TypeIsInteger(d.Type())) {
+            return Datum(static_cast<int64_t>(WSLDB_NUMERIC_LITERAL(*this) + WSLDB_NUMERIC_LITERAL(d)));
+        }
+
         return Datum(WSLDB_NUMERIC_LITERAL(*this) + WSLDB_NUMERIC_LITERAL(d));
     }
 

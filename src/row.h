@@ -16,6 +16,16 @@ struct Attribute {
     std::string name;
     DatumType type;
     bool not_null_constraint;
+
+    std::string ToString() const {
+        std::string ret;
+
+        ret += name + ",";
+        ret += Datum::TypeToString(type) + ",";
+        ret += not_null_constraint ? "true" : "false";
+
+        return ret;
+    }
 };
 
 //Row will have either a single tuple (just the input row) or many (group row)
@@ -60,7 +70,7 @@ public:
 
 class RowSet {
 public:
-    RowSet(std::vector<Attribute> attrs): attrs_(std::move(attrs)) {}
+    RowSet(std::vector<Attribute> attrs): attrs_(attrs) {}
     void Print() {
         for (Row* r: rows_) {
             r->Print();

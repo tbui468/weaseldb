@@ -431,13 +431,14 @@ public:
         switch (fcn_.type) {
             case TokenType::Avg:
                 qs.sum_ += arg;
-                qs.count_ += Datum(1);
+                qs.count_ += Datum(static_cast<int64_t>(1));
                 *result = qs.sum_ / qs.count_;
                 break;
-            case TokenType::Count:
-                qs.count_ += Datum(1);
+            case TokenType::Count: {
+                qs.count_ += Datum(static_cast<int64_t>(1));
                 *result = qs.count_;
                 break;
+            }
             case TokenType::Max:
                 if (qs.first_ || arg > qs.max_) {
                     qs.max_ = arg;
@@ -475,6 +476,11 @@ public:
                 return s;
             }
         }
+
+        //Null is a placeholder - actual type will be set during execution 
+        //since the aggregate function type + argument type determines the resulting DatumType
+        *evaluated_type = DatumType::Null;
+
         if (!TokenTypeIsAggregateFunction(fcn_.type)) {
             return Status(false, "Error: Function '" + fcn_.lexeme + "' does not exist");
         }
