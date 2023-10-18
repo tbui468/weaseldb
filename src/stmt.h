@@ -407,7 +407,6 @@ public:
         }
 
         return Status(true, "INSERT " + std::to_string(col_assigns_.size()));
-
     }
 private:
     Token target_;
@@ -596,21 +595,23 @@ public:
         return Status(true, "ok");
     }
     Status Execute(QueryState& qs) override {
-        RowSet* rowset = new RowSet(table_->GetAttributes());
+        std::vector<Attribute> row_description = { Attribute("name", DatumType::Text, true), 
+                                                   Attribute("type", DatumType::Text, true), 
+                                                   Attribute("not null", DatumType::Bool, true) };
+        RowSet* rowset = new RowSet(row_description);
 
         std::string not_null = "not null";
         for (const Attribute& a: table_->Attrs()) {
             std::vector<Datum> data = { Datum(a.name), Datum(Datum::TypeToString(a.type)) };
-            if (a.not_null_constraint) {
-                data.emplace_back(not_null);
-            }
+            data.emplace_back(a.not_null_constraint);
             rowset->rows_.push_back(new Row(data));
         }
 
+        /*
         for (const Index& i: table_->idxs_) {
             std::vector<Datum> index_name = {Datum(i.name_)};
             rowset->rows_.push_back(new Row(index_name));
-        }
+        }*/
 
         return Status(true, "table '" + target_relation_.lexeme + "'", rowset);
     }

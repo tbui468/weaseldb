@@ -147,6 +147,7 @@ public:
                     break;
                 }
                 case 'C': {
+                    //std::cout << msg << std::endl;
                     //command complete
                     //do any clean up after transaction is done
                     types.clear(); //clear row description types so that next query can start fresh

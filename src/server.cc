@@ -64,6 +64,7 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
                 }
             }
 
+            std::cout << s.Msg() << std::endl;
             std::string buf = PreparePacket('C', s.Msg());
             Send(conn_fd, buf);
         }

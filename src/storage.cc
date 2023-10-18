@@ -90,6 +90,8 @@ void Storage::DropTableHandle(const std::string& name) {
     //delete database
     rocksdb::Options options;
     rocksdb::DestroyDB(PrependDBPath(name), options);
+
+    table_handles_.erase(name);
 }
 
 void Batch::Put(const std::string& db_name, rocksdb::ColumnFamilyHandle* cfh, const std::string& key, const std::string& value) {
