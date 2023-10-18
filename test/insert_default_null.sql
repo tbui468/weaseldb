@@ -4,3 +4,4 @@ insert into planets (name, moons) values ('Jupiter', 3), ('Saturn', 50);
 insert into planets (name) values ('Neptune');
 select name, moons, rings from planets;
 
+drop table planets;

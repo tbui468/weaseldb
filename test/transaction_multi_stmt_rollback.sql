@@ -1,4 +1,3 @@
-
 create table planets (id int4, name text, primary key (id));
 
 begin;
@@ -23,3 +22,4 @@ rollback;
 
 select id, name from planets;
 
+drop table planets;

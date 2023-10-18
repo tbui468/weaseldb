@@ -9,3 +9,6 @@ select '----';
 select m1.id, m1.name, m2.id, m2.name from moons as m1 cross join moons as m2;
 select '----';
 select m1.id, m1.name, m2.id, m2.name from planets as m1 cross join planets as m2;
+
+drop table planets;
+drop table moons;

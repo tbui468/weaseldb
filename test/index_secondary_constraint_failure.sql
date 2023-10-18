@@ -5,3 +5,5 @@ insert into planets (system, name) value ('Sol', 'Earth'), ('Sirius', 'A');
 insert into planets (system, name) value ('Sol', 'Mars');
 
 select system, name from planets;
+
+drop table planets;

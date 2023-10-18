@@ -7,3 +7,4 @@ select max(id), max(name), max(moons) from planets;
 select min(id), min(name), min(moons) from planets;
 select avg(id) from planets;
 
+drop table planets;

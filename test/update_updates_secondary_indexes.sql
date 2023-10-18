@@ -5,3 +5,5 @@ update planets set system = 'Sirius' where system = 'Sol';
 insert into planets (system, name) value ('Sol', 'Earth');
 
 select _rowid, system, name from planets;
+
+drop table planets;

@@ -267,11 +267,14 @@ public:
         if (!s.Ok()) return s;
 
         switch (op_.type) {
-            case TokenType::Minus:
-                if (Datum::TypeIsNumeric(right.Type())) {
-                    *result = Datum(-WSLDB_NUMERIC_LITERAL(right));
+            case TokenType::Minus: {
+                if (Datum::TypeIsInteger(right.Type())) {
+                    *result = Datum(static_cast<int64_t>(-WSLDB_NUMERIC_LITERAL(right)));
+                } else {
+                    *result = Datum(static_cast<float>(-WSLDB_NUMERIC_LITERAL(right)));
                 }
                 break;
+            }
             case TokenType::Not:
                 *result = Datum(!right.AsBool());
                 break;

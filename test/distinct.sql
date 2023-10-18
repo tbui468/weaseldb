@@ -4,3 +4,5 @@ insert into planets (id, name, mass, rings) values (1, 'Earth', 30.0, false), (2
 select distinct rings from planets;
 select distinct rings, name from planets;
 select distinct id from planets;
+
+drop table planets;

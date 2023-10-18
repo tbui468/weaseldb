@@ -5,3 +5,6 @@ create table moons (name text, planet text, primary key(name));
 insert into moons (name, planet) values ('Luna', 'Earth'), ('Deimos', 'Mars'), ('Phobos', 'Mars');
 
 select p.name, p.moons, m.name from planets as p inner join moons as m on p.name = m.planet;
+
+drop table planets;
+drop table moons;
