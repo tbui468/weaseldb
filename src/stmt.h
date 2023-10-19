@@ -333,7 +333,7 @@ public:
             std::cout << a.ToString() << std::endl;
         }
 
-        return Status(true, "(" + std::to_string(final_rs->rows_.size()) + " rows)", final_rs);
+        return Status(true, "(" + std::to_string(final_rs->rows_.size()) + " rows)", {final_rs});
     }
 private:
     WorkTable* target_;
@@ -599,25 +599,31 @@ public:
         return Status(true, "ok");
     }
     Status Execute(QueryState& qs) override {
+        //column information
         std::vector<Attribute> row_description = { Attribute("name", DatumType::Text, true), 
                                                    Attribute("type", DatumType::Text, true), 
                                                    Attribute("not null", DatumType::Bool, true) };
         RowSet* rowset = new RowSet(row_description);
 
-        std::string not_null = "not null";
         for (const Attribute& a: table_->Attrs()) {
             std::vector<Datum> data = { Datum(a.name), Datum(Datum::TypeToString(a.type)) };
             data.emplace_back(a.not_null_constraint);
             rowset->rows_.push_back(new Row(data));
         }
 
-        /*
-        for (const Index& i: table_->idxs_) {
-            std::vector<Datum> index_name = {Datum(i.name_)};
-            rowset->rows_.push_back(new Row(index_name));
-        }*/
+        //index information
+        std::vector<Attribute> idx_row_description = { Attribute("type", DatumType::Text, true),
+                                                       Attribute("name", DatumType::Text, true) };
 
-        return Status(true, "table '" + target_relation_.lexeme + "'", rowset);
+        RowSet* idx_rowset = new RowSet(idx_row_description);
+
+        std::string type = "lsm tree";
+        for (const Index& i: table_->idxs_) {
+            std::vector<Datum> index_info = { Datum(type), Datum(i.name_) };
+            idx_rowset->rows_.push_back(new Row(index_info));
+        }
+
+        return Status(true, "table '" + target_relation_.lexeme + "'", { rowset, idx_rowset });
     }
 private:
     Token target_relation_;

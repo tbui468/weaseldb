@@ -1,14 +1,16 @@
 #pragma once
 
+#include <vector>
+
 namespace wsldb {
 
 class RowSet;
 
 class Status {
 public:
-    Status(): ok_(true), msg_(""), tuples_(nullptr) {}
-    Status(bool ok, std::string msg): ok_(ok), msg_(std::move(msg)), tuples_(nullptr) {}
-    Status(bool ok, std::string msg, RowSet* tuples): ok_(ok), msg_(std::move(msg)), tuples_(tuples) {}
+    Status(): ok_(true), msg_(""), rowsets_({}) {}
+    Status(bool ok, std::string msg): ok_(ok), msg_(std::move(msg)), rowsets_({}) {}
+    Status(bool ok, std::string msg, std::vector<RowSet*> rowsets): ok_(ok), msg_(std::move(msg)), rowsets_(rowsets) {}
 
     inline bool Ok() {
         return ok_;
@@ -18,13 +20,13 @@ public:
         return msg_;
     }
 
-    inline RowSet* Tuples() {
-        return tuples_;
+    inline std::vector<RowSet*> Tuples() {
+        return rowsets_;
     }
 private:
     bool ok_;
     std::string msg_;
-    RowSet* tuples_;
+    std::vector<RowSet*> rowsets_;
 };
 
 }

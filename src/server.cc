@@ -52,15 +52,17 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
 
             //TODO: if error, send 'E' + message and continue loop
 
-            if (s.Ok() && s.Tuples()) { 
-                std::string row_description = s.Tuples()->SerializeRowDescription();
-                std::string buf = PreparePacket('T', row_description);
-                Send(conn_fd, buf);
-
-                std::vector<std::string> data_rows = s.Tuples()->SerializeDataRows();
-                for (const std::string& r: data_rows) {
-                    std::string buf = PreparePacket('D', r);
+            if (s.Ok()) {
+                for (RowSet* rs: s.Tuples()) {
+                    std::string row_description = rs->SerializeRowDescription();
+                    std::string buf = PreparePacket('T', row_description);
                     Send(conn_fd, buf);
+
+                    std::vector<std::string> data_rows = rs->SerializeDataRows();
+                    for (const std::string& r: data_rows) {
+                        std::string buf = PreparePacket('D', r);
+                        Send(conn_fd, buf);
+                    }
                 }
             }
 

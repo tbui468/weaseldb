@@ -74,6 +74,7 @@ public:
             //read first byte
             switch (code) {
                 case 'T': {
+                    types.clear(); //some queries such as 'describe' return multiple rowsets (including row descriptions)
                     int off = 0;
                     int count = *((int*)(msg.data()));
                     off += sizeof(int);

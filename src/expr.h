@@ -576,7 +576,10 @@ public:
         if (!s.Ok())
             return s;
 
-        RowSet* rs = s.Tuples();
+        if (s.Tuples().empty())
+            return Status(false, "Error: RowSet is empty - dbms programmer needs to fix this");
+
+        RowSet* rs = s.Tuples().at(0);
         if (rs->rows_.size() != 1)
             return Status(false, "Error: Subquery must produce a single row");
 

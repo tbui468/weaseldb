@@ -1,2 +1,0 @@
-0,Sirius,Earth,
-1,Sol,Earth,
