@@ -91,8 +91,6 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Table;
     } else if (len == 4 && strncmp(&query_.at(idx), "text", len) == 0) {
         type = TokenType::Text;
-    } else if (len == 4 && strncmp(&query_.at(idx), "int4", len) == 0) {
-        type = TokenType::Int4;
     } else if (len == 6 && strncmp(&query_.at(idx), "float4", len) == 0) {
         type = TokenType::Float4;
     } else if (len == 7 && strncmp(&query_.at(idx), "primary", len) == 0) {

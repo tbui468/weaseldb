@@ -1,4 +1,4 @@
-create table planets (name text, moons int4, rings bool, primary key (name));
+create table planets (name text, moons int8, rings bool, primary key (name));
 insert into planets (name, moons, rings) values ('Earth', 1, false), ('Mars', 2, false), ('Saturn', 50, true), ('Jupiter', 40, true), ('Mercury', 0, false);
 insert into planets (name, moons, rings) values ('Neptune', 8, true);
 

@@ -355,19 +355,13 @@ private:
 class ColAssign: public Expr {
 public:
     ColAssign(Token col, Expr* right): 
-        col_(col), right_(right), scope_(-1), idx_(-1), physical_type_(DatumType::Null) {}
+        col_(col), right_(right), scope_(-1), idx_(-1) {}
     inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
         qs.is_agg = false;
 
         Datum right;
         Status s = right_->Eval(qs, r, &right);
         if (!s.Ok()) return s;
-
-        //demote int8 (working integer type in wsldb) evaluated type to fit physical type on disk
-        if (right.IsType(DatumType::Int8) && physical_type_ == DatumType::Int4) {
-            int32_t value = WSLDB_INTEGER_LITERAL(right);
-            right = Datum(value);
-        }
 
         r->data_.at(idx_) = right;
 
@@ -400,7 +394,6 @@ public:
         }
 
         *evaluated_type = a.type;
-        physical_type_ = a.type;
         idx_ = a.idx;
         scope_ = a.scope;
 
@@ -411,9 +404,6 @@ private:
     Expr* right_;
     int scope_;
     int idx_;
-    //need physical type saved during analyze stage so that
-    //the evaluation stage can demote integer working type (int8) to int4 if necessary
-    DatumType physical_type_;
 };
 
 struct OrderCol {

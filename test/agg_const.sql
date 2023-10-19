@@ -1,4 +1,4 @@
-create table planets (id int4, primary key (id));
+create table planets (id int8, primary key (id));
 insert into planets (id) values (1), (2), (3);
 
 select count(5);

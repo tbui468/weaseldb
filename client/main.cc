@@ -102,12 +102,6 @@ public:
                             std::cout << "null,";
                         } else {
                             switch (type) {
-                                case DatumType::Int4: {
-                                    int value = *((int*)(msg.data() + off));
-                                    off += sizeof(int);
-                                    std::cout << value << ",";
-                                    break;
-                                }
                                 case DatumType::Int8: {
                                     int64_t value = *((int64_t*)(msg.data() + off));
                                     off += sizeof(int64_t);

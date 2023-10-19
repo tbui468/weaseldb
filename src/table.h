@@ -71,7 +71,7 @@ public:
 //in case the same attribute name is used across multiple tables
 struct WorkingAttribute: public Attribute {
     //dummy constructor to allow creation on stack (used in WorkingAttributeSet functions)
-    WorkingAttribute(): Attribute("", DatumType::Int4, true), idx(-1), scope(-1) {} //placeholders
+    WorkingAttribute(): Attribute("", DatumType::Null, true), idx(-1), scope(-1) {} //placeholders
     WorkingAttribute(Attribute a, int idx): Attribute(a.name, a.type, a.not_null_constraint), idx(idx), scope(-1) {} //scope is placeholder
 
     int idx; //attributes of later tables are offset if multiple tables are joined into a single working table
@@ -82,9 +82,7 @@ struct WorkingAttribute: public Attribute {
             return Status(false, "Error: Value violates column 'not null' constraint");
         }
 
-        bool will_demote_int8_literal_later = this->type == DatumType::Int4 && type == DatumType::Int8;
-
-        if (!will_demote_int8_literal_later && type != DatumType::Null && type != this->type) {
+        if (type != DatumType::Null && type != this->type) {
             return Status(false, "Error: Value type does not match column type in table");
         }
 
@@ -191,7 +189,7 @@ public:
     std::vector<Attribute> GetAttributes() const {
         std::vector<Attribute> ret;
         for (int i = 0; i < WorkingAttributeCount(); i++) {
-            ret.emplace_back("", DatumType::Int4, true); //placeholder just so that vector is correct size (probably a better way to do this)
+            ret.emplace_back("", DatumType::Null, true); //placeholder just so that vector is correct size (probably a better way to do this)
         }
 
         for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: attrs_) {

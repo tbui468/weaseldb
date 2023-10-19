@@ -11,7 +11,6 @@ enum class TokenType {
     Create,
     Table, 
     Text,
-    Int4,
     Int8,
     Bool,
     Float4,

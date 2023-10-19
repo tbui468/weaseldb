@@ -13,8 +13,6 @@ std::string TokenTypeToString(TokenType type) {
             return "Table";
         case TokenType::Text:
             return "Text";
-        case TokenType::Int4:
-            return "Int4";
         case TokenType::Int8:
             return "Int8";
         case TokenType::Float4:
@@ -181,8 +179,6 @@ DatumType TypeTokenToDatumType(TokenType type) {
     switch (type) {
         case TokenType::Int8:
             return DatumType::Int8;
-        case TokenType::Int4:
-            return DatumType::Int4;
         case TokenType::Float4:
             return DatumType::Float4;
         case TokenType::Text:
@@ -196,8 +192,7 @@ DatumType TypeTokenToDatumType(TokenType type) {
 }
 
 bool TokenTypeValidDataType(TokenType type) {
-    return type == TokenType::Int4 ||
-           type == TokenType::Int8 ||
+    return type == TokenType::Int8 ||
            type == TokenType::Float4 ||
            type == TokenType::Text ||
            type == TokenType::Bool;

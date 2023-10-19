@@ -7,11 +7,9 @@
 
 namespace wsldb {
 
-#define WSLDB_NUMERIC_LITERAL(d) ((d).IsType(DatumType::Float4) ? (d).AsFloat4() : (d).IsType(DatumType::Int4) ? (d).AsInt4() : (d).AsInt8())
-#define WSLDB_INTEGER_LITERAL(d) ((d).IsType(DatumType::Int4) ? (d).AsInt4() : (d).AsInt8())
+#define WSLDB_NUMERIC_LITERAL(d) ((d).IsType(DatumType::Float4) ? (d).AsFloat4() : (d).AsInt8())
 
 enum class DatumType {
-    Int4,
     Int8,
     Float4,
     Text,
@@ -25,8 +23,6 @@ public:
         type_ = type;
         switch (type) {
             case DatumType::Int8: {
-                //all integer literals are evaluated to int8 for processing in wsldb
-                //if schema expects int4, will be demoted to int4 before written to disk inside of class ColAssign
                 int64_t value = std::stol(lexeme);
                 data_.append((char*)&value, sizeof(int64_t));
                 break;
@@ -72,11 +68,6 @@ public:
 
         type_ = type;
         switch (type) {
-            case DatumType::Int4: {
-                data_.append((char*)(buf.data() + *off), sizeof(int));
-                *off += sizeof(int);
-                break;
-            }
             case DatumType::Int8: {
                 data_.append((char*)(buf.data() + *off), sizeof(int64_t));
                 *off += sizeof(int64_t);
@@ -111,11 +102,7 @@ public:
         data_ = "";
     }
 
-    //TODO: change this to int32_t, and fix any warnings/errors that occur in program
-    Datum(int i) {
-        type_ = DatumType::Int4;
-        data_.append((char*)&i, sizeof(int));
-    }
+    Datum(int i): Datum(static_cast<int64_t>(i)) {}
 
     Datum(int64_t i) {
         type_ = DatumType::Int8;
@@ -172,10 +159,6 @@ public:
         return data_;
     }
 
-    int AsInt4() const {
-        return *((int*)(data_.data()));
-    }
-
     int64_t AsInt8() const {
         return *((int64_t*)(data_.data()));
     }
@@ -190,10 +173,10 @@ public:
 
     Datum operator+(const Datum& d) {
         if (TypeIsInteger(this->Type()) && TypeIsInteger(d.Type())) {
-            return Datum(static_cast<int64_t>(WSLDB_NUMERIC_LITERAL(*this) + WSLDB_NUMERIC_LITERAL(d)));
+            return Datum(static_cast<int64_t>(this->AsInt8() + d.AsInt8()));
         }
 
-        return Datum(WSLDB_NUMERIC_LITERAL(*this) + WSLDB_NUMERIC_LITERAL(d));
+        return Datum(static_cast<float>(WSLDB_NUMERIC_LITERAL(*this) + WSLDB_NUMERIC_LITERAL(d)));
     }
 
     Datum operator+=(const Datum& d) {
@@ -202,7 +185,11 @@ public:
     }
 
     Datum operator-(const Datum& d) {
-        return Datum(WSLDB_NUMERIC_LITERAL(*this) - WSLDB_NUMERIC_LITERAL(d));
+        if (TypeIsInteger(this->Type()) && TypeIsInteger(d.Type())) {
+            return Datum(static_cast<int64_t>(this->AsInt8() - d.AsInt8()));
+        }
+
+        return Datum(static_cast<float>(WSLDB_NUMERIC_LITERAL(*this) - WSLDB_NUMERIC_LITERAL(d)));
     }
 
     Datum operator-=(const Datum& d) {
@@ -211,7 +198,11 @@ public:
     }
 
     Datum operator*(const Datum& d) {
-        return Datum(WSLDB_NUMERIC_LITERAL(*this) * WSLDB_NUMERIC_LITERAL(d));
+        if (TypeIsInteger(this->Type()) && TypeIsInteger(d.Type())) {
+            return Datum(static_cast<int64_t>(this->AsInt8() * d.AsInt8()));
+        }
+
+        return Datum(static_cast<float>(WSLDB_NUMERIC_LITERAL(*this) * WSLDB_NUMERIC_LITERAL(d)));
     }
 
     Datum operator*=(const Datum& d) {
@@ -220,7 +211,11 @@ public:
     }
 
     Datum operator/(const Datum& d) {
-        return Datum(WSLDB_NUMERIC_LITERAL(*this) / WSLDB_NUMERIC_LITERAL(d));
+        if (TypeIsInteger(this->Type()) && TypeIsInteger(d.Type())) {
+            return Datum(static_cast<int64_t>(this->AsInt8() / d.AsInt8()));
+        }
+
+        return Datum(static_cast<float>(WSLDB_NUMERIC_LITERAL(*this) / WSLDB_NUMERIC_LITERAL(d)));
     }
 
     Datum operator/=(const Datum& d) {
@@ -230,7 +225,6 @@ public:
 
     bool operator==(const Datum& d) {
         switch (type_) {
-            case DatumType::Int4:
             case DatumType::Int8:
             case DatumType::Float4:
                 return WSLDB_NUMERIC_LITERAL(*this) - WSLDB_NUMERIC_LITERAL(d) == 0;
@@ -252,7 +246,6 @@ public:
 
     bool operator<(const Datum& d) {
         switch (type_) {
-            case DatumType::Int4:
             case DatumType::Int8:
             case DatumType::Float4:
                 return WSLDB_NUMERIC_LITERAL(*this) - WSLDB_NUMERIC_LITERAL(d) < 0;
@@ -299,8 +292,6 @@ public:
 
 static std::string TypeToString(DatumType type) {
     switch (type) {
-        case DatumType::Int4:
-            return "int4";
         case DatumType::Int8:
             return "int8";
         case DatumType::Float4:
@@ -317,15 +308,13 @@ static std::string TypeToString(DatumType type) {
 }
 
 static bool TypeIsNumeric(DatumType type) {
-    return type == DatumType::Int4 ||
-           type == DatumType::Int8 ||
+    return type == DatumType::Int8 ||
            type == DatumType::Float4;
 }
 
 
 static bool TypeIsInteger(DatumType type) {
-    return type == DatumType::Int4 ||
-           type == DatumType::Int8;
+    return type == DatumType::Int8;
 }
 
 private:

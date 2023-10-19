@@ -324,7 +324,7 @@ public:
         Status s = limit_->Eval(qs, &dummy_row, &d);
         if (!s.Ok()) return s;
 
-        size_t limit = d == -1 ? std::numeric_limits<size_t>::max() : WSLDB_INTEGER_LITERAL(d);
+        size_t limit = d == -1 ? std::numeric_limits<size_t>::max() : d.AsInt8();
         if (limit < final_rs->rows_.size()) {
             final_rs->rows_.resize(limit);
         }
