@@ -51,6 +51,11 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             Status s = interp.ExecuteTxn(txn);
 
             //TODO: if error, send 'E' + message and continue loop
+            if (!s.Ok()) {
+                std::string buf = PreparePacket('E', s.Msg());
+                Send(conn_fd, buf);
+                continue;
+            }
 
             if (s.Ok()) {
                 for (RowSet* rs: s.Tuples()) {
@@ -66,7 +71,6 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
                 }
             }
 
-            std::cout << s.Msg() << std::endl;
             std::string buf = PreparePacket('C', s.Msg());
             Send(conn_fd, buf);
         }

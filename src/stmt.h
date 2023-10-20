@@ -329,10 +329,6 @@ public:
             final_rs->rows_.resize(limit);
         }
 
-        for (const Attribute& a: final_rs->attrs_) {
-            std::cout << a.ToString() << std::endl;
-        }
-
         return Status(true, "(" + std::to_string(final_rs->rows_.size()) + " rows)", {final_rs});
     }
 private:

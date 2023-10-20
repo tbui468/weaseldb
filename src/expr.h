@@ -172,7 +172,7 @@ public:
 
         if (l.IsType(DatumType::Null) || r.IsType(DatumType::Null)) {
             *result = Datum();
-            return Status(true, "ok");
+            return Status();
         }
 
         switch (op_.type) {
@@ -191,7 +191,7 @@ public:
             default:                        return Status(false, "Error: Invalid binary operator");
         }
 
-        return Status(true, "ok");
+        return Status();
     }
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
@@ -212,7 +212,7 @@ public:
 
         if (left_type == DatumType::Null || right_type == DatumType::Null) {
             *evaluated_type = DatumType::Null;
-            return Status(true, "ok");
+            return Status();
         }
 
         switch (op_.type) {
@@ -248,7 +248,7 @@ public:
                 break;
         }
 
-        return Status(true, "ok");
+        return Status();
     }
 private:
     Token op_;
@@ -463,21 +463,38 @@ public:
         return fcn_.lexeme + arg_->ToString();
     }
     Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
+        DatumType type;
         {
-            Status s = arg_->Analyze(qs, evaluated_type);
+            Status s = arg_->Analyze(qs, &type);
             if (!s.Ok()) {
                 return s;
             }
         }
 
-        //Null is a placeholder - actual type will be set during execution 
-        //since the aggregate function type + argument type determines the resulting DatumType
-        *evaluated_type = DatumType::Null;
+        switch (fcn_.type) {
+            case TokenType::Avg:
+                //TODO: need to think about how we want to deal with integer division
+                //using floor division now if argument is integer type - what does postgres do?
+                *evaluated_type = type;
+                break;
+            case TokenType::Count:
+                *evaluated_type = DatumType::Int8;
+                break;
+            case TokenType::Max:
+            case TokenType::Min:
+            case TokenType::Sum:
+                *evaluated_type = type;
+                break;
+            default:
+                return Status(false, "Error: Invalid function name");
+                break;
+        }
 
         if (!TokenTypeIsAggregateFunction(fcn_.type)) {
             return Status(false, "Error: Function '" + fcn_.lexeme + "' does not exist");
         }
-        return Status(true, "ok");
+
+        return Status();
     }
 private:
     Token fcn_;
@@ -578,7 +595,7 @@ public:
 
         *result = rs->rows_.at(0)->data_.at(0);
 
-        return Status(true, "ok");
+        return Status();
     }
     std::string ToString() override {
         return "scalar subquery";
@@ -599,7 +616,7 @@ public:
 
         *evaluated_type = types.at(0);
 
-        return Status(true, "ok");
+        return Status();
     }
 private:
     Stmt* stmt_;

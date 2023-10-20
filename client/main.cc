@@ -145,10 +145,10 @@ public:
                     //std::cout << msg << std::endl;
                     //command complete
                     //do any clean up after transaction is done
-                    types.clear(); //clear row description types so that next query can start fresh
                     break;
                 }
                 case 'E':
+                    //std::cout << msg << std::endl;
                     //error
                     //TODO: print out error message
                     //break out of inner loop to allow client to send new query
