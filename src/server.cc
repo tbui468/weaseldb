@@ -30,12 +30,15 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
         //read in message
         std::vector<Token> tokens = std::vector<Token>();
         {
+            std::cout << "handling connection\n";
             std::string msg;
             if (!Recv(conn_fd, msg)) {
                 break;
             }
+            std::cout << "packet length: " << msg.size() << std::endl;
             int len = *((int*)(msg.data() + sizeof(char)));
             std::string query = msg.substr(sizeof(char) + sizeof(int), len - sizeof(int));
+            std::cout << "query: " << query << std::endl;
 
             Tokenizer tokenizer(query);
             do {
