@@ -6,7 +6,8 @@ RED = '\033[31m'
 ENDC = '\033[0m'
 
 def test(filename):
-    cmd = "./../client/wslclient ./" + filename + ".sql"
+    #cmd = "./../cpp_client/wslclient ./" + filename + ".sql"
+    cmd = "./../go_client/go_client ./" + filename + ".sql"
     cmd += " > result.txt"
 
     return_code = subprocess.call(cmd, shell=True)

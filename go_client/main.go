@@ -1,7 +1,5 @@
 package main
 
-//move go_client to weasel into directory called go_client/
-//git commit
 //run go client in two ways:
 //  run with sql script
 //  run without argument, and use command line to enter sql
@@ -18,6 +16,8 @@ import (
     "reflect"
     "math"
     "fmt"
+    "io/ioutil"
+    "bufio"
 )
 
 const (
@@ -93,26 +93,25 @@ func Write(conn *net.TCPConn, buf []byte) {
 
 func Read(conn *net.TCPConn, buf []byte) []byte {
     tmp := make([]byte, 256)
-    read := 0
 
-    for read < 5 {
+    for len(buf) < 5 {
         n, err := conn.Read(tmp)
         if err != nil {
             println("Read failed:", err.Error())
         }
         buf = append(buf, tmp[:n]...)
-        read += n
     }
 
     size := binary.LittleEndian.Uint32(buf[1:5]) + 1
 
-    for read < int(size) {
+    tmp = make([]byte, 256)
+
+    for len(buf) < int(size) {
         n, err := conn.Read(tmp)
         if err != nil {
             println("Read failed:", err.Error())
         }
         buf = append(buf, tmp[:n]...)
-        read += n
     }
 
     return buf
@@ -150,12 +149,17 @@ func ReadText(buf []byte, off int) (string, int) {
 }
 
 func ProcessResponse(conn *net.TCPConn, buf []byte, rd RowDescription) (bool, []byte, RowDescription) {
-    if len(buf) < 5 {
+    for len(buf) < 5 {
         buf = Read(conn, buf)
     }
 
     code := string(buf[0:1])
     size := binary.LittleEndian.Uint32(buf[1:5])
+
+    for len(buf) < int(size) + 1 {
+        buf = Read(conn, buf)
+    }
+
     msg := buf[5:size + 1]
     off := 0
     switch code {
@@ -175,7 +179,7 @@ func ProcessResponse(conn *net.TCPConn, buf []byte, rd RowDescription) (bool, []
                 var is_null bool
                 is_null, off = ReadBool(msg, off)
                 if is_null {
-                    print("null,")
+                    fmt.Print("null,")
                     continue
                 }
 
@@ -183,23 +187,22 @@ func ProcessResponse(conn *net.TCPConn, buf []byte, rd RowDescription) (bool, []
                 case Int8:
                     var i int64
                     i, off = ReadInt8(msg, off)
-                    print(i)
-                    print(",")
+                    fmt.Printf("%d,", i)
                 case Float4:
                     var i float32
                     i, off = ReadFloat4(msg, off)
-                    fmt.Printf("%f,", i)
+                    fmt.Printf("%.1f,", i)
                 case Text:
                     var text string
                     text, off = ReadText(msg, off)
-                    print(text + ",")
+                    fmt.Printf("%s,", text)
                 case Bool:
                     var b bool
                     b, off = ReadBool(msg, off)
                     if b {
-                        print("true,")
+                        fmt.Print("true,")
                     } else {
-                        print("false,")
+                        fmt.Print("false,")
                     }
                 case Null:
                     print("[Error],")
@@ -207,12 +210,11 @@ func ProcessResponse(conn *net.TCPConn, buf []byte, rd RowDescription) (bool, []
                     print("[Error],")
                 }
             }
-            println("")
+            fmt.Print("\n")
         case "C":
-            //TODO: print out message
-            println("query successfully completed")
+            //println("query successfully completed")
         case "E":
-            println("error processing query")
+            //fmt.Println(string(msg))
         case "Z":
             return true, buf[1 + size:], rd
         default:
@@ -240,11 +242,33 @@ func ProcessQuery(conn *net.TCPConn, query string) {
 }
 
 func main() {
+    args := os.Args[1:]
+
     conn := ConnectToServer("localhost:3000")
     defer conn.Close()
 
-    ProcessQuery(conn, "select 'hello';")
-    ProcessQuery(conn, "select 1 + 5, 10.0 - 5.0;")
+    switch len(args) {
+    case 0:
+        reader := bufio.NewReader(os.Stdin)
+        for {
+            print(">")
+            text, err := reader.ReadString('\n')
+            if err != nil {
+                os.Exit(1)
+            }
+            ProcessQuery(conn, text)
+        }
+    case 1:
+        bytes, err := ioutil.ReadFile(args[0])
+        if err != nil {
+            os.Exit(1)
+        }
+
+        ProcessQuery(conn, string(bytes))
+    default:
+        println("Usage: go_client [filename]")
+        os.Exit(1)
+    }
 }
 
 

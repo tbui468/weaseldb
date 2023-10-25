@@ -88,7 +88,7 @@ public:
                         std::string name = msg.substr(off, name_size);
                         off += name_size;
 
-                        std::cout << name << ": " << Datum::TypeToString(type) << std::endl;
+                        //std::cout << name << ": " << Datum::TypeToString(type) << std::endl;
                     }
 
                     break;
