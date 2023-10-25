@@ -30,9 +30,9 @@ private:
     }
 
     inline void SkipWhitespace() {
-        while (query_.at(idx_) == ' ' || 
+        while (!AtEnd() && (query_.at(idx_) == ' ' || 
                query_.at(idx_) == '\n' || 
-               query_.at(idx_) == '\t') {
+               query_.at(idx_) == '\t')) {
             idx_++;
         }
     }
