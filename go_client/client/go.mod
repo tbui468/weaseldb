@@ -2,6 +2,9 @@ module client
 
 go 1.13
 
-replace wsldb => ../wsldb
+replace wsql => ../wsql
 
-require wsldb v0.0.0-00010101000000-000000000000
+require (
+	github.com/gin-gonic/gin v1.9.1
+	wsql v0.0.0-00010101000000-000000000000
+)
