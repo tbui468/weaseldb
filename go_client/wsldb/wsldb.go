@@ -1,4 +1,4 @@
-package main
+package wsldb
 
 //run go client in two ways:
 //  run with sql script
@@ -16,8 +16,6 @@ import (
     "reflect"
     "math"
     "fmt"
-    "io/ioutil"
-    "bufio"
 )
 
 const (
@@ -241,6 +239,7 @@ func ProcessQuery(conn *net.TCPConn, query string) {
 
 }
 
+/*
 func main() {
     args := os.Args[1:]
 
@@ -270,7 +269,7 @@ func main() {
         os.Exit(1)
     }
 }
-
+*/
 
 
 
