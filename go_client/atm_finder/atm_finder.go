@@ -7,6 +7,7 @@ import (
     "io/ioutil"
     "github.com/gin-gonic/gin"
     "net/http"
+    "encoding/json"
     "strconv"
 )
 
@@ -17,7 +18,7 @@ type Atm struct {
     Country     string  `json:"country"`
     City        string  `json:"city"`
     State       string  `json:"state"`
-    ZipCode     int64   `json:"zip_code"`
+    ZipCode     string  `json:"zip_code"`
 }
 
 func getAtms(c *gin.Context) {
@@ -48,8 +49,7 @@ func getAtmById(c *gin.Context) {
     }
 
     atms := FillStruct(readers[0])
-    c.IndentedJSON(http.StatusOK, atms)
-
+    c.IndentedJSON(http.StatusOK, atms[0])
 }
 
 func Quote(s string) string {
@@ -68,7 +68,7 @@ func postAtms(c *gin.Context) {
     }
 
     //TODO: should not be concatenating values like this - big potential security issue with SQL injection
-    values := Quote(a.BankName) + ", " + Quote(a.Address) + ", " + Quote(a.Country) + ", "  + Quote(a.City) + ", " + Quote(a.State) + ", " + strconv.FormatInt(a.ZipCode, 10)
+    values := Quote(a.BankName) + ", " + Quote(a.Address) + ", " + Quote(a.Country) + ", "  + Quote(a.City) + ", " + Quote(a.State) + ", " + a.ZipCode
     insert := "insert into atm_locations (bank_name, address, country, city, state, zip_code) values (" + values + ");"
     query := "select max(_rowid) from atm_locations;"
     start := "begin;"
@@ -85,11 +85,79 @@ func postAtms(c *gin.Context) {
     c.IndentedJSON(http.StatusCreated, a)
 }
 
+func updateAtmById(c *gin.Context) {
+    conn, ok := c.MustGet("tcpConn").(*net.TCPConn)
+    if !ok {
+        os.Exit(1);
+    }
+
+    jsondata, err := ioutil.ReadAll(c.Request.Body)
+    if err != nil {
+        os.Exit(1)
+    }
+
+    var dat map[string]interface{}
+    if err := json.Unmarshal(jsondata, &dat); err != nil {
+        os.Exit(1)
+    }
+
+    set := ""
+    count := 0
+    for k, v := range dat {
+        switch k {
+        case "bank_name":
+            set += "bank_name = " + Quote(v.(string))
+        case "address":
+            set += "address = " + Quote(v.(string))
+        case "country":
+            set += "country = " + Quote(v.(string))
+        case "city":
+            set += "city = " + Quote(v.(string))
+        case "state":
+            set += "state = " + Quote(v.(string))
+        case "zip_code":
+            set += "zip_code = " + v.(string)
+        default:
+            os.Exit(1)
+        }
+        if count < len(dat) - 1 {
+            set += ", "
+        }
+        count += 1
+    }
+
+    id := c.Param("id")
+    query := "update atm_locations set " + set + " where _rowid = " + string(id) + ";"
+    sel := "select _rowid, bank_name, address, country, city, state, zip_code from atm_locations where _rowid = " + string(id) + ";"
+    readers := wsldb.ExecuteQuery(conn, "begin; " + query + sel + " commit;")
+
+    for _, reader := range readers {
+        if reader.RowCount != 0 {
+            atms := FillStruct(reader)
+            c.IndentedJSON(http.StatusOK, atms[0])
+            return
+        }
+    }
+
+    c.Status(http.StatusOK)
+}
+
+func deleteAtmById(c *gin.Context) {
+    conn, ok := c.MustGet("tcpConn").(*net.TCPConn)
+    if !ok {
+        os.Exit(1);
+    }
+
+    id := c.Param("id")
+    wsldb.ExecuteQuery(conn, "delete from atm_locations where _rowid = " + string(id) + ";")
+    c.Status(http.StatusOK)
+}
+
 func FillStruct(reader wsldb.Reader) []Atm {
     atms := make([]Atm, 0)
 
     for row := 0; row < reader.RowCount; row++ {
-        atm := Atm{Id: 0, BankName: "", Address: "", Country: "", City: "", State: "", ZipCode: 0}
+        atm := Atm{Id: 0, BankName: "", Address: "", Country: "", City: "", State: "", ZipCode: ""}
 
         wsldb.NextType(&reader)
         atm.Id = wsldb.NextInt8(&reader);
@@ -115,7 +183,7 @@ func FillStruct(reader wsldb.Reader) []Atm {
         }
 
         if wsldb.NextType(&reader) != wsldb.Null {
-            atm.ZipCode = wsldb.NextInt8(&reader)
+            atm.ZipCode = strconv.FormatInt((wsldb.NextInt8(&reader)), 10)
         }
 
         atms = append(atms, atm)
@@ -141,69 +209,12 @@ func main() {
     }
     wsldb.ExecuteQuery(conn, string(seed))
 
-
-
     router := gin.Default()
     router.Use(ApiMiddleware(conn))
     router.GET("/atms", getAtms)
     router.GET("/atms/:id", getAtmById)
     router.POST("/atms", postAtms)
+    router.PATCH("/atms/:id", updateAtmById)
+    router.DELETE("/atms/:id", deleteAtmById)
     router.Run("localhost:8080")
-    /*
-    readers := wsldb.ExecuteQuery(conn, "select _rowid from atm_locations where _rowid = 111; select _rowid, bank_name, address from atm_locations where zip_code = 1000 or zip_code = 11011;")
-
-    for _, reader := range readers {
-        for row := 0; row < reader.RowCount; row++ {
-            for col := 0; col < reader.ColCount; col ++ {
-                switch(wsldb.NextType(&reader)) {
-                case wsldb.Int8:
-                    d := wsldb.NextInt8(&reader)
-                    fmt.Printf("%d,", d)
-                case wsldb.Float4:
-                    f := wsldb.NextFloat4(&reader)
-                    fmt.Printf("%.1f,", f)
-                case wsldb.Text:
-                    s := wsldb.NextText(&reader)
-                    fmt.Printf("%s,", s)
-                case wsldb.Bool:
-                    b := wsldb.NextBool(&reader)
-                    if b {
-                        fmt.Printf("true,")
-                    } else {
-                        fmt.Printf("false,")
-                    }
-                case wsldb.Null:
-                    fmt.Printf("null,")
-                default:
-                }
-            }
-            fmt.Printf("\n")
-        }
-    }*/
-
-    /*
-    args := os.Args[1:]
-
-    switch len(args) {
-    case 0:
-        reader := bufio.NewReader(os.Stdin)
-        for {
-            print(">")
-            text, err := reader.ReadString('\n')
-            if err != nil {
-                os.Exit(1)
-            }
-            wsldb.ProcessQuery(conn, text)
-        }
-    case 1:
-        bytes, err := ioutil.ReadFile(args[0])
-        if err != nil {
-            os.Exit(1)
-        }
-
-        wsldb.ProcessQuery(conn, string(bytes))
-    default:
-        println("Usage: go_client [filename]")
-        os.Exit(1)
-    }*/
 }
