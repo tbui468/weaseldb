@@ -1,5 +1,3 @@
-Mars,2,
-_rowid,int8,true,
-name,text,false,
-moons,int8,false,
-lsm tree,primary__rowid,
+0,Mars,2,
+1,Mars,2,
+2,Mars,2,

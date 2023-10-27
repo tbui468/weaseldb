@@ -1,7 +1,2 @@
-_rowid,int8,true,
-name,text,true,
-moons,int8,false,
-rings,bool,true,
-lsm tree,primary_name,
-Mars,2,false,
 Earth,null,false,
+Mars,2,false,

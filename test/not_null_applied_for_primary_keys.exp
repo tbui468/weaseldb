@@ -1,5 +1,2 @@
-_rowid,int8,true,
-system,text,true,
-name,text,true,
-moons,int8,false,
-lsm tree,primary_system_name,
+Sol,1,
+Sol,5,

@@ -7,7 +7,7 @@ ENDC = '\033[0m'
 
 def test(filename):
     #cmd = "./../cpp_client/wslclient ./" + filename + ".sql"
-    cmd = "./../go_client/client/client ./" + filename + ".sql"
+    cmd = "./../go_client/wsql/wsql ./" + filename + ".sql"
     cmd += " > result.txt"
 
     return_code = subprocess.call(cmd, shell=True)
