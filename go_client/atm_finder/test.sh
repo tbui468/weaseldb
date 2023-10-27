@@ -1,0 +1,1 @@
+curl http://localhost:8080/atms --header "Content-Type: application/json" --request "POST" --data '{"bank_name": "test name", "address": "test address", "country": "test country", "city": "test city", "state": "test state", "zip_code": 9999}'

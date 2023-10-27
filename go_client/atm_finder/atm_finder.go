@@ -3,52 +3,132 @@ package main
 import (
     "wsldb"
     "os"
-//    "bufio"
+    "net"
     "io/ioutil"
     "github.com/gin-gonic/gin"
     "net/http"
-    "fmt"
+    "strconv"
 )
 
 type Atm struct {
-    Id          string  `json:"id"`
-    Location    string  `json:"location"`
-}
-
-var atms = []Atm {
-    {Id: "1", Location: "New York"},
-    {Id: "2", Location: "Seattle"},
-    {Id: "3", Location: "Los Angeles"},
+    Id          int64   `json:"id"`
+    BankName    string  `json:"bank_name"`
+    Address     string  `json:"address"`
+    Country     string  `json:"country"`
+    City        string  `json:"city"`
+    State       string  `json:"state"`
+    ZipCode     int64   `json:"zip_code"`
 }
 
 func getAtms(c *gin.Context) {
-    //TODO: query database here
-    //Reader should be used to grab data (in the correct data type) from result
+    conn, ok := c.MustGet("tcpConn").(*net.TCPConn)
+    if !ok {
+        os.Exit(1);
+    }
+
+    readers := wsldb.ExecuteQuery(conn, "select _rowid, bank_name, address, country, city, state, zip_code from atm_locations;")
+    atms := FillStruct(readers[0])
     c.IndentedJSON(http.StatusOK, atms)
 }
 
 func getAtmById(c *gin.Context) {
-    id := c.Param("id")
-
-    for _, a := range atms {
-        if a.Id == id {
-            c.IndentedJSON(http.StatusOK, a)
-            return
-        }
+    conn, ok := c.MustGet("tcpConn").(*net.TCPConn)
+    if !ok {
+        os.Exit(1);
     }
 
-    c.IndentedJSON(http.StatusNotFound, gin.H{"message": "atm not found"})
-}
+    id := c.Param("id")
 
-func postAtms(c *gin.Context) {
-    var newAtm Atm
-    
-    if err := c.BindJSON(&newAtm); err != nil {
+    //TODO: should not be concatenating values like this - big potential security issue with SQL injection
+    readers := wsldb.ExecuteQuery(conn, "select _rowid, bank_name, address, country, city, state, zip_code from atm_locations where _rowid = " + string(id) + ";")
+
+    if len(readers) == 0 {
+        c.IndentedJSON(http.StatusNotFound, gin.H{"message": "atm not found"})
         return
     }
 
-    atms = append(atms, newAtm)
-    c.IndentedJSON(http.StatusCreated, newAtm)
+    atms := FillStruct(readers[0])
+    c.IndentedJSON(http.StatusOK, atms)
+
+}
+
+func Quote(s string) string {
+    return "'" + s + "'"
+}
+
+func postAtms(c *gin.Context) {
+    conn, ok := c.MustGet("tcpConn").(*net.TCPConn)
+    if !ok {
+        os.Exit(1);
+    }
+
+    var a Atm
+    if err := c.BindJSON(&a); err != nil {
+        return
+    }
+
+    //TODO: should not be concatenating values like this - big potential security issue with SQL injection
+    values := Quote(a.BankName) + ", " + Quote(a.Address) + ", " + Quote(a.Country) + ", "  + Quote(a.City) + ", " + Quote(a.State) + ", " + strconv.FormatInt(a.ZipCode, 10)
+    insert := "insert into atm_locations (bank_name, address, country, city, state, zip_code) values (" + values + ");"
+    query := "select max(_rowid) from atm_locations;"
+    start := "begin;"
+    end := "commit;"
+
+    readers := wsldb.ExecuteQuery(conn, start + insert + query + end)
+    for _, reader := range readers {
+        if reader.RowCount != 0 {
+            wsldb.NextType(&reader)
+            a.Id = wsldb.NextInt8(&reader)
+        }
+    }
+
+    c.IndentedJSON(http.StatusCreated, a)
+}
+
+func FillStruct(reader wsldb.Reader) []Atm {
+    atms := make([]Atm, 0)
+
+    for row := 0; row < reader.RowCount; row++ {
+        atm := Atm{Id: 0, BankName: "", Address: "", Country: "", City: "", State: "", ZipCode: 0}
+
+        wsldb.NextType(&reader)
+        atm.Id = wsldb.NextInt8(&reader);
+
+        if wsldb.NextType(&reader) != wsldb.Null {
+            atm.BankName = wsldb.NextText(&reader)
+        }
+
+        if wsldb.NextType(&reader) != wsldb.Null {
+            atm.Address = wsldb.NextText(&reader)
+        }
+
+        if wsldb.NextType(&reader) != wsldb.Null {
+            atm.Country = wsldb.NextText(&reader)
+        }
+
+        if wsldb.NextType(&reader) != wsldb.Null {
+            atm.City = wsldb.NextText(&reader)
+        }
+
+        if wsldb.NextType(&reader) != wsldb.Null {
+            atm.State = wsldb.NextText(&reader)
+        }
+
+        if wsldb.NextType(&reader) != wsldb.Null {
+            atm.ZipCode = wsldb.NextInt8(&reader)
+        }
+
+        atms = append(atms, atm)
+    }
+
+    return atms
+}
+
+func ApiMiddleware(conn *net.TCPConn) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        c.Set("tcpConn", conn)
+        c.Next()
+    }
 }
 
 func main() {
@@ -59,9 +139,17 @@ func main() {
     if err != nil {
         os.Exit(1)
     }
-    
     wsldb.ExecuteQuery(conn, string(seed))
 
+
+
+    router := gin.Default()
+    router.Use(ApiMiddleware(conn))
+    router.GET("/atms", getAtms)
+    router.GET("/atms/:id", getAtmById)
+    router.POST("/atms", postAtms)
+    router.Run("localhost:8080")
+    /*
     readers := wsldb.ExecuteQuery(conn, "select _rowid from atm_locations where _rowid = 111; select _rowid, bank_name, address from atm_locations where zip_code = 1000 or zip_code = 11011;")
 
     for _, reader := range readers {
@@ -91,13 +179,7 @@ func main() {
             }
             fmt.Printf("\n")
         }
-    }
-
-    router := gin.Default()
-    router.GET("/atms", getAtms)
-    router.GET("/atms/:id", getAtmById)
-    router.POST("/atms", postAtms)
-    router.Run("localhost:8080")
+    }*/
 
     /*
     args := os.Args[1:]
