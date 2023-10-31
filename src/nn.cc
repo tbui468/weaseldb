@@ -7,9 +7,13 @@ namespace wsldb {
 void train() {
     std::shared_ptr<Net> net = std::make_shared<Net>();
 
+    auto train_dataset = CustomDataset("./../data/train-images-idx3-ubyte", "./../data/train-labels-idx1-ubyte").map(torch::data::transforms::Stack<>());
+    /*
     auto data_loader = torch::data::make_data_loader(
-            torch::data::datasets::MNIST("./../data").map(torch::data::transforms::Stack<>()), 
-            /*batch_size=*/64);
+            torch::data::datasets::MNIST("./data").map(torch::data::transforms::Stack<>()), 
+            64);*/
+
+    auto data_loader = torch::data::make_data_loader(std::move(train_dataset), 64);
 
     torch::optim::SGD optimizer(net->parameters(), /*lr=*/0.01);
 
@@ -33,12 +37,13 @@ void train() {
 }
 
 void test() {
-    auto test_dataset = torch::data::datasets::MNIST("./../data", torch::data::datasets::MNIST::Mode::kTest).map(torch::data::transforms::Stack<>());
+    //auto test_dataset = torch::data::datasets::MNIST("./data", torch::data::datasets::MNIST::Mode::kTest).map(torch::data::transforms::Stack<>());
+    auto test_dataset = CustomDataset("./../data/t10k-images-idx3-ubyte", "./../data/t10k-labels-idx1-ubyte").map(torch::data::transforms::Stack<>());
     const size_t dataset_size = test_dataset.size().value();
     auto data_loader = torch::data::make_data_loader(std::move(test_dataset), /*batch_size=*/ 64);
 
     std::shared_ptr<Net> model = std::make_shared<Net>();
-    torch::load(model, "net.pt");
+    torch::load(model, "./../data/net.pt");
     model->eval();
 
     int32_t correct = 0;
