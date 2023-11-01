@@ -3,10 +3,8 @@
 
 #include "server.h"
 #include "storage.h"
-#include "nn.h"
 
 int main(int argc, char** argv) {
-    wsldb::test();
     wsldb::Storage::DropDatabase("/tmp/testdb"); //dropping database everytime to simplify testing
     wsldb::Storage storage("/tmp/testdb");
 

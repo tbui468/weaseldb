@@ -65,6 +65,7 @@ void Tokenizer::DebugPrintTokens(const std::vector<Token>& tokens) {
             case TokenType::IntLiteral:
             case TokenType::FloatLiteral:
             case TokenType::StringLiteral:
+            case TokenType::ByteaLiteral:
                 std::cout << TokenTypeToString(t.type) << " " << t.lexeme << std::endl;
                 break;
             default:
@@ -111,6 +112,8 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Where;
     } else if (len == 4 && strncmp(&query_.at(idx), "bool", len) == 0) {
         type = TokenType::Bool;
+    } else if (len == 5 && strncmp(&query_.at(idx), "bytea", len) == 0) {
+        type = TokenType::Bytea;
     } else if (len == 4 && strncmp(&query_.at(idx), "null", len) == 0) {
         type = TokenType::Null;
     } else if (len == 4 && strncmp(&query_.at(idx), "true", len) == 0) {
@@ -226,6 +229,11 @@ Token Tokenizer::MakeString() {
     //escape any two single quotes found
     std::string s = query_.substr(start_idx, len);
     Tokenizer::ReplaceAll(s, "\'\'", "\'");
+
+    //if first two characters are \x, must be a bytea literal
+    if (s.at(0) == '\\' && s.size() > 1 && s.at(1) == 'x') {
+        type = TokenType::ByteaLiteral;
+    }
 
     return Token(s, type);
 }

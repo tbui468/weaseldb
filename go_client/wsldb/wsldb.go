@@ -14,6 +14,7 @@ const (
    Text     = 2
    Bool     = 3
    Null     = 4
+   Bytea    = 5
 )
 
 type RowDescription struct {
@@ -71,6 +72,13 @@ func NextText(reader *Reader) string {
     return text
 }
 
+func NextBytea(reader *Reader) string {
+    size := NextSize(reader)
+    text := string(reader.buf[reader.idx: reader.idx + size])
+    reader.idx += size
+    return text
+}
+
 func DatumTypeToString(dt int) string {
     switch dt {
         case Int8:
@@ -83,6 +91,8 @@ func DatumTypeToString(dt int) string {
             return "Bool"
         case Null:
             return "Null"
+        case Bytea:
+            return "Bytea"
         default:
             return "Invalid type"
     }
@@ -222,6 +232,11 @@ func ProcessResponse(conn *net.TCPConn, buf []byte, rd RowDescription, reader Re
                 case Bool:
                     reader.buf = append(reader.buf, msg[off])
                     off += 1
+                case Bytea:
+                    string_size := int(binary.LittleEndian.Uint32(msg[off: off + 4]))
+                    size := 4 + string_size
+                    reader.buf = append(reader.buf, msg[off: off + size]...)
+                    off += size
                 case Null:
                     print("[Error],")
                 default:

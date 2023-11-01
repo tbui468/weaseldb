@@ -14,6 +14,7 @@ enum class TokenType {
     Int8,
     Bool,
     Float4,
+    Bytea,
     Null,
     Primary,
     Key,
@@ -71,6 +72,7 @@ enum class TokenType {
     StringLiteral,
     TrueLiteral,
     FalseLiteral,
+    ByteaLiteral,
 
     /* single characters */
     LParen,

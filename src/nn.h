@@ -14,6 +14,7 @@ public:
             std::fstream f;
             f.open(target_path, std::ios::in | std::ios::binary);
             int32_t magic = nextint32(f);
+            magic = magic; //silence warning
             int32_t count = nextint32(f);
             target_ = torch::empty({count}, torch::kByte);
             f.read(reinterpret_cast<char*>(target_.data_ptr()), target_.numel());
@@ -23,6 +24,7 @@ public:
             std::fstream f;
             f.open(data_path, std::ios::in | std::ios::binary);
             int32_t magic = nextint32(f);
+            magic = magic; //silence warning
             int32_t count = nextint32(f);
             int32_t rows = nextint32(f);
             int32_t cols = nextint32(f);

@@ -22,6 +22,9 @@ func PrintResult(readers []wsldb.Reader) {
                 case wsldb.Text:
                     s := wsldb.NextText(&reader)
                     fmt.Printf("%s,", s)
+                case wsldb.Bytea:
+                    b := wsldb.NextBytea(&reader)
+                    fmt.Printf("\\x%s,", fmt.Sprintf("%x", b))
                 case wsldb.Bool:
                     b := wsldb.NextBool(&reader)
                     if b {

@@ -14,7 +14,8 @@ enum class DatumType {
     Float4,
     Text,
     Bool,
-    Null
+    Null,
+    Bytea
 };
 
 class Datum {
@@ -34,6 +35,14 @@ public:
             }
             case DatumType::Text: {
                 data_ += lexeme;
+                break;
+            }
+            case DatumType::Bytea: {
+                for (size_t i = 2 /*skip \x*/; i < lexeme.size(); i += 2) {
+                    std::string pair = lexeme.substr(i, 2);
+                    char byte = (char)strtol(pair.c_str(), NULL, 16);
+                    data_.append((char*)&byte, sizeof(char));
+                }
                 break;
             }
             case DatumType::Bool: {
@@ -78,6 +87,7 @@ public:
                 *off += sizeof(float);
                 break;
             }
+            case DatumType::Bytea:
             case DatumType::Text: {
                 int size = *((int*)(buf.data() + *off));
                 *off += sizeof(int);
@@ -145,7 +155,7 @@ public:
 
         result.append((char*)&is_null, sizeof(bool));
 
-        if (type_ == DatumType::Text) {
+        if (type_ == DatumType::Text || type_ == DatumType::Bytea) {
             int size = data_.size();
             result.append((char*)&size, sizeof(int));
         }
@@ -169,6 +179,10 @@ public:
 
     bool AsBool() const {
         return *((bool*)(data_.data()));
+    }
+
+    std::string AsBytea() const {
+        return data_;
     }
 
     Datum operator+(const Datum& d) {
@@ -302,6 +316,8 @@ static std::string TypeToString(DatumType type) {
             return "bool";
         case DatumType::Null:
             return "null";
+        case DatumType::Bytea:
+            return "bytea";
         default:
             return "invalid datum type";
     }

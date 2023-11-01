@@ -17,6 +17,8 @@ std::string TokenTypeToString(TokenType type) {
             return "Int8";
         case TokenType::Float4:
             return "Float4";
+        case TokenType::Bytea:
+            return "Bytea";
         case TokenType::Primary:
             return "Primary";
         case TokenType::Key:
@@ -71,6 +73,8 @@ std::string TokenTypeToString(TokenType type) {
             return "TrueLiteral";
         case TokenType::FalseLiteral:
             return "FalseLiteral";
+        case TokenType::ByteaLiteral:
+            return "ByteaLiteral";
         case TokenType::Plus:
             return "Plus";
         case TokenType::Minus:
@@ -167,6 +171,8 @@ DatumType LiteralTokenToDatumType(TokenType type) {
         case TokenType::TrueLiteral:
         case TokenType::FalseLiteral:
             return DatumType::Bool;
+        case TokenType::ByteaLiteral:
+            return DatumType::Bytea;
         case TokenType::Null:
             return DatumType::Null;
         default:
@@ -185,6 +191,8 @@ DatumType TypeTokenToDatumType(TokenType type) {
             return DatumType::Text;
         case TokenType::Bool:
             return DatumType::Bool;
+        case TokenType::Bytea:
+            return DatumType::Bytea;
         default:
             std::cout << "Unrecognized token: " << TokenTypeToString(type) << std::endl;
             return DatumType::Null;
@@ -195,7 +203,8 @@ bool TokenTypeValidDataType(TokenType type) {
     return type == TokenType::Int8 ||
            type == TokenType::Float4 ||
            type == TokenType::Text ||
-           type == TokenType::Bool;
+           type == TokenType::Bool ||
+           type == TokenType::Bytea;
 }
 
 bool TokenTypeIsAggregateFunction(TokenType type) {
