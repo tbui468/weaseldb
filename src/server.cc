@@ -41,9 +41,21 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             std::cout << "query: " << query << std::endl;
 
             Tokenizer tokenizer(query);
+            bool tokenizer_failed = false;
             do {
-                tokens.push_back(tokenizer.NextToken());
+                Token t;
+                Status s = tokenizer.NextToken(&t);
+                if (!s.Ok()) {
+                    std::string buf = PreparePacket('E', s.Msg());
+                    Send(conn_fd, buf);
+                    std::string buf2 = PreparePacket('Z', ""); //ready for query
+                    Send(conn_fd, buf2);
+                    tokenizer_failed = true;
+                    break;
+                }
+                tokens.push_back(t);
             } while (tokens.back().type != TokenType::Eof);
+            if (tokenizer_failed) continue;
         }
 
         Parser parser(tokens);

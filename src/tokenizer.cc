@@ -4,56 +4,56 @@
 
 namespace wsldb {
 
-Token Tokenizer::NextToken() {
-    if (AtEnd()) return MakeToken(TokenType::Eof, 1);
+Status Tokenizer::NextToken(Token* t) {
+    if (AtEnd()) return MakeToken(t, TokenType::Eof, 1);
     SkipWhitespace();
-    if (AtEnd()) return MakeToken(TokenType::Eof, 1);
+    if (AtEnd()) return MakeToken(t, TokenType::Eof, 1);
 
-    if (IsAlpha(query_.at(idx_))) return MakeIdentifier();
-    if (IsNumeric(query_.at(idx_)) || (query_.at(idx_) == '.' && IsNumeric(query_.at(idx_ + 1)))) return MakeNumber();
-    if (query_.at(idx_) == '\'') return MakeString();
+    if (IsAlpha(query_.at(idx_))) return MakeIdentifier(t);
+    if (IsNumeric(query_.at(idx_)) || (query_.at(idx_) == '.' && IsNumeric(query_.at(idx_ + 1)))) return MakeNumber(t);
+    if (query_.at(idx_) == '\'') return MakeString(t);
 
     switch (query_.at(idx_)) {
         case '(':
-            return MakeToken(TokenType::LParen, 1);
+            return MakeToken(t, TokenType::LParen, 1);
         case ')':
-            return MakeToken(TokenType::RParen, 1);
+            return MakeToken(t, TokenType::RParen, 1);
         case ',':
-            return MakeToken(TokenType::Comma, 1);
+            return MakeToken(t, TokenType::Comma, 1);
         case ';':
-            return MakeToken(TokenType::SemiColon, 1);
+            return MakeToken(t, TokenType::SemiColon, 1);
         case '=':
-            return MakeToken(TokenType::Equal, 1);
+            return MakeToken(t, TokenType::Equal, 1);
         case '<': {
             char c = query_.at(idx_ + 1);
             if (c == '>') {
-                return MakeToken(TokenType::NotEqual, 2);
+                return MakeToken(t, TokenType::NotEqual, 2);
             } else if (c == '=') {
-                return MakeToken(TokenType::LessEqual, 2);
+                return MakeToken(t, TokenType::LessEqual, 2);
             } else {
-                return MakeToken(TokenType::Less, 1);
+                return MakeToken(t, TokenType::Less, 1);
             } 
         }
         case '>': {
             char c = query_.at(idx_ + 1);
             if (c == '=') {
-                return MakeToken(TokenType::GreaterEqual, 2);
+                return MakeToken(t, TokenType::GreaterEqual, 2);
             } else {
-                return MakeToken(TokenType::Greater, 1);
+                return MakeToken(t, TokenType::Greater, 1);
             }
         }
         case '+':
-            return MakeToken(TokenType::Plus, 1);
+            return MakeToken(t, TokenType::Plus, 1);
         case '-':
-            return MakeToken(TokenType::Minus, 1);
+            return MakeToken(t, TokenType::Minus, 1);
         case '*':
-            return MakeToken(TokenType::Star, 1);
+            return MakeToken(t, TokenType::Star, 1);
         case '/':
-            return MakeToken(TokenType::Slash, 1);
+            return MakeToken(t, TokenType::Slash, 1);
         case '.':
-            return MakeToken(TokenType::Dot, 1);
+            return MakeToken(t, TokenType::Dot, 1);
         default:
-            return MakeToken(TokenType::Error, 1);
+            return Status(false, "Error: Invalid token");
     }
 
 }
@@ -75,7 +75,7 @@ void Tokenizer::DebugPrintTokens(const std::vector<Token>& tokens) {
     }
 }
 
-Token Tokenizer::MakeIdentifier() {
+Status Tokenizer::MakeIdentifier(Token* t) {
     size_t idx = idx_;
     size_t len = 0;
 
@@ -202,10 +202,11 @@ Token Tokenizer::MakeIdentifier() {
         type = TokenType::Identifier;
     }
 
-    return Token(query_.substr(idx, len), type);
+    *t = Token(query_.substr(idx, len), type);
+    return Status();
 }
 
-Token Tokenizer::MakeString() {
+Status Tokenizer::MakeString(Token* t) {
     idx_++; //skip starting single quote
     size_t start_idx = idx_;
     size_t len = 0;
@@ -235,10 +236,11 @@ Token Tokenizer::MakeString() {
         type = TokenType::ByteaLiteral;
     }
 
-    return Token(s, type);
+    *t = Token(s, type);
+    return Status();
 }
 
-Token Tokenizer::MakeNumber() {
+Status Tokenizer::MakeNumber(Token* t) {
     size_t idx = idx_;
     size_t len = 0;
     TokenType type = TokenType::IntLiteral;
@@ -248,7 +250,8 @@ Token Tokenizer::MakeNumber() {
         idx_++;
         len++;
     }
-    return Token(query_.substr(idx, len), type);
+    *t = Token(query_.substr(idx, len), type);
+    return Status();
 }
 
 

@@ -3,13 +3,14 @@
 #include <vector>
 
 #include "token.h"
+#include "status.h"
 
 namespace wsldb {
 
 class Tokenizer {
 public:
     Tokenizer(const std::string& query): query_(query), idx_(0) {}
-    Token NextToken();
+    Status NextToken(Token* t);
     static void DebugPrintTokens(const std::vector<Token>& tokens);
     static void ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
         size_t start_pos = 0;
@@ -19,14 +20,15 @@ public:
         }
     }
 private:
-    Token MakeIdentifier();
-    Token MakeString();
-    Token MakeNumber();
+    Status MakeIdentifier(Token* t);
+    Status MakeString(Token* t);
+    Status MakeNumber(Token* t);
 
-    inline Token MakeToken(TokenType type, size_t char_count) {
+    inline Status MakeToken(Token* t, TokenType type, size_t char_count) {
         size_t old_idx = idx_;
         idx_ += char_count;
-        return Token(query_.substr(old_idx, char_count), type);
+        *t = Token(query_.substr(old_idx, char_count), type);
+        return Status();
     }
 
     inline void SkipWhitespace() {

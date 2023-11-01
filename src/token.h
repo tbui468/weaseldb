@@ -90,10 +90,7 @@ enum class TokenType {
     Minus,
     Star,
     Slash,
-    Dot,
-
-    /* error */
-    Error
+    Dot
 };
 
 std::string TokenTypeToString(TokenType type);
@@ -104,6 +101,7 @@ bool TokenTypeIsAggregateFunction(TokenType type);
 
 class Token {
 public:
+    Token(): lexeme(""), type(TokenType::Null) {}
     Token(std::string lexeme, TokenType type): lexeme(std::move(lexeme)), type(type) {}
     std::string lexeme;
     TokenType type;

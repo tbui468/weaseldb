@@ -6,6 +6,7 @@ import (
     "encoding/binary"
     "reflect"
     "math"
+    "fmt"
 )
 
 const (
@@ -251,7 +252,7 @@ func ProcessResponse(conn *net.TCPConn, buf []byte, rd RowDescription, reader Re
             }
             reader = Reader{RowCount: 0, ColCount: 0, buf: make([]byte, 0), idx: 0}
         case "E":
-            //fmt.Println(string(msg))
+            fmt.Println(string(msg))
         case "Z":
             return true, buf[1 + size:], rd, reader
         default:

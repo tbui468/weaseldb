@@ -45,8 +45,6 @@ std::string TokenTypeToString(TokenType type) {
             return "SemiColon";
         case TokenType::Eof:
             return "Eof";
-        case TokenType::Error:
-            return "Error";
         case TokenType::Select:
             return "Select";
         case TokenType::From:
