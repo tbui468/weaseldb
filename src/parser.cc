@@ -410,10 +410,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
             return Status();
         }
         case TokenType::Select: {
-            bool remove_duplicates = false;
-            if (AdvanceIf(TokenType::Distinct)) {
-                remove_duplicates = true;
-            }
+            bool remove_duplicates = AdvanceIf(TokenType::Distinct) ? true : false;
 
             std::vector<Expr*> target_cols;
             do {
@@ -421,19 +418,8 @@ Status Parser::ParseStmt(Stmt** stmt) {
                 target_cols.push_back(col);
             } while (AdvanceIf(TokenType::Comma));
 
-            WorkTable* target = nullptr;
-            if (AdvanceIf(TokenType::From)) {
-                target = ParseScan(ParseWorkTable);
-            } else {
-                target = new ConstantTable(target_cols);
-            }
-
-            Expr* where_clause = nullptr;
-            if (AdvanceIf(TokenType::Where)) {
-                where_clause = ParseExpr(Base);
-            } else {
-                where_clause = new Literal(true);
-            }
+            WorkTable* target = AdvanceIf(TokenType::From) ? ParseScan(ParseWorkTable) : new ConstantTable(target_cols);
+            Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : new Literal(true);
 
             std::vector<OrderCol> order_cols;
             if (AdvanceIf(TokenType::Order)) {
@@ -447,12 +433,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
                 } while (AdvanceIf(TokenType::Comma));
             }
 
-            Expr* limit = nullptr;
-            if (AdvanceIf(TokenType::Limit)) {
-                limit = ParseExpr(Base);
-            } else {
-                limit = new Literal(-1); //no limit
-            } 
+            Expr* limit = AdvanceIf(TokenType::Limit) ? ParseExpr(Base) : new Literal(-1);
 
             //if the select statement is a subquery, it will not end with a semicolon
             AdvanceIf(TokenType::SemiColon);
@@ -475,12 +456,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
                 AdvanceIf(TokenType::Comma);
             }
 
-            Expr* where_clause = nullptr;
-            if (AdvanceIf(TokenType::Where)) {
-                where_clause = ParseExpr(Base);
-            } else {
-                where_clause = new Literal(true);
-            }
+            Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : new Literal(true);
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of update statement");
 
             *stmt = new UpdateStmt(target, assigns, where_clause);
@@ -490,12 +466,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
             EatToken(TokenType::From, "Parse Error: Expected 'from' keyword after 'delete'");
             Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name after keyword 'from'");
 
-            Expr* where_clause = nullptr;
-            if (AdvanceIf(TokenType::Where)) {
-                where_clause = ParseExpr(Base);
-            } else {
-                where_clause = new Literal(true);
-            }
+            Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : new Literal(true);
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of delete statement");
 
             *stmt = new DeleteStmt(target, where_clause);
