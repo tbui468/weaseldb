@@ -7,19 +7,13 @@ namespace wsldb {
 
 #define EatToken(expected_type, err_msg) \
     ({ Token t = NextToken(); \
-    do { \
-        if (t.type != expected_type) { \
-            return Status(false, err_msg); \
-        } \
-    } while(0); t; })
+       if (t.type != expected_type) return Status(false, err_msg); \
+       t; })
 
 #define EatTokenIn(tv, err_msg) \
     ({ Token t = NextToken(); \
-    do { \
-        if (std::find(tv.begin(), tv.end(), t.type) == tv.end()) { \
-            return Status(false, err_msg); \
-        } \
-    } while(0); t; })
+       if (std::find(tv.begin(), tv.end(), t.type) == tv.end()) return Status(false, err_msg); \
+       t; })
 
 Status Parser::ParseTxns(std::vector<Txn>& txns) {
     while (!AdvanceIf(TokenType::Eof)) {
