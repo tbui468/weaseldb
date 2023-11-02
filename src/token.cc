@@ -205,6 +205,14 @@ bool TokenTypeValidDataType(TokenType type) {
            type == TokenType::Bytea;
 }
 
+std::vector<TokenType> TokenTypeSQLDataTypes() {
+    return { TokenType::Int8, 
+             TokenType::Float4,
+             TokenType::Text,
+             TokenType::Bool,
+             TokenType::Bytea };
+}
+
 bool TokenTypeIsAggregateFunction(TokenType type) {
     return type == TokenType::Avg ||
            type == TokenType::Sum ||

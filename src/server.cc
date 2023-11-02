@@ -23,8 +23,8 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
     Storage* storage = args->storage;
     int conn_fd = args->conn_fd;
     free(args);
-    //TODO: Should make interpreter, tokenizer and parser once here and reuse
-    //them during entire connection rather than constructing a new one each iteration
+
+    //TODO: should hide lexer/parser inside of a Planner class (rather than calling it a Interpreter)
 
     while (true) {
         //read in message
@@ -58,8 +58,18 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             if (tokenizer_failed) continue;
         }
 
-        Parser parser(tokens);
-        std::vector<Txn> txns = parser.ParseTxns();
+        std::vector<Txn> txns;
+        {
+            Parser parser(tokens);
+            Status s = parser.ParseTxns(txns);
+            if (!s.Ok()) {
+                std::string buf = PreparePacket('E', s.Msg());
+                Send(conn_fd, buf);
+                std::string buf2 = PreparePacket('Z', "");
+                Send(conn_fd, buf2);
+                continue;
+            }
+        }
 
         Interpreter interp(storage);
         for (Txn txn: txns) {

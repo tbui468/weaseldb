@@ -97,6 +97,7 @@ std::string TokenTypeToString(TokenType type);
 DatumType LiteralTokenToDatumType(TokenType type);
 DatumType TypeTokenToDatumType(TokenType type);
 bool TokenTypeValidDataType(TokenType type);
+std::vector<TokenType> TokenTypeSQLDataTypes();
 bool TokenTypeIsAggregateFunction(TokenType type);
 
 class Token {

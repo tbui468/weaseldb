@@ -1,20 +1,39 @@
 #include <vector>
+#include <algorithm>
 
 #include "parser.h"
 
 namespace wsldb {
 
-std::vector<Txn> Parser::ParseTxns() {
-    std::vector<Txn> txns;
+#define EatToken(expected_type, err_msg) \
+    ({ Token t = NextToken(); \
+    do { \
+        if (t.type != expected_type) { \
+            return Status(false, err_msg); \
+        } \
+    } while(0); t; })
 
+#define EatTokenIn(tv, err_msg) \
+    ({ Token t = NextToken(); \
+    do { \
+        if (std::find(tv.begin(), tv.end(), t.type) == tv.end()) { \
+            return Status(false, err_msg); \
+        } \
+    } while(0); t; })
+
+Status Parser::ParseTxns(std::vector<Txn>& txns) {
     while (PeekToken().type != TokenType::Eof) {
-        txns.push_back(ParseTxn());
+        Txn txn;
+        Status s = ParseTxn(&txn);
+        if (!s.Ok())
+            return s;
+        txns.push_back(txn);
     }
 
-    return txns;
+    return Status();
 }
 
-Txn Parser::ParseTxn() {
+Status Parser::ParseTxn(Txn* txn) {
     std::vector<Stmt*> stmts;
 
     bool single_stmt_txn = true;
@@ -33,12 +52,18 @@ Txn Parser::ParseTxn() {
             NextToken(); //;
             break;
         }
-        stmts.push_back(ParseStmt());
+        Stmt* stmt;
+        Status s = ParseStmt(&stmt);
+        if (!s.Ok())
+            return s;
+
+        stmts.push_back(stmt);
         if (single_stmt_txn)
             break;
     }
 
-    return {stmts, commit_on_success};
+    *txn = {stmts, commit_on_success};
+    return Status();
 }
 
 Expr* Parser::ParsePrimary() {
@@ -175,7 +200,9 @@ Expr* Parser::ParseOr() {
 
 Expr* Parser::ParseExpr() {
     if (PeekToken().type == TokenType::Select) {
-        return new ScalarSubquery(ParseStmt());
+        Stmt* stmt;
+        Status s = ParseStmt(&stmt);
+        return new ScalarSubquery(stmt);
     }
 
     return ParseOr();
@@ -259,12 +286,12 @@ std::vector<Expr*> Parser::ParseTuple() {
     return exprs;
 }
 
-Stmt* Parser::ParseStmt() {
+Status Parser::ParseStmt(Stmt** stmt) {
     switch (NextToken().type) {
         case TokenType::Create: {
-            NextToken(); //table
-            Token target = NextToken();
-            NextToken(); //(
+            EatToken(TokenType::Table, "Parse Error: Expected 'table' keyword after 'create' keyword");
+            Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name after 'table' keyword");
+            EatToken(TokenType::LParen, "Parse Error: Expected '(' after table name");
 
             std::vector<Token> names;
             std::vector<Token> types;
@@ -272,48 +299,46 @@ Stmt* Parser::ParseStmt() {
             std::vector<Token> pks;
             std::vector<std::vector<Token>> uniques;
             std::vector<bool> nulls_distinct;
-            while (PeekToken().type != TokenType::RParen) {
-                if (PeekToken().type == TokenType::Primary) {
-                    //TODO: if pks is not empty, should report error since only a single primary key is allowed
-                    NextToken(); //primary
-                    NextToken(); //key
-                    NextToken(); //(
 
-                    while (PeekToken().type != TokenType::RParen) {
-                        pks.push_back(NextToken());
-                        if (PeekToken().type == TokenType::Comma) {
-                            NextToken();
-                        } 
+            while (!AdvanceIf(TokenType::RParen)) {
+                if (AdvanceIf(TokenType::Primary)) {
+                    if (!pks.empty())
+                        return Status(false, "Parse Error: Only one primary key constraint is allowed");
+
+                    EatToken(TokenType::Key, "Parse Error: Expected keyword 'key' after keyword 'primary'");
+                    EatToken(TokenType::LParen, "Parse Error: Expected '(' before primary key columns");
+
+                    while (!AdvanceIf(TokenType::RParen)) {
+                        Token col = EatToken(TokenType::Identifier, "Parse Error: Expected column name as primary key");
+                        pks.push_back(col);
+                        AdvanceIf(TokenType::Comma);
                     }
-                    NextToken(); //)
-                } else if (PeekToken().type == TokenType::Unique) {
-                    NextToken(); //unique
-                    NextToken(); //(
+
+                } else if (AdvanceIf(TokenType::Unique)) {
+                    EatToken(TokenType::LParen, "Parse Error: Expected '(' before unqiue columns");
 
                     std::vector<Token> cols;
-                    while (PeekToken().type != TokenType::RParen) {
-                        cols.push_back(NextToken());
-                        if (PeekToken().type == TokenType::Comma) {
-                            NextToken();
-                        } 
+                    while (!AdvanceIf(TokenType::RParen)) {
+                        Token col = EatToken(TokenType::Identifier, "Parse Error: Expected column name as unique column");
+                        cols.push_back(col);
+                        AdvanceIf(TokenType::Comma);
                     }
 
-                    NextToken(); //)
-                    NextToken(); //nulls
+                    EatToken(TokenType::Nulls, "Parse Error: 'nulls distinct' or 'nulls not distinct' must be included");
+                    //TODO: EatTokenIn for 'not' and 'distinct'
                     Token distinct_clause_token = NextToken(); //'not' or 'distinct'
                     if (distinct_clause_token.type == TokenType::Not)
-                        NextToken();
+                        EatToken(TokenType::Distinct, "Parse Error: Expected keyword 'distinct' after 'not'");
 
                     uniques.push_back(cols);
                     nulls_distinct.push_back(distinct_clause_token.type == TokenType::Distinct);
                 } else {
                     //column name and type
-                    names.push_back(NextToken());
-                    types.push_back(NextToken());
+                    names.push_back(EatToken(TokenType::Identifier, "Parse Error: Expected column name"));
+                    types.push_back(EatTokenIn(TokenTypeSQLDataTypes(), "Parse Error: Expected valid SQL data type"));
 
-                    if (PeekToken().type == TokenType::Not) {
-                        NextToken(); //not
-                        NextToken(); //null
+                    if (AdvanceIf(TokenType::Not)) {
+                        EatToken(TokenType::Null, "Parse Error: 'not' keyword must be followed by 'null'");
                         not_null_constraints.push_back(true);
                     } else {
                         not_null_constraints.push_back(false);
@@ -321,173 +346,168 @@ Stmt* Parser::ParseStmt() {
                 }
 
 
-                if (PeekToken().type == TokenType::Comma) {
-                    NextToken();//,
-                }
+                AdvanceIf(TokenType::Comma);
             }
 
-            NextToken();//)
-            NextToken();//;
-            return new CreateStmt(target, names, types, not_null_constraints, pks, uniques, nulls_distinct);
+            EatToken(TokenType::SemiColon, "Parse Error: Expected ';' after query");
+            *stmt = new CreateStmt(target, names, types, not_null_constraints, pks, uniques, nulls_distinct);
+            return Status();
         }
         case TokenType::Insert: {
-            NextToken(); //into
-            Token target = NextToken(); //table name
+            EatToken(TokenType::Into, "Parse Error: Expected 'into' keyword after 'insert'");
+            Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name after 'into' keyword");
 
             std::vector<Token> cols;
-            NextToken(); //(
-            while (PeekToken().type != TokenType::RParen) {
-                cols.push_back(NextToken());
-                if (PeekToken().type == TokenType::Comma)
-                    NextToken(); //,
+            EatToken(TokenType::LParen, "Parse Error: Expected '(' and columns names for insert statements");
+            while (!AdvanceIf(TokenType::RParen)) {
+                cols.push_back(EatToken(TokenType::Identifier, "Parse Error: Expected column name"));
+                AdvanceIf(TokenType::Comma);
             }
-            NextToken(); //)
 
-            NextToken(); //values
+            EatToken(TokenType::Values, "Parse Error: Expected 'values' keyword");
             std::vector<std::vector<Expr*>> values;
-            while (PeekToken().type == TokenType::LParen) {
+            while (AdvanceIf(TokenType::LParen)) {
                 std::vector<Expr*> tuple;
 
-                NextToken(); //(
-                while (PeekToken().type != TokenType::RParen) {
-                    tuple.push_back(ParseExpr());
-                    if (PeekToken().type == TokenType::Comma)
-                        NextToken(); //,
+                while (!AdvanceIf(TokenType::RParen)) {
+                    tuple.push_back(ParseExpr()); //TODO: ParseExpr should return a status, and need to check it for error
+                    AdvanceIf(TokenType::Comma);
                 }
-                NextToken(); //)
 
                 values.push_back(tuple);
 
-                if (PeekToken().type == TokenType::Comma) {
-                    NextToken(); //,
-                }
+                AdvanceIf(TokenType::Comma);
             }
-            NextToken(); //;
-            return new InsertStmt(target, cols, values);
+            EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of insert statement");
+            *stmt = new InsertStmt(target, cols, values);
+            return Status();
         }
         case TokenType::Select: {
             bool remove_duplicates = false;
-            if (PeekToken().type == TokenType::Distinct) {
-                NextToken(); //distinct
+            if (AdvanceIf(TokenType::Distinct)) {
                 remove_duplicates = true;
             }
 
+            //TODO: replace this with do/while
             std::vector<Expr*> target_cols;
-            target_cols.push_back(ParseExpr());
-            while (PeekToken().type == TokenType::Comma) {
-                NextToken(); //,
-                target_cols.push_back(ParseExpr());
+            target_cols.push_back(ParseExpr()); //TODO: check if ParseExpr returns an error
+            while (AdvanceIf(TokenType::Comma)) {
+                target_cols.push_back(ParseExpr()); //TODO: check if ParseExpr returns error
             }
 
             WorkTable* target = nullptr;
-            if (PeekToken().type == TokenType::From) {
-                NextToken(); //from
-                target = ParseWorkTable();
+            if (AdvanceIf(TokenType::From)) {
+                target = ParseWorkTable(); //TODO: Check if ParseWorkTable returns error
             } else {
                 target = new ConstantTable(target_cols);
             }
 
             Expr* where_clause = nullptr;
-            if (PeekToken().type == TokenType::Where) {
-                NextToken(); //where
-                where_clause = ParseExpr(); 
+            if (AdvanceIf(TokenType::Where)) {
+                where_clause = ParseExpr();  //TODO: Check if ParseExpr returns error
             } else {
                 where_clause = new Literal(true);
             }
 
             std::vector<OrderCol> order_cols;
-            if (PeekToken().type == TokenType::Order) {
-                NextToken(); //order
-                NextToken(); //by
+            if (AdvanceIf(TokenType::Order)) {
+                EatToken(TokenType::By, "Parse Error: Expected keyword 'by' after keyword 'order'");
 
-                Expr* col = ParseExpr();
-                Token asc = NextToken();
+                //TODO: replace this with do/while
+
+                Expr* col = ParseExpr(); //TODO: Check if ParseExpr returns error
+                Token asc = EatTokenIn(std::vector<TokenType>({TokenType::Asc, TokenType::Desc}), 
+                                       "Parse Error: Expected either keyword 'asc' or 'desc' after column name");
                 order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
 
-                while (PeekToken().type == TokenType::Comma) {
-                    NextToken();
-                    Expr* col = ParseExpr();
-                    Token asc = NextToken();
+                while (AdvanceIf(TokenType::Comma)) {
+                    Expr* col = ParseExpr(); //TODO: Check if ParseExpr returns error
+                    Token asc = EatTokenIn(std::vector<TokenType>({TokenType::Asc, TokenType::Desc}), 
+                                           "Parse Error: Expected either keyword 'asc' or 'desc' after column name");
                     order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
                 }
             }
 
             Expr* limit = nullptr;
-            if (PeekToken().type == TokenType::Limit) {
-                NextToken(); //limit
-                limit = ParseExpr();
+            if (AdvanceIf(TokenType::Limit)) {
+                limit = ParseExpr(); //TODO: Check if ParseExpr returns error
             } else {
                 limit = new Literal(-1); //no limit
             } 
 
             //if the select statement is a subquery, it will not end with a semicolon
-            if (PeekToken().type == TokenType::SemiColon) 
-                NextToken(); //;
-            return new SelectStmt(target, target_cols, where_clause, order_cols, limit, remove_duplicates);
+            AdvanceIf(TokenType::SemiColon);
+
+            *stmt = new SelectStmt(target, target_cols, where_clause, order_cols, limit, remove_duplicates);
+            return Status();
         }
 
         case TokenType::Update: {
-            Token target = NextToken();
-            NextToken(); //set
+            Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name");
+            EatToken(TokenType::Set, "Parse Error: Expected keyword 'set' after table name");
 
             std::vector<Expr*> assigns;
             while (!(PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Where)) {
-                Token col = NextToken();
-                NextToken();
-                assigns.push_back(new ColAssign(col, ParseExpr()));
-                if (PeekToken().type == TokenType::Comma) {
-                    NextToken(); //,
-                }
+                Token col = EatToken(TokenType::Identifier, "Parse Error: Expected column name");
+                EatToken(TokenType::Equal, "Parse Error: Expected '=' after column name");
+                assigns.push_back(new ColAssign(col, ParseExpr())); //TODO: Check for ParseExpr error
+
+                AdvanceIf(TokenType::Comma);
             }
 
             Expr* where_clause = nullptr;
-            if (PeekToken().type == TokenType::Where) {
-                NextToken(); //where
-                where_clause = ParseExpr(); 
+            if (AdvanceIf(TokenType::Where)) {
+                where_clause = ParseExpr();  //TODO: Check for ParseExpr error
             } else {
                 where_clause = new Literal(true);
             }
-            NextToken(); //;
+            EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of update statement");
 
-            return new UpdateStmt(target, assigns, where_clause);
+            *stmt = new UpdateStmt(target, assigns, where_clause);
+            return Status();
         }
         case TokenType::Delete: {
-            NextToken(); //from
-            Token target = NextToken();
+            EatToken(TokenType::From, "Parse Error: Expected 'from' keyword after 'delete'");
+            Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name after keyword 'from'");
 
             Expr* where_clause = nullptr;
-            if (PeekToken().type == TokenType::Where) {
-                NextToken(); //where
-                where_clause = ParseExpr(); 
+            if (AdvanceIf(TokenType::Where)) {
+                where_clause = ParseExpr();  //TODO: Check for ParseExpr error
             } else {
                 where_clause = new Literal(true);
             }
-            NextToken(); //;
-            return new DeleteStmt(target, where_clause);
+            EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of delete statement");
+
+            *stmt = new DeleteStmt(target, where_clause);
+            return Status();
         }
         case TokenType::Drop: {
-            NextToken(); //table
+            EatToken(TokenType::Table, "Parse Error: Expected keyword 'table' after 'drop'");
             bool has_if_exists = false;
-            if (PeekToken().type == TokenType::If) {
+            if (AdvanceIf(TokenType::If)) {
                 has_if_exists = true;
-                NextToken(); //if
-                NextToken(); //exists
+                EatToken(TokenType::Exists, "Parse Error: Expected keyword 'exists' after 'if'");
             }
-            Token target = NextToken();
-            NextToken(); //;
-            return new DropTableStmt(target, has_if_exists);
+            Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name");
+            EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of drop statement");
+
+            *stmt = new DropTableStmt(target, has_if_exists);
+            return Status();
         }
         case TokenType::Describe: {
-            NextToken(); //table
-            Token target = NextToken();
-            NextToken(); //;
-            return new DescribeTableStmt(target);
+            EatToken(TokenType::Table, "Parse Error: Expected keyword 'table' after 'describe'");
+            Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name");
+            EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of describe statement");
+
+            *stmt = new DescribeTableStmt(target);
+            return Status();
         }
         default:
-            return NULL;
+            return Status(false, "Parse Error: Invalid token");
     }
 
-    return NULL;
+    //should never reach this branch
+    return Status(false, "Parse Error: Invalid token");
 }
 
 }
