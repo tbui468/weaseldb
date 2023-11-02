@@ -13,19 +13,19 @@ public:
 
     Status ParseTxns(std::vector<Txn>& txns);
 private:
-    Expr* ParsePrimary();
-    Expr* ParseUnary();
-    Expr* ParseMultiplicative();
-    Expr* ParseAdditive();
-    Expr* ParseRelational();
-    Expr* ParseEquality();
-    Expr* ParseAnd();
-    Expr* ParseOr();
-    Expr* ParseExpr();
+    Status Primary(Expr**);
+    Status ParseUnary(Expr**); //Expression is named Unary already
+    Status Multiplicative(Expr**);
+    Status Additive(Expr**);
+    Status Relational(Expr**);
+    Status Equality(Expr**);
+    Status And(Expr**);
+    Status Or(Expr**);
+    Status Base(Expr**);
 
-    WorkTable* ParsePrimaryWorkTable();
-    WorkTable* ParseBinaryWorkTable();
-    WorkTable* ParseWorkTable();
+    Status ParsePrimaryWorkTable(WorkTable** wt);
+    Status ParseBinaryWorkTable(WorkTable** wt);
+    Status ParseWorkTable(WorkTable** wt);
 
     inline Token PeekToken() {
         return tokens_.at(idx_);

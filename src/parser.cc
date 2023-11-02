@@ -5,6 +5,20 @@
 
 namespace wsldb {
 
+#define ParseExpr(fcn) \
+    ({ Expr* expr; \
+       Status s = fcn(&expr); \
+       if (!s.Ok()) return s; \
+       expr; \
+    })
+
+#define ParseScan(fcn) \
+    ({ WorkTable* scan; \
+       Status s = fcn(&scan); \
+       if (!s.Ok()) return s; \
+       scan; \
+    })
+
 #define EatToken(expected_type, err_msg) \
     ({ Token t = NextToken(); \
        if (t.type != expected_type) return Status(false, err_msg); \
@@ -60,7 +74,7 @@ Status Parser::ParseTxn(Txn* txn) {
     return Status();
 }
 
-Expr* Parser::ParsePrimary() {
+Status Parser::Primary(Expr** expr) {
     switch (PeekToken().type) {
         case TokenType::IntLiteral:
         case TokenType::FloatLiteral:
@@ -69,84 +83,97 @@ Expr* Parser::ParsePrimary() {
         case TokenType::FalseLiteral:
         case TokenType::Null:
         case TokenType::ByteaLiteral:
-            return new Literal(NextToken());
+            *expr = new Literal(NextToken());
+            return Status();
         case TokenType::Identifier: {
             Token ref = NextToken();
             if (AdvanceIf(TokenType::Dot)) {
                 Token col = NextToken();
-                return new ColRef(col, ref);
+                *expr = new ColRef(col, ref);
+                return Status();
             }
-            return new ColRef(ref);
+            *expr = new ColRef(ref);
+            return Status();
         }
         case TokenType::LParen: {
             NextToken(); //(
-            Expr* expr = ParseExpr();
-            NextToken(); //)
-            return expr;
+            *expr = ParseExpr(Base);
+            EatToken(TokenType::RParen, "Parse Error: Expected ')' after expression");
+            return Status();
         }
         default:
             if (TokenTypeIsAggregateFunction(PeekToken().type)) {
                 Token fcn = NextToken();
-                NextToken(); //(
-                Expr* arg = ParseExpr();
-                NextToken(); //)
-                return new Call(fcn, arg);
+                EatToken(TokenType::LParen, "Parse Error: Expected '(' after function name");
+                Expr* arg = ParseExpr(Base);
+                EatToken(TokenType::RParen, "Parse Error: Expected ')' after expression");
+                *expr = new Call(fcn, arg);
+                return Status();
             }
-            return NULL;
+            return Status(false, "Parse Error: Invalid function name");
     }
-    return NULL;
+    return Status(false, "Parse Error: Invalid token");
 }
 
-Expr* Parser::ParseUnary() {
+Status Parser::ParseUnary(Expr** expr) {
     if (PeekToken().type == TokenType::Minus ||
            PeekToken().type == TokenType::Not) {
         Token op = NextToken();
-        return new Unary(op, ParseUnary());
+        Expr* right = ParseExpr(ParseUnary);
+        *expr = new Unary(op, right);
+        return Status();
     }
 
-    return ParsePrimary();
+    *expr = ParseExpr(Primary);
+    return Status();
 }
 
-Expr* Parser::ParseMultiplicative() {
-    Expr* left = ParseUnary();
+Status Parser::Multiplicative(Expr** expr) {
+    Expr* left = ParseExpr(ParseUnary);
 
     while (PeekToken().type == TokenType::Star ||
            PeekToken().type == TokenType::Slash) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseUnary());
+        Expr* right = ParseExpr(ParseUnary);
+        left = new Binary(op, left, right);
     }
 
-    return left;
+    *expr = left;
+    return Status();
 }
 
-Expr* Parser::ParseAdditive() {
-    Expr* left = ParseMultiplicative();
+Status Parser::Additive(Expr** expr) {
+    Expr* left = ParseExpr(Multiplicative);
 
     while (PeekToken().type == TokenType::Plus ||
            PeekToken().type == TokenType::Minus) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseMultiplicative());
+        Expr* right = ParseExpr(Multiplicative);
+        left = new Binary(op, left, right);
     }
 
-    return left;
+    *expr = left;
+    return Status();
 }
 
-Expr* Parser::ParseRelational() {
-    Expr* left = ParseAdditive();
+Status Parser::Relational(Expr** expr) {
+    Expr* left = ParseExpr(Additive);
 
     while (PeekToken().type == TokenType::Less ||
            PeekToken().type == TokenType::LessEqual ||
            PeekToken().type == TokenType::Greater ||
            PeekToken().type == TokenType::GreaterEqual) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseAdditive());
+        Expr* right = ParseExpr(Additive);
+        left = new Binary(op, left, right);
     }
 
-    return left;
+    *expr = left;
+    return Status();
 }
 
-Expr* Parser::ParseEquality() {
-    Expr* left = ParseRelational();
+Status Parser::Equality(Expr** expr) {
+    Expr* left = ParseExpr(Relational);
 
     while (PeekToken().type == TokenType::Equal ||
            PeekToken().type == TokenType::NotEqual ||
@@ -154,65 +181,78 @@ Expr* Parser::ParseEquality() {
 
         Token op = NextToken();
         if (op.type == TokenType::Is) {
-            Token t = NextToken();
+            Token t = EatTokenIn(std::vector<TokenType>({TokenType::Null, TokenType::Not}), 
+                                 "Parse Error: Keyword 'is' must be followed by 'null' or 'not null'");
             if (t.type == TokenType::Null) {
                 left = new IsNull(left);
             } else { //t.type must be 'not'
-                NextToken(); //null
+                EatToken(TokenType::Null, "Parse Error: Keyword 'is' must be followed by 'null' or 'not null'");
                 left = new IsNotNull(left);
             } 
         } else {
-            left = new Binary(op, left, ParseRelational());
+            Expr* right = ParseExpr(Relational);
+            left = new Binary(op, left, right);
         }
     }
 
-    return left;
+    *expr = left;
+    return Status();
 }
 
-Expr* Parser::ParseAnd() {
-    Expr* left = ParseEquality();
+Status Parser::And(Expr** expr) {
+    Expr* left = ParseExpr(Equality);
 
     while (PeekToken().type == TokenType::And) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseEquality());
+        Expr* right = ParseExpr(Equality);
+        left = new Binary(op, left, right);
     }
 
-    return left;
+    *expr = left;
+    return Status();
 }
 
-Expr* Parser::ParseOr() {
-    Expr* left = ParseAnd();
+Status Parser::Or(Expr** expr) {
+    Expr* left = ParseExpr(And);
 
     while (PeekToken().type == TokenType::Or) {
         Token op = NextToken();
-        left = new Binary(op, left, ParseAnd());
+        Expr* right = ParseExpr(And);
+        left = new Binary(op, left, right);
     }
 
-    return left;
+    *expr = left;
+    return Status();
 }
 
-Expr* Parser::ParseExpr() {
+Status Parser::Base(Expr** expr) {
     if (PeekToken().type == TokenType::Select) {
         Stmt* stmt;
         Status s = ParseStmt(&stmt);
-        return new ScalarSubquery(stmt);
+        if (!s.Ok()) return s;
+        *expr = new ScalarSubquery(stmt);
+        return Status();
     }
 
-    return ParseOr();
+    *expr = ParseExpr(Or);
+    return Status();
 }
 
-WorkTable* Parser::ParsePrimaryWorkTable() {
+Status Parser::ParsePrimaryWorkTable(WorkTable** wt) {
     Token t = NextToken();
     if (AdvanceIf(TokenType::As)) {
         Token alias = NextToken();
-        return new PrimaryTable(t, alias);
+        *wt = new PrimaryTable(t, alias);
+        return Status();
     }
 
-    return new PrimaryTable(t);
+    *wt = new PrimaryTable(t);
+    return Status();
 }
 
-WorkTable* Parser::ParseBinaryWorkTable() {
-    WorkTable* left = ParsePrimaryWorkTable();
+Status Parser::ParseBinaryWorkTable(WorkTable** wt) {
+    WorkTable* left = ParseScan(ParsePrimaryWorkTable);
+
     while (PeekToken().type == TokenType::Cross || 
            PeekToken().type == TokenType::Inner ||
            PeekToken().type == TokenType::Left ||
@@ -221,48 +261,55 @@ WorkTable* Parser::ParseBinaryWorkTable() {
 
         switch (NextToken().type) {
             case TokenType::Cross: {
-                NextToken(); //join
-                left = new CrossJoin(left, ParsePrimaryWorkTable());
-                break;
+                EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'cross'");
+                WorkTable* right = ParseScan(ParsePrimaryWorkTable);
+                *wt = new CrossJoin(left, right);
+                return Status();
             }
             case TokenType::Inner: {
-                NextToken(); //join
-                WorkTable* right = ParsePrimaryWorkTable();
-                NextToken(); //on
-                left = new InnerJoin(left, right, ParseExpr());
-                break;
+                EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'inner'");
+                WorkTable* right = ParseScan(ParsePrimaryWorkTable);
+                EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for inner joins");
+                Expr* on = ParseExpr(Base);
+                *wt = new InnerJoin(left, right, on);
+                return Status();
             }
             case TokenType::Left: {
-                NextToken(); //join
-                WorkTable* right = ParsePrimaryWorkTable();
-                NextToken(); //on
-                left = new LeftJoin(left, right, ParseExpr());
-                break;
+                EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'left'");
+                WorkTable* right = ParseScan(ParsePrimaryWorkTable);
+                EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for left joins");
+                Expr* on = ParseExpr(Base);
+                *wt = new LeftJoin(left, right, on);
+                return Status();
             }
             case TokenType::Right: {
-                NextToken(); //join
-                WorkTable* right = ParsePrimaryWorkTable();
-                NextToken(); //on
-                left = new LeftJoin(right, left, ParseExpr());
-                break;
+                EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'right'");
+                WorkTable* right = ParseScan(ParsePrimaryWorkTable);
+                EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for right joins");
+                Expr* on = ParseExpr(Base);
+                *wt = new LeftJoin(right, left, on);
+                return Status();
             }
             case TokenType::Full: {
-                NextToken(); //join
-                WorkTable* right = ParsePrimaryWorkTable();
-                NextToken(); //on
-                left = new FullJoin(left, right, ParseExpr());
-                break;
+                EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'full'");
+                WorkTable* right = ParseScan(ParsePrimaryWorkTable);
+                EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for full joins");
+                Expr* on = ParseExpr(Base);
+                *wt = new FullJoin(left, right, on);
+                return Status();
             }
             default:
-                break;
+                return Status();
         }
     }
 
-    return left;
+    *wt = left;
+    return Status();
 }
 
-WorkTable* Parser::ParseWorkTable() {
-    return ParseBinaryWorkTable();
+Status Parser::ParseWorkTable(WorkTable** wt) {
+    *wt = ParseScan(ParseBinaryWorkTable);
+    return Status();
 }
 
 
@@ -349,7 +396,8 @@ Status Parser::ParseStmt(Stmt** stmt) {
                 std::vector<Expr*> tuple;
 
                 while (!AdvanceIf(TokenType::RParen)) {
-                    tuple.push_back(ParseExpr()); //TODO: ParseExpr should return a status, and need to check it for error
+                    Expr* value = ParseExpr(Base);
+                    tuple.push_back(value);
                     AdvanceIf(TokenType::Comma);
                 }
 
@@ -369,19 +417,20 @@ Status Parser::ParseStmt(Stmt** stmt) {
 
             std::vector<Expr*> target_cols;
             do {
-                target_cols.push_back(ParseExpr()); //TODO: check if ParseExpr returns an error
+                Expr* col = ParseExpr(Base);
+                target_cols.push_back(col);
             } while (AdvanceIf(TokenType::Comma));
 
             WorkTable* target = nullptr;
             if (AdvanceIf(TokenType::From)) {
-                target = ParseWorkTable(); //TODO: Check if ParseWorkTable returns error
+                target = ParseScan(ParseWorkTable);
             } else {
                 target = new ConstantTable(target_cols);
             }
 
             Expr* where_clause = nullptr;
             if (AdvanceIf(TokenType::Where)) {
-                where_clause = ParseExpr();  //TODO: Check if ParseExpr returns error
+                where_clause = ParseExpr(Base);
             } else {
                 where_clause = new Literal(true);
             }
@@ -391,7 +440,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
                 EatToken(TokenType::By, "Parse Error: Expected keyword 'by' after keyword 'order'");
 
                 do {
-                    Expr* col = ParseExpr(); //TODO: Check if ParseExpr returns error
+                    Expr* col = ParseExpr(Base);
                     Token asc = EatTokenIn(std::vector<TokenType>({TokenType::Asc, TokenType::Desc}), 
                                            "Parse Error: Expected either keyword 'asc' or 'desc' after column name");
                     order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
@@ -400,7 +449,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
 
             Expr* limit = nullptr;
             if (AdvanceIf(TokenType::Limit)) {
-                limit = ParseExpr(); //TODO: Check if ParseExpr returns error
+                limit = ParseExpr(Base);
             } else {
                 limit = new Literal(-1); //no limit
             } 
@@ -420,14 +469,15 @@ Status Parser::ParseStmt(Stmt** stmt) {
             while (!(PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Where)) {
                 Token col = EatToken(TokenType::Identifier, "Parse Error: Expected column name");
                 EatToken(TokenType::Equal, "Parse Error: Expected '=' after column name");
-                assigns.push_back(new ColAssign(col, ParseExpr())); //TODO: Check for ParseExpr error
+                Expr* value = ParseExpr(Base);
+                assigns.push_back(new ColAssign(col, value));
 
                 AdvanceIf(TokenType::Comma);
             }
 
             Expr* where_clause = nullptr;
             if (AdvanceIf(TokenType::Where)) {
-                where_clause = ParseExpr();  //TODO: Check for ParseExpr error
+                where_clause = ParseExpr(Base);
             } else {
                 where_clause = new Literal(true);
             }
@@ -442,7 +492,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
 
             Expr* where_clause = nullptr;
             if (AdvanceIf(TokenType::Where)) {
-                where_clause = ParseExpr();  //TODO: Check for ParseExpr error
+                where_clause = ParseExpr(Base);
             } else {
                 where_clause = new Literal(true);
             }
