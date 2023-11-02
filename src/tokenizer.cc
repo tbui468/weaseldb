@@ -4,6 +4,91 @@
 
 namespace wsldb {
 
+
+struct Keyword {
+    const char* string;
+    TokenType type;
+};
+
+//this should also go in tokenizer.cc
+static std::vector<Keyword> keywords[] = {
+    {}, //len == 0
+    {}, //1
+    {   //2
+        {"or", TokenType::Or},
+        {"if", TokenType::If},
+        {"by", TokenType::By},
+        {"as", TokenType::As},
+        {"is", TokenType::Is},
+        {"on", TokenType::On}
+    },
+    {   //3
+        {"key", TokenType::Key},
+        {"and", TokenType::And},
+        {"not", TokenType::Not},
+        {"set", TokenType::Set},
+        {"asc", TokenType::Asc},
+        {"avg", TokenType::Avg},
+        {"sum", TokenType::Sum},
+        {"max", TokenType::Max},
+        {"min", TokenType::Min},
+    },
+    {   //4
+        {"text", TokenType::Text},
+        {"into", TokenType::Into},
+        {"from", TokenType::From},
+        {"bool", TokenType::Bool},
+        {"null", TokenType::Null},
+        {"true", TokenType::TrueLiteral},
+        {"drop", TokenType::Drop},
+        {"desc", TokenType::Desc},
+        {"join", TokenType::Join},
+        {"left", TokenType::Left},
+        {"full", TokenType::Full},
+        {"int8", TokenType::Int8}
+    },
+    {   //5
+        {"table", TokenType::Table},
+        {"where", TokenType::Where},
+        {"bytea", TokenType::Bytea},
+        {"false", TokenType::FalseLiteral},
+        {"order", TokenType::Order},
+        {"limit", TokenType::Limit},
+        {"group", TokenType::Group},
+        {"count", TokenType::Count},
+        {"cross", TokenType::Cross},
+        {"inner", TokenType::Inner},
+        {"right", TokenType::Right},
+        {"nulls", TokenType::Nulls},
+        {"begin", TokenType::Begin}
+    },
+    {   //6
+        {"create", TokenType::Create},
+        {"float4", TokenType::Float4},
+        {"insert", TokenType::Insert},
+        {"values", TokenType::Values},
+        {"select", TokenType::Select},
+        {"update", TokenType::Update},
+        {"delete", TokenType::Delete},
+        {"exists", TokenType::Exists},
+        {"unique", TokenType::Unique},
+        {"commit", TokenType::Commit}
+    },
+    {   //7
+        {"primary", TokenType::Primary},
+        {"foreign", TokenType::Foreign}
+    },
+    {   //8
+        {"describe", TokenType::Describe},
+        {"distinct", TokenType::Distinct},
+        {"rollback", TokenType::Rollback}
+    },
+    {}, //9
+    {   //10
+        {"references", TokenType::References}
+    }
+};
+
 Status Tokenizer::NextToken(Token* t) {
     if (AtEnd()) return MakeToken(t, TokenType::Eof, 1);
     SkipWhitespace();
@@ -84,122 +169,11 @@ Status Tokenizer::MakeIdentifier(Token* t) {
         len++;
     }
 
-    TokenType type;
+    TokenType type = TokenType::Identifier;
 
-    if (len == 6 && strncmp(&query_.at(idx), "create", len) == 0) {
-        type = TokenType::Create; 
-    } else if (len == 5 && strncmp(&query_.at(idx), "table", len) == 0) {
-        type = TokenType::Table;
-    } else if (len == 4 && strncmp(&query_.at(idx), "text", len) == 0) {
-        type = TokenType::Text;
-    } else if (len == 6 && strncmp(&query_.at(idx), "float4", len) == 0) {
-        type = TokenType::Float4;
-    } else if (len == 7 && strncmp(&query_.at(idx), "primary", len) == 0) {
-        type = TokenType::Primary;
-    } else if (len == 3 && strncmp(&query_.at(idx), "key", len) == 0) {
-        type = TokenType::Key;
-    } else if (len == 6 && strncmp(&query_.at(idx), "insert", len) == 0) {
-        type = TokenType::Insert;
-    } else if (len == 4 && strncmp(&query_.at(idx), "into", len) == 0) {
-        type = TokenType::Into;
-    } else if (len == 6 && strncmp(&query_.at(idx), "values", len) == 0) {
-        type = TokenType::Values;
-    } else if (len == 6 && strncmp(&query_.at(idx), "select", len) == 0) {
-        type = TokenType::Select;
-    } else if (len == 4 && strncmp(&query_.at(idx), "from", len) == 0) {
-        type = TokenType::From;
-    } else if (len == 5 && strncmp(&query_.at(idx), "where", len) == 0) {
-        type = TokenType::Where;
-    } else if (len == 4 && strncmp(&query_.at(idx), "bool", len) == 0) {
-        type = TokenType::Bool;
-    } else if (len == 5 && strncmp(&query_.at(idx), "bytea", len) == 0) {
-        type = TokenType::Bytea;
-    } else if (len == 4 && strncmp(&query_.at(idx), "null", len) == 0) {
-        type = TokenType::Null;
-    } else if (len == 4 && strncmp(&query_.at(idx), "true", len) == 0) {
-        type = TokenType::TrueLiteral;
-    } else if (len == 5 && strncmp(&query_.at(idx), "false", len) == 0) {
-        type = TokenType::FalseLiteral;
-    } else if (len == 2 && strncmp(&query_.at(idx), "or", len) == 0) {
-        type = TokenType::Or;
-    } else if (len == 3 && strncmp(&query_.at(idx), "and", len) == 0) {
-        type = TokenType::And;
-    } else if (len == 3 && strncmp(&query_.at(idx), "not", len) == 0) {
-        type = TokenType::Not;
-    } else if (len == 6 && strncmp(&query_.at(idx), "update", len) == 0) {
-        type = TokenType::Update;
-    } else if (len == 3 && strncmp(&query_.at(idx), "set", len) == 0) {
-        type = TokenType::Set;
-    } else if (len == 6 && strncmp(&query_.at(idx), "delete", len) == 0) {
-        type = TokenType::Delete;
-    } else if (len == 4 && strncmp(&query_.at(idx), "drop", len) == 0) {
-        type = TokenType::Drop;
-    } else if (len == 2 && strncmp(&query_.at(idx), "if", len) == 0) {
-        type = TokenType::If;
-    } else if (len == 6 && strncmp(&query_.at(idx), "exists", len) == 0) {
-        type = TokenType::Exists;
-    } else if (len == 7 && strncmp(&query_.at(idx), "foreign", len) == 0) {
-        type = TokenType::Foreign;
-    } else if (len == 10 && strncmp(&query_.at(idx), "references", len) == 0) {
-        type = TokenType::References;
-    } else if (len == 8 && strncmp(&query_.at(idx), "describe", len) == 0) {
-        type = TokenType::Describe;
-    } else if (len == 5 && strncmp(&query_.at(idx), "order", len) == 0) {
-        type = TokenType::Order;
-    } else if (len == 2 && strncmp(&query_.at(idx), "by", len) == 0) {
-        type = TokenType::By;
-    } else if (len == 4 && strncmp(&query_.at(idx), "desc", len) == 0) {
-        type = TokenType::Desc;
-    } else if (len == 3 && strncmp(&query_.at(idx), "asc", len) == 0) {
-        type = TokenType::Asc;
-    } else if (len == 5 && strncmp(&query_.at(idx), "limit", len) == 0) {
-        type = TokenType::Limit;
-    } else if (len == 5 && strncmp(&query_.at(idx), "group", len) == 0) {
-        type = TokenType::Group;
-    } else if (len == 3 && strncmp(&query_.at(idx), "avg", len) == 0) {
-        type = TokenType::Avg;
-    } else if (len == 5 && strncmp(&query_.at(idx), "count", len) == 0) {
-        type = TokenType::Count;
-    } else if (len == 3 && strncmp(&query_.at(idx), "sum", len) == 0) {
-        type = TokenType::Sum;
-    } else if (len == 3 && strncmp(&query_.at(idx), "max", len) == 0) {
-        type = TokenType::Max;
-    } else if (len == 3 && strncmp(&query_.at(idx), "min", len) == 0) {
-        type = TokenType::Min;
-    } else if (len == 8 && strncmp(&query_.at(idx), "distinct", len) == 0) {
-        type = TokenType::Distinct;
-    } else if (len == 2 && strncmp(&query_.at(idx), "as", len) == 0) {
-        type = TokenType::As;
-    } else if (len == 5 && strncmp(&query_.at(idx), "cross", len) == 0) {
-        type = TokenType::Cross;
-    } else if (len == 4 && strncmp(&query_.at(idx), "join", len) == 0) {
-        type = TokenType::Join;
-    } else if (len == 2 && strncmp(&query_.at(idx), "on", len) == 0) {
-        type = TokenType::On;
-    } else if (len == 5 && strncmp(&query_.at(idx), "inner", len) == 0) {
-        type = TokenType::Inner;
-    } else if (len == 2 && strncmp(&query_.at(idx), "is", len) == 0) {
-        type = TokenType::Is;
-    } else if (len == 4 && strncmp(&query_.at(idx), "left", len) == 0) {
-        type = TokenType::Left;
-    } else if (len == 5 && strncmp(&query_.at(idx), "right", len) == 0) {
-        type = TokenType::Right;
-    } else if (len == 4 && strncmp(&query_.at(idx), "full", len) == 0) {
-        type = TokenType::Full;
-    } else if (len == 4 && strncmp(&query_.at(idx), "int8", len) == 0) {
-        type = TokenType::Int8;
-    } else if (len == 6 && strncmp(&query_.at(idx), "unique", len) == 0) {
-        type = TokenType::Unique;
-    } else if (len == 5 && strncmp(&query_.at(idx), "nulls", len) == 0) {
-        type = TokenType::Nulls;
-    } else if (len == 5 && strncmp(&query_.at(idx), "begin", len) == 0) {
-        type = TokenType::Begin;
-    } else if (len == 6 && strncmp(&query_.at(idx), "commit", len) == 0) {
-        type = TokenType::Commit;
-    } else if (len == 8 && strncmp(&query_.at(idx), "rollback", len) == 0) {
-        type = TokenType::Rollback;
-    } else {
-        type = TokenType::Identifier;
+    for (const Keyword& kw: keywords[len]) {
+        if (strncmp(&query_.at(idx), kw.string, len) == 0)
+            type = kw.type;
     }
 
     *t = Token(query_.substr(idx, len), type);
