@@ -22,11 +22,12 @@ namespace wsldb {
     } while(0); t; })
 
 Status Parser::ParseTxns(std::vector<Txn>& txns) {
-    while (PeekToken().type != TokenType::Eof) {
+    while (!AdvanceIf(TokenType::Eof)) {
         Txn txn;
         Status s = ParseTxn(&txn);
         if (!s.Ok())
             return s;
+
         txns.push_back(txn);
     }
 
@@ -38,18 +39,17 @@ Status Parser::ParseTxn(Txn* txn) {
 
     bool single_stmt_txn = true;
     bool commit_on_success = true;
-    if (PeekToken().type == TokenType::Begin) {
+    if (AdvanceIf(TokenType::Begin)) {
         single_stmt_txn = false;
-        NextToken(); //begin
-        NextToken(); //;
+        EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at the end of begin statement");
     }
 
-    while (PeekToken().type != TokenType::Eof) {
+    while (!AdvanceIf(TokenType::Eof)) {
         if (PeekToken().type == TokenType::Commit || PeekToken().type == TokenType::Rollback) {
             if (NextToken().type == TokenType::Rollback) { //rollback or commit
                 commit_on_success = false;
             }
-            NextToken(); //;
+            EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at the end of statement");
             break;
         }
         Stmt* stmt;
@@ -78,8 +78,7 @@ Expr* Parser::ParsePrimary() {
             return new Literal(NextToken());
         case TokenType::Identifier: {
             Token ref = NextToken();
-            if (PeekToken().type == TokenType::Dot) {
-                NextToken(); //.
+            if (AdvanceIf(TokenType::Dot)) {
                 Token col = NextToken();
                 return new ColRef(col, ref);
             }
@@ -210,8 +209,7 @@ Expr* Parser::ParseExpr() {
 
 WorkTable* Parser::ParsePrimaryWorkTable() {
     Token t = NextToken();
-    if (PeekToken().type == TokenType::As) {
-        NextToken(); //as
+    if (AdvanceIf(TokenType::As)) {
         Token alias = NextToken();
         return new PrimaryTable(t, alias);
     }
@@ -273,18 +271,6 @@ WorkTable* Parser::ParseWorkTable() {
     return ParseBinaryWorkTable();
 }
 
-std::vector<Expr*> Parser::ParseTuple() {
-    NextToken(); //(
-    std::vector<Expr*> exprs = std::vector<Expr*>();
-    while (PeekToken().type != TokenType::RParen) {
-        exprs.push_back(ParseExpr());
-        if (PeekToken().type == TokenType::Comma) {
-            NextToken(); //,
-        }
-    }
-    NextToken(); //)
-    return exprs;
-}
 
 Status Parser::ParseStmt(Stmt** stmt) {
     switch (NextToken().type) {
@@ -325,15 +311,14 @@ Status Parser::ParseStmt(Stmt** stmt) {
                     }
 
                     EatToken(TokenType::Nulls, "Parse Error: 'nulls distinct' or 'nulls not distinct' must be included");
-                    //TODO: EatTokenIn for 'not' and 'distinct'
-                    Token distinct_clause_token = NextToken(); //'not' or 'distinct'
+                    Token distinct_clause_token = EatTokenIn(std::vector<TokenType>({TokenType::Not, TokenType::Distinct}), 
+                                                             "Parse Error: Expected 'nulls distinct' or 'nulls not distinct'");
                     if (distinct_clause_token.type == TokenType::Not)
                         EatToken(TokenType::Distinct, "Parse Error: Expected keyword 'distinct' after 'not'");
 
                     uniques.push_back(cols);
                     nulls_distinct.push_back(distinct_clause_token.type == TokenType::Distinct);
                 } else {
-                    //column name and type
                     names.push_back(EatToken(TokenType::Identifier, "Parse Error: Expected column name"));
                     types.push_back(EatTokenIn(TokenTypeSQLDataTypes(), "Parse Error: Expected valid SQL data type"));
 
@@ -388,12 +373,10 @@ Status Parser::ParseStmt(Stmt** stmt) {
                 remove_duplicates = true;
             }
 
-            //TODO: replace this with do/while
             std::vector<Expr*> target_cols;
-            target_cols.push_back(ParseExpr()); //TODO: check if ParseExpr returns an error
-            while (AdvanceIf(TokenType::Comma)) {
-                target_cols.push_back(ParseExpr()); //TODO: check if ParseExpr returns error
-            }
+            do {
+                target_cols.push_back(ParseExpr()); //TODO: check if ParseExpr returns an error
+            } while (AdvanceIf(TokenType::Comma));
 
             WorkTable* target = nullptr;
             if (AdvanceIf(TokenType::From)) {
@@ -413,19 +396,12 @@ Status Parser::ParseStmt(Stmt** stmt) {
             if (AdvanceIf(TokenType::Order)) {
                 EatToken(TokenType::By, "Parse Error: Expected keyword 'by' after keyword 'order'");
 
-                //TODO: replace this with do/while
-
-                Expr* col = ParseExpr(); //TODO: Check if ParseExpr returns error
-                Token asc = EatTokenIn(std::vector<TokenType>({TokenType::Asc, TokenType::Desc}), 
-                                       "Parse Error: Expected either keyword 'asc' or 'desc' after column name");
-                order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
-
-                while (AdvanceIf(TokenType::Comma)) {
+                do {
                     Expr* col = ParseExpr(); //TODO: Check if ParseExpr returns error
                     Token asc = EatTokenIn(std::vector<TokenType>({TokenType::Asc, TokenType::Desc}), 
                                            "Parse Error: Expected either keyword 'asc' or 'desc' after column name");
                     order_cols.push_back({col, asc.type == TokenType::Asc ? new Literal(true) : new Literal(false)});
-                }
+                } while (AdvanceIf(TokenType::Comma));
             }
 
             Expr* limit = nullptr;

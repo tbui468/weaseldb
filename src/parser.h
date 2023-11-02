@@ -25,7 +25,6 @@ private:
     WorkTable* ParsePrimaryWorkTable();
     WorkTable* ParseBinaryWorkTable();
     WorkTable* ParseWorkTable();
-    std::vector<Expr*> ParseTuple();
 
     inline Token PeekToken() {
         return tokens_.at(idx_);
