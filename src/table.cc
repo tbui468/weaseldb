@@ -122,7 +122,7 @@ int Table::GetAttrIdx(const std::string& name) {
 Status Table::BeginScan(Storage* storage, int scan_idx) {
     scan_idx_ = scan_idx;
 
-    TableHandle handle = storage->GetTableHandle(table_name_);
+    TableHandle handle = storage->GetTable(table_name_);
     it_ = handle.db->NewIterator(rocksdb::ReadOptions(), handle.cfs.at(scan_idx_));
 
     it_->SeekToFirst();
@@ -139,7 +139,7 @@ Status Table::NextRow(Storage* storage, Row** r) {
     //return record stored in primary index
     int primary_cf = 0; 
     if (scan_idx_ != primary_cf) {
-        TableHandle handle = storage->GetTableHandle(table_name_);
+        TableHandle handle = storage->GetTable(table_name_);
         std::string primary_key = value;
         handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(primary_cf), primary_key, &value);
     }
@@ -154,7 +154,7 @@ Status Table::DeleteRow(Storage* storage, Batch* batch, Row* row) {
     int primary_cf = 0; 
 
     //delete from primary index
-    TableHandle handle = storage->GetTableHandle(table_name_);
+    TableHandle handle = storage->GetTable(table_name_);
     batch->Delete(table_name_, handle.cfs.at(primary_cf), Idx(primary_cf).GetKeyFromFields(row->data_));
 
     //delete key/value in all secondary indexes 
@@ -169,7 +169,7 @@ Status Table::DeleteRow(Storage* storage, Batch* batch, Row* row) {
 Status Table::UpdateRow(Storage* storage, Batch* batch, Row* updated_row, Row* old_row) {
     int primary_cf = 0; 
 
-    TableHandle handle = storage->GetTableHandle(table_name_);
+    TableHandle handle = storage->GetTable(table_name_);
     std::string old_key = Idx(primary_cf).GetKeyFromFields(old_row->data_);
     std::string updated_primary_key = Idx(primary_cf).GetKeyFromFields(updated_row->data_);
 
@@ -214,7 +214,7 @@ Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
     std::string key = Idx(cf_idx).GetKeyFromFields(data);
 
     std::string test_value;
-    TableHandle handle = storage->GetTableHandle(table_name_);
+    TableHandle handle = storage->GetTable(table_name_);
     rocksdb::Status status = handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(cf_idx), key, &test_value);
 
     if (status.ok()) {
@@ -236,7 +236,7 @@ Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
     //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
     //!!!Potential problem with lost updates here if multiple processes try to update counter concurrently!!!
     int default_name_idx = 0;
-    TableHandle catalogue = storage->GetTableHandle(storage->CatalogueTableName());
+    TableHandle catalogue = storage->GetTable(storage->CatalogueTableName());
     batch->Put(storage->CatalogueTableName(), catalogue.cfs.at(default_name_idx), table_name_, Serialize());
 
     return Status(true, "ok");

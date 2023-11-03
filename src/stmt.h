@@ -36,7 +36,6 @@ public:
                     types_(std::move(types)), 
                     not_null_constraints_(std::move(not_null_constraints)), 
                     uniques_(std::move(uniques)) {
-
         //insert internal column _rowid
         not_null_constraints_.insert(not_null_constraints_.begin(), true);
         names_.insert(names_.begin(), Token("_rowid", TokenType::Identifier));
@@ -93,15 +92,13 @@ public:
     }
 
     Status Execute(QueryState& qs) override {
-        //put table in catalogue
         Table table(target_.lexeme, names_, types_, not_null_constraints_, uniques_);
 
         int default_column_family_idx = 0;
-        TableHandle catalogue = qs.storage->GetTableHandle(qs.storage->CatalogueTableName());
+        TableHandle catalogue = qs.storage->GetTable(qs.storage->CatalogueTableName());
         qs.batch->Put(qs.storage->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), target_.lexeme, table.Serialize()); 
 
-        qs.storage->CreateTableHandle(target_.lexeme, table.idxs_);
-
+        qs.storage->CreateTable(target_.lexeme, table.idxs_);
         return Status(true, "CREATE TABLE");
     }
 private:
@@ -572,9 +569,9 @@ public:
         //skip if table doesn't exist - error should be reported in the semantic analysis stage if missing table is error
         if (table_) {
             int default_column_family_idx = 0;
-            TableHandle catalogue = qs.storage->GetTableHandle(qs.storage->CatalogueTableName());
+            TableHandle catalogue = qs.storage->GetTable(qs.storage->CatalogueTableName());
             qs.batch->Delete(qs.storage->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), target_relation_.lexeme);
-            qs.storage->DropTableHandle(target_relation_.lexeme);
+            qs.storage->DropTable(target_relation_.lexeme);
         }
 
         return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");

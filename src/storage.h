@@ -5,40 +5,48 @@
 #include <memory>
 
 #include "rocksdb/db.h"
+#include "rocksdb/utilities/transaction_db.h"
 #include "index.h"
 
 namespace wsldb {
 
 struct TableHandle {
-    rocksdb::DB* db;
+    rocksdb::TransactionDB* db;
     std::vector<rocksdb::ColumnFamilyHandle*> cfs;
 };
 
 class Storage {
 public:
     Storage(const std::string& db_path);
-    void CreateTableHandle(const std::string& name, const std::vector<Index>& idxs);
-    TableHandle& GetTableHandle(const std::string& name);
-    void DropTableHandle(const std::string& name);
+    virtual ~Storage();
+    void CreateTable(const std::string& name, const std::vector<Index>& idxs);
+    TableHandle GetTable(const std::string& name);
+    void DropTable(const std::string& name);
+    inline std::string CatalogueTableName() const { return "_catalogue"; }
+    inline std::string PrependDBPath(const std::string& db_name) { return path_ + "/" + db_name; }
+private:
+    void OpenTable(const std::string& name);
+    void CloseTable(const std::string& name);
 
-    std::string PrependDBPath(const std::string& idx_name);
-    inline std::string CatalogueTableName() const {
-        return "_catalogue";
-    }
-
-    static void DropDatabase(const std::string& db_path) {
+public:
+    static bool DatabaseExists(const std::string& db_path, rocksdb::DB** db) {
         rocksdb::Options options;
         options.create_if_missing = false;
        
-        //if database doesn't exist, just skip 
+        rocksdb::Status s = rocksdb::DB::Open(options, db_path, db);
+        return s.ok();
+    }
+
+    static void DropDatabase(const std::string& db_path) {
         rocksdb::DB* db;
-        rocksdb::Status s = rocksdb::DB::Open(options, db_path, &db);
-        if (!s.ok())
+        if (!DatabaseExists(db_path, &db))
             return;
+
+        rocksdb::Options options;
 
         //get catalogue
         rocksdb::DB* catalogue;
-        s = rocksdb::DB::Open(options, db_path + "/_catalogue", &catalogue);
+        rocksdb::Status s = rocksdb::DB::Open(options, db_path + "/_catalogue", &catalogue);
 
         if (s.ok()) {
             //iterate through tables in catalogue and call DestroyDB on each one
@@ -62,10 +70,10 @@ public:
     }
 
 private:
-    std::unordered_map<std::string, TableHandle> table_handles_;
-    rocksdb::Options options_;
-    rocksdb::Status status_;
     std::string path_;
+    rocksdb::Options options_;
+    rocksdb::TransactionDBOptions txndb_options_;
+    std::unordered_map<std::string, TableHandle> table_handles_;
 };
 
 class Batch {

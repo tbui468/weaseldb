@@ -112,7 +112,7 @@ public:
     virtual Status Execute(QueryState& qs) = 0;
     Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {
         std::string serialized_table;
-        TableHandle catalogue = qs.storage->GetTableHandle(qs.storage->CatalogueTableName());
+        TableHandle catalogue = qs.storage->GetTable(qs.storage->CatalogueTableName());
         bool ok = catalogue.db->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
 
         if (!ok)
@@ -1104,7 +1104,7 @@ public:
 
     Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
         std::string serialized_table;
-        TableHandle catalogue = qs.storage->GetTableHandle(qs.storage->CatalogueTableName());
+        TableHandle catalogue = qs.storage->GetTable(qs.storage->CatalogueTableName());
         bool ok = catalogue.db->Get(rocksdb::ReadOptions(), tab_name_, &serialized_table).ok();
 
         if (!ok) {
