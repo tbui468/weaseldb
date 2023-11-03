@@ -8,6 +8,7 @@
 #include "status.h"
 #include "storage.h"
 #include "rocksdb/db.h"
+#include "executor.h"
 
 namespace wsldb {
 
@@ -19,17 +20,15 @@ public:
         Batch batch;
         Status s;
         for (Stmt* stmt: txn.stmts) {
-            QueryState qs(storage_, &batch);
-            std::vector<DatumType> types;
-            s = stmt->Analyze(qs, types);
+            Executor e(storage_, &batch);
 
-            if (s.Ok()) {
-                s = stmt->Execute(qs);
-            }
-           
-            if (!s.Ok()) { 
+            s = e.Verify(stmt);
+            if (!s.Ok())
                 break;
-            }
+
+            s = e.Execute(stmt);
+            if (!s.Ok())
+                break;
         }
 
         //TODO: NOT atomic when writing across mulitple tables

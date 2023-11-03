@@ -104,6 +104,16 @@ private:
     std::vector<Row*> scope_rows_;
 };
 
+enum class StmtType {
+    Create,
+    Insert,
+    Update,
+    Delete,
+    Select,
+    DescribeTable,
+    DropTable
+};
+
 //Putting class Stmt here since we need it in Expr,
 //but putting it in stmt.h would cause a circular dependency
 class Stmt {
@@ -122,6 +132,7 @@ public:
 
         return Status(true, "ok");
     }
+    virtual StmtType Type() const;
 };
 
 //QueryState is saved in both Expr and Stmt, could probably

@@ -21,8 +21,8 @@ CXXFLAGS += -Wall
 #main: librocksdb main.cc tokenizer.cc parser.cc token.cc table.cc server.cc storage.cc index.cc nn.cc
 	#$(CXX) $(CXXFLAGS) $(LDFLAGS) $(TORCH_CXX_FLAGS) main.cc tokenizer.cc parser.cc token.cc table.cc server.cc storage.cc index.cc nn.cc -o wsldb -L../../libtorch/lib -lc10 -ltorch_cpu ../../rocksdb/librocksdb.a -I../../rocksdb/include -I../include -I../../libtorch/include/torch/csrc/api/include -I../../libtorch/include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
 
-main: librocksdb main.cc tokenizer.cc parser.cc token.cc table.cc server.cc storage.cc index.cc
-	$(CXX) $(CXXFLAGS) main.cc tokenizer.cc parser.cc token.cc table.cc server.cc storage.cc index.cc -o wsldb ../../rocksdb/librocksdb.a -I../../rocksdb/include -I../include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
+main: librocksdb main.cc tokenizer.cc parser.cc token.cc table.cc server.cc storage.cc index.cc executor.cc
+	$(CXX) $(CXXFLAGS) main.cc tokenizer.cc parser.cc token.cc table.cc server.cc storage.cc index.cc executor.cc -o wsldb ../../rocksdb/librocksdb.a -I../../rocksdb/include -I../include -O2 -std=c++17 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
 
 clean:
 	rm -rf ./main

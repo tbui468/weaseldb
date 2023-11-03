@@ -65,43 +65,16 @@ public:
     }
 
     Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        Table* table_ptr;
-        Status s = OpenTable(qs, target_.lexeme, &table_ptr);
-        if (s.Ok()) {
-            return Status(false, "Error: Table '" + target_.lexeme + "' already exists");
-        }
-
-        for (size_t i = 0; i < names_.size(); i++) {
-            Token name = names_.at(i);
-            Token type = types_.at(i);
-            if (name.type != TokenType::Identifier) {
-                return Status(false, "Error: '" + name.lexeme + "' is not allowed as column name");
-            }
-            if (!TokenTypeValidDataType(type.type)) {
-                return Status(false, "Error: '" + type.lexeme + "' is not a valid data type");
-            }
-        }
-
-        for (size_t i = 0; i < uniques_.size(); i++) {
-            std::vector<Token>& cols = uniques_.at(i);
-            if (!TokensSubsetOf(cols, names_))
-                return Status(false, "Error: Referenced column not in table declaration");
-        }
-
-        return Status(true, "ok");
+        return Status();
     }
 
     Status Execute(QueryState& qs) override {
-        Table table(target_.lexeme, names_, types_, not_null_constraints_, uniques_);
-
-        int default_column_family_idx = 0;
-        TableHandle catalogue = qs.storage->GetTable(qs.storage->CatalogueTableName());
-        qs.batch->Put(qs.storage->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), target_.lexeme, table.Serialize()); 
-
-        qs.storage->CreateTable(target_.lexeme, table.idxs_);
-        return Status(true, "CREATE TABLE");
+        return Status();
     }
-private:
+    StmtType Type() const override {
+        return StmtType::Create;
+    }
+public:
     Token target_;
     std::vector<Token> names_;
     std::vector<Token> types_;
@@ -126,6 +99,7 @@ public:
                     row_description_({}) {}
 
     Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
+        /*
         WorkingAttributeSet* working_attrs;
         {
             Status s = target_->Analyze(qs, &working_attrs);
@@ -191,11 +165,12 @@ public:
             }
         }
 
-        qs.PopAnalysisScope();
+        qs.PopAnalysisScope();*/
 
-        return Status(true, "ok");
+        return Status();
     }
     Status Execute(QueryState& qs) override {
+        /*
         //scan table(s) and filter using 'where' clause
         RowSet* rs = new RowSet(row_description_);
         target_->BeginScan(qs);
@@ -327,9 +302,13 @@ public:
             final_rs->rows_.resize(limit);
         }
 
-        return Status(true, "(" + std::to_string(final_rs->rows_.size()) + " rows)", {final_rs});
+        return Status(true, "(" + std::to_string(final_rs->rows_.size()) + " rows)", {final_rs});*/
+        return Status();
     }
-private:
+    StmtType Type() const override {
+        return StmtType::Select;
+    }
+public:
     WorkTable* target_;
     std::vector<Expr*> projs_;
     Expr* where_clause_;
@@ -345,68 +324,16 @@ public:
         target_(target), attrs_(std::move(attrs)), values_(std::move(values)), col_assigns_({}) {}
 
     Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        Status s = OpenTable(qs, target_.lexeme, &table_);
-        if (!s.Ok())
-            return s;
-       
-        WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //does postgresql allow table aliases on insert?
-
-        for (Token t: attrs_) {
-            if (!working_attrs->Contains(target_.lexeme, t.lexeme)) {
-                return Status(false, ("Error: Table does not have a matching column name"));
-            }
-        }
-
-        size_t attr_count = working_attrs->WorkingAttributeCount() - 1; //ignore _rowid since caller doesn't explicitly insert that
-
-        for (const std::vector<Expr*>& tuple: values_) {
-            if (attr_count < tuple.size())
-                return Status(false, "Error: Value count must match specified attribute name count");
-
-            std::vector<Expr*> col_assign;
-            for (size_t i = 0; i < attrs_.size(); i++) {
-                col_assign.push_back(new ColAssign(attrs_.at(i), tuple.at(i)));
-            }
-            col_assigns_.push_back(col_assign);
-        }
-
-        qs.PushAnalysisScope(working_attrs);
-        for (const std::vector<Expr*>& assigns: col_assigns_) {
-            for (Expr* e: assigns) {
-                DatumType type;
-                Status s = e->Analyze(qs, &type);
-                if (!s.Ok())
-                    return s;
-            }
-        }
-        qs.PopAnalysisScope();
-
         return Status(true, "ok");
     }
 
     Status Execute(QueryState& qs) override {
-        for (std::vector<Expr*> exprs: col_assigns_) {
-            //fill call fields with default null
-            std::vector<Datum> nulls;
-            for (size_t i = 0; i < table_->Attrs().size(); i++) {
-                nulls.push_back(Datum());
-            }
-            Row row(nulls);
-
-            for (Expr* e: exprs) {
-                Datum d;
-                Status s = e->Eval(qs, &row, &d); //result d is not used
-                if (!s.Ok()) return s;
-            }
-
-            Status s = table_->Insert(qs.storage, qs.batch, row.data_);
-            if (!s.Ok())
-                return s;
-        }
-
         return Status(true, "INSERT " + std::to_string(col_assigns_.size()));
     }
-private:
+    StmtType Type() const override {
+        return StmtType::Insert;
+    }
+public:
     Token target_;
     Table* table_;
     std::vector<Token> attrs_;
@@ -420,70 +347,15 @@ public:
         target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
 
     Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        Status s = OpenTable(qs, target_.lexeme, &table_);
-        if (!s.Ok())
-            return s;
-       
-        WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //Does postgresql allow table aliases on update?
-
-        qs.PushAnalysisScope(working_attrs);
-
-        {
-            DatumType type;
-            Status s = where_clause_->Analyze(qs, &type);
-            if (!s.Ok())
-                return s;
-            if (type != DatumType::Bool)
-                return Status(false, "Error: 'where' clause must evaluated to a boolean value");
-        }
-
-        for (Expr* e: assigns_) {
-            DatumType type;
-            Status s = e->Analyze(qs, &type);
-            if (!s.Ok())
-                return s;
-        }
-
-        qs.PopAnalysisScope();
-        
-        return Status(true, "ok");
+        return Status();
     }
     Status Execute(QueryState& qs) override {
-        int scan_idx = 0;
-        table_->BeginScan(qs.storage, scan_idx);
-
-        Row* r;
-        int update_count = 0;
-        Datum d;
-        while (table_->NextRow(qs.storage, &r).Ok()) {
-            qs.PushScopeRow(r);
-            Status s = where_clause_->Eval(qs, r, &d);
-            qs.PopScopeRow();
-
-            if (!s.Ok()) 
-                return s;
-
-            if (!d.AsBool())
-                continue;
-
-            Row updated_row = *r;
-
-            for (Expr* e: assigns_) {
-                qs.PushScopeRow(&updated_row);
-                Status s = e->Eval(qs, &updated_row, &d); //returned Datum of ColAssign expressions are ignored
-                qs.PopScopeRow();
-
-                if (!s.Ok()) 
-                    return s;
-            }
-
-            table_->UpdateRow(qs.storage, qs.batch, &updated_row, r);
-            update_count++;
-        }
-
-        return Status(true, "(" + std::to_string(update_count) + " deletes)");
+        return Status();
     }
-private:
+    StmtType Type() const override {
+        return StmtType::Update;
+    }
+public:
     Token target_;
     Table* table_;
     std::vector<Expr*> assigns_;
@@ -496,53 +368,15 @@ public:
         target_(target), where_clause_(where_clause) {}
 
     Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        Status s = OpenTable(qs, target_.lexeme, &table_);
-        if (!s.Ok())
-            return s;
-       
-        WorkingAttributeSet* working_attrs = new WorkingAttributeSet(table_, target_.lexeme); //Does postgresql allow table aliases on delete?
-
-        qs.PushAnalysisScope(working_attrs);
-
-        {
-            DatumType type;
-            Status s = where_clause_->Analyze(qs, &type);
-            if (!s.Ok())
-                return s;
-            if (type != DatumType::Bool)
-                return Status(false, "Error: 'where' clause must evaluated to a boolean value");
-        }
-
-        qs.PopAnalysisScope();
-
-        return Status(true, "ok");
+        return Status();
     }
     Status Execute(QueryState& qs) override {
-        int scan_idx = 0;
-        table_->BeginScan(qs.storage, scan_idx);
-
-        Row* r;
-        int delete_count = 0;
-        Datum d;
-        while (table_->NextRow(qs.storage, &r).Ok()) {
-
-            qs.PushScopeRow(r);
-            Status s = where_clause_->Eval(qs, r, &d);
-            qs.PopScopeRow();
-
-            if (!s.Ok()) 
-                return s;
-
-            if (!d.AsBool())
-                continue;
-
-            table_->DeleteRow(qs.storage, qs.batch, r);
-            delete_count++;
-        }
-
-        return Status(true, "(" + std::to_string(delete_count) + " deletes)");
+        return Status();
     }
-private:
+    StmtType Type() const override {
+        return StmtType::Delete;
+    }
+public:
     Token target_;
     Table* table_;
     Expr* where_clause_;
@@ -554,13 +388,15 @@ public:
         target_relation_(target_relation), has_if_exists_(has_if_exists), table_(nullptr) {}
 
     Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
+        /*
         Status s = OpenTable(qs, target_relation_.lexeme, &table_);
         if (!s.Ok() && !has_if_exists_)
             return s;
-
-        return Status(true, "ok");
+*/
+        return Status();
     }
     Status Execute(QueryState& qs) override {
+        /*
         //drop table name from catalogue
         if (!table_) {
             return Status(true, "(table '" + target_relation_.lexeme + "' doesn't exist and not dropped)");
@@ -574,9 +410,13 @@ public:
             qs.storage->DropTable(target_relation_.lexeme);
         }
 
-        return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");
+        return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");*/
+        return Status();
     }
-private:
+    StmtType Type() const override {
+        return StmtType::DropTable;
+    }
+public:
     Token target_relation_;
     bool has_if_exists_;
     Table* table_;
@@ -586,13 +426,15 @@ class DescribeTableStmt: public Stmt {
 public:
     DescribeTableStmt(Token target_relation): target_relation_(target_relation), table_(nullptr) {}
     Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
+        /*
         Status s = OpenTable(qs, target_relation_.lexeme, &table_);
         if (!s.Ok())
-            return s;
+            return s;*/
 
-        return Status(true, "ok");
+        return Status();
     }
     Status Execute(QueryState& qs) override {
+        /*
         //column information
         std::vector<Attribute> row_description = { Attribute("name", DatumType::Text, true), 
                                                    Attribute("type", DatumType::Text, true), 
@@ -617,9 +459,13 @@ public:
             idx_rowset->rows_.push_back(new Row(index_info));
         }
 
-        return Status(true, "table '" + target_relation_.lexeme + "'", { rowset, idx_rowset });
+        return Status(true, "table '" + target_relation_.lexeme + "'", { rowset, idx_rowset });*/
+        return Status();
     }
-private:
+    StmtType Type() const override {
+        return StmtType::DescribeTable;
+    }
+public:
     Token target_relation_;
     Table* table_;
 };
