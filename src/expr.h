@@ -132,7 +132,18 @@ public:
 
         return Status(true, "ok");
     }
-    virtual StmtType Type() const;
+    virtual StmtType Type() const = 0;
+};
+
+enum class ExprType {
+    Literal,
+    Binary,
+    Unary,
+    ColRef,
+    ColAssign,
+    Call,
+    IsNull,
+    ScalarSubquery
 };
 
 //QueryState is saved in both Expr and Stmt, could probably
@@ -143,6 +154,7 @@ public:
     virtual inline Status Eval(QueryState& qs, Row* r, Datum* result) = 0;
     virtual std::string ToString() = 0;
     virtual Status Analyze(QueryState& qs, DatumType* evaluated_type) = 0;
+    virtual ExprType Type() const = 0;
 };
 
 class Literal: public Expr {
@@ -533,42 +545,6 @@ public:
     }
     std::string ToString() override {
         return "IsNull";
-    }
-    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
-        *evaluated_type = DatumType::Bool;
-
-        DatumType left_type;
-        Status s = left_->Analyze(qs, &left_type);
-        if (!s.Ok())
-            return s;
-
-        return Status(true, "ok");
-    }
-private:
-    Expr* left_;
-};
-
-class IsNotNull: public Expr {
-public:
-    IsNotNull(Expr* left): left_(left) {}
-    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
-        qs.is_agg = false;
-
-        Datum d;
-        Status s = left_->Eval(qs, r, &d);
-        if (!s.Ok())
-            return s;
-
-        if (!d.IsType(DatumType::Null)) {
-            *result = Datum(true);
-        } else {
-            *result = Datum(false);
-        }
-
-        return Status(true, "ok");
-    }
-    std::string ToString() override {
-        return "IsNotNull";
     }
     Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
         *evaluated_type = DatumType::Bool;

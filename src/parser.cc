@@ -187,7 +187,7 @@ Status Parser::Equality(Expr** expr) {
                 left = new IsNull(left);
             } else { //t.type must be 'not'
                 EatToken(TokenType::Null, "Parse Error: Keyword 'is' must be followed by 'null' or 'not null'");
-                left = new IsNotNull(left);
+                left = new Unary(t, new IsNull(left));
             } 
         } else {
             Expr* right = ParseExpr(Relational);
