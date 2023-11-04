@@ -174,6 +174,9 @@ public:
         *evaluated_type = Datum(LiteralTokenToDatumType(t_.type), t_.lexeme).Type();
         return Status(true, "ok");
     }
+    ExprType Type() const override {
+        return ExprType::Literal;
+    }
 private:
     Token t_;
 };
@@ -273,6 +276,9 @@ public:
 
         return Status();
     }
+    ExprType Type() const override {
+        return ExprType::Binary;
+    }
 private:
     Token op_;
     Expr* left_;
@@ -336,6 +342,9 @@ public:
 
         return Status(true, "ok");
     }
+    ExprType Type() const override {
+        return ExprType::Unary;
+    }
 private:
     Token op_;
     Expr* right_;
@@ -365,6 +374,9 @@ public:
         scope_ = a.scope;
 
         return Status(true, "ok");
+    }
+    ExprType Type() const override {
+        return ExprType::ColRef;
     }
 private:
     Token t_;
@@ -421,6 +433,9 @@ public:
         scope_ = a.scope;
 
         return Status(true, "ok");
+    }
+    ExprType Type() const override {
+        return ExprType::ColAssign;
     }
 private:
     Token col_;
@@ -519,6 +534,9 @@ public:
 
         return Status();
     }
+    ExprType Type() const override {
+        return ExprType::Call;
+    }
 private:
     Token fcn_;
     Expr* arg_;
@@ -555,6 +573,9 @@ public:
             return s;
 
         return Status(true, "ok");
+    }
+    ExprType Type() const override {
+        return ExprType::IsNull;
     }
 private:
     Expr* left_;
@@ -604,6 +625,9 @@ public:
         *evaluated_type = types.at(0);
 
         return Status();
+    }
+    ExprType Type() const override {
+        return ExprType::ScalarSubquery;
     }
 private:
     Stmt* stmt_;
