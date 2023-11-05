@@ -46,6 +46,52 @@ Status Executor::Execute(Stmt* stmt) {
     }
 }
 
+Status Executor::Verify(Expr* expr, DatumType* type) {
+    switch (expr->Type()) {
+        case ExprType::Literal:
+            return VerifyLiteral((Literal*)expr, type);
+        case ExprType::Binary:
+            return VerifyBinary((Binary*)expr, type);
+        case ExprType::Unary:
+            return VerifyUnary((Unary*)expr, type);
+        case ExprType::ColRef:
+            return VerifyColRef((ColRef*)expr, type);
+        case ExprType::ColAssign:
+            return VerifyColAssign((ColAssign*)expr, type);
+        case ExprType::Call:
+            return VerifyCall((Call*)expr, type);
+        case ExprType::IsNull:
+            return VerifyIsNull((IsNull*)expr, type);
+        case ExprType::ScalarSubquery:
+            return VerifyScalarSubquery((ScalarSubquery*)expr, type);
+        default:
+            return Status(false, "Execution Error: Invalid expression type");
+    }
+}
+
+Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
+    switch (expr->Type()) {
+        case ExprType::Literal:
+            return EvalLiteral((Literal*)expr, row, result);
+        case ExprType::Binary:
+            return EvalBinary((Binary*)expr, row, result);
+        case ExprType::Unary:
+            return EvalUnary((Unary*)expr, row, result);
+        case ExprType::ColRef:
+            return EvalColRef((ColRef*)expr, row, result);
+        case ExprType::ColAssign:
+            return EvalColAssign((ColAssign*)expr, row, result);
+        case ExprType::Call:
+            return EvalCall((Call*)expr, row, result);
+        case ExprType::IsNull:
+            return EvalIsNull((IsNull*)expr, row, result);
+        case ExprType::ScalarSubquery:
+            return EvalScalarSubquery((ScalarSubquery*)expr, row, result);
+        default:
+            return Status(false, "Execution Error: Invalid expression type");
+    }
+}
+
 Status Executor::CreateVerifier(CreateStmt* stmt) { 
     Table* table_ptr;
     Status s = OpenTable(qs_, stmt->target_.lexeme, &table_ptr);
@@ -123,7 +169,7 @@ Status Executor::InsertVerifier(InsertStmt* stmt) {
     for (const std::vector<Expr*>& assigns: stmt->col_assigns_) {
         for (Expr* e: assigns) {
             DatumType type;
-            Status s = e->Analyze(qs_, &type);
+            Status s = Verify(e, &type);
             if (!s.Ok())
                 return s;
         }
@@ -167,7 +213,7 @@ Status Executor::UpdateVerifier(UpdateStmt* stmt) {
 
     {
         DatumType type;
-        Status s = stmt->where_clause_->Analyze(qs_, &type);
+        Status s = Verify(stmt->where_clause_, &type);
         if (!s.Ok())
             return s;
         if (type != DatumType::Bool)
@@ -176,7 +222,7 @@ Status Executor::UpdateVerifier(UpdateStmt* stmt) {
 
     for (Expr* e: stmt->assigns_) {
         DatumType type;
-        Status s = e->Analyze(qs_, &type);
+        Status s = Verify(e, &type);
         if (!s.Ok())
             return s;
     }
@@ -232,7 +278,7 @@ Status Executor::DeleteVerifier(DeleteStmt* stmt) {
 
     {
         DatumType type;
-        Status s = stmt->where_clause_->Analyze(qs_, &type);
+        Status s = Verify(stmt->where_clause_, &type);
         if (!s.Ok())
             return s;
         if (type != DatumType::Bool)
@@ -273,7 +319,7 @@ Status Executor::SelectVerifier(SelectStmt* stmt) {
     proj_types_.push_back({});
     WorkingAttributeSet* working_attrs;
     {
-        Status s = stmt->target_->Analyze(qs_, &working_attrs);
+        Status s = Verify(stmt->target_, &working_attrs);
         if (!s.Ok())
             return s;
         qs_.PushAnalysisScope(working_attrs);
@@ -282,7 +328,7 @@ Status Executor::SelectVerifier(SelectStmt* stmt) {
     //projection
     for (Expr* e: stmt->projs_) {
         DatumType type;
-        Status s = e->Analyze(qs_, &type);
+        Status s = Verify(e, &type);
         if (!s.Ok()) {
             return s;
         }
@@ -295,7 +341,7 @@ Status Executor::SelectVerifier(SelectStmt* stmt) {
     //where clause
     {
         DatumType type;
-        Status s = stmt->where_clause_->Analyze(qs_, &type);
+        Status s = Verify(stmt->where_clause_, &type);
         if (!s.Ok()) {
             return s;
         }
@@ -309,14 +355,14 @@ Status Executor::SelectVerifier(SelectStmt* stmt) {
     for (OrderCol oc: stmt->order_cols_) {
         {
             DatumType type;
-            Status s = oc.col->Analyze(qs_, &type);
+            Status s = Verify(oc.col, &type);
             if (!s.Ok())
                 return s;
         }
 
         {
             DatumType type;
-            Status s = oc.asc->Analyze(qs_, &type);
+            Status s = Verify(oc.asc, &type);
             if (!s.Ok()) {
                 return s;
             }
@@ -326,7 +372,7 @@ Status Executor::SelectVerifier(SelectStmt* stmt) {
     //limit
     {
         DatumType type;
-        Status s = stmt->limit_->Analyze(qs_, &type);
+        Status s = Verify(stmt->limit_, &type);
         if (!s.Ok()) {
             return s;
         }
@@ -539,6 +585,385 @@ Status Executor::DropTableExecutor(DropTableStmt* stmt) {
     }
 
     return Status(true, "(table '" + stmt->target_relation_.lexeme + "' dropped)");
+}
+
+Status Executor::VerifyLiteral(Literal* expr, DatumType* type) { 
+    *type = LiteralTokenToDatumType(expr->t_.type);
+    return Status(); 
+}
+
+Status Executor::VerifyBinary(Binary* expr, DatumType* type) { 
+    DatumType left_type;
+    {
+        Status s = Verify(expr->left_, &left_type);
+        if (!s.Ok())
+            return s;
+    }
+    DatumType right_type;
+    {
+        Status s = Verify(expr->right_, &right_type);
+        if (!s.Ok())
+            return s;
+    }
+
+    if (left_type == DatumType::Null || right_type == DatumType::Null) {
+        *type = DatumType::Null;
+        return Status();
+    }
+
+    switch (expr->op_.type) {
+        case TokenType::Equal:
+        case TokenType::NotEqual:
+        case TokenType::Less:
+        case TokenType::LessEqual:
+        case TokenType::Greater:
+        case TokenType::GreaterEqual:
+            if (!(Datum::TypeIsNumeric(left_type) && Datum::TypeIsNumeric(right_type)) && left_type != right_type) {
+                    return Status(false, "Error: Equality and relational operands must be same data types");
+            }
+            *type = DatumType::Bool;
+            break;
+        case TokenType::Or:
+        case TokenType::And:
+            if (!(left_type == DatumType::Bool && right_type == DatumType::Bool)) {
+                return Status(false, "Error: Logical operator operands must be boolean types");
+            }
+            *type = DatumType::Bool;
+            break;
+        case TokenType::Plus:
+        case TokenType::Minus:
+        case TokenType::Star:
+        case TokenType::Slash:
+            if (!(Datum::TypeIsNumeric(left_type) && Datum::TypeIsNumeric(right_type))) {
+                return Status(false, "Error: The '" + expr->op_.lexeme + "' operator operands must both be a numeric type");
+            } 
+            *type = left_type;
+            break;
+        default:
+            return Status(false, "Implementation Error: op type not implemented in Binary expr!");
+            break;
+    }
+
+    return Status(); 
+}
+
+Status Executor::VerifyUnary(Unary* expr, DatumType* type) { 
+    DatumType right_type;
+    {
+        Status s = Verify(expr->right_, &right_type);
+        if (!s.Ok())
+            return s;
+    }
+    switch (expr->op_.type) {
+        case TokenType::Not:
+            if (right_type != DatumType::Bool) {
+                return Status(false, "Error: 'not' operand must be a boolean type.");
+            }
+            *type = DatumType::Bool;
+            break;
+        case TokenType::Minus:
+            if (!Datum::TypeIsNumeric(right_type)) {
+                return Status(false, "Error: '-' operator operand must be numeric type");
+            }
+            *type = right_type;
+            break;
+        default:
+            return Status(false, "Implementation Error: op type not implemented in Binary expr!");
+            break;
+    }
+
+    return Status(); 
+}
+
+Status Executor::VerifyColRef(ColRef* expr, DatumType* type) { 
+    WorkingAttribute a;
+    Status s = qs_.GetWorkingAttribute(&a, expr->table_ref_, expr->t_.lexeme);
+    if (!s.Ok())
+        return s;
+
+    expr->idx_ = a.idx;
+    *type = a.type;
+    expr->scope_ = a.scope;
+
+    return Status(); 
+}
+
+Status Executor::VerifyColAssign(ColAssign* expr, DatumType* type) { 
+    DatumType right_type;
+    {
+        Status s = Verify(expr->right_, &right_type);
+        if (!s.Ok())
+            return s;
+    }
+
+    WorkingAttribute a;
+    {
+        std::string table_ref = "";
+        Status s = qs_.GetWorkingAttribute(&a, table_ref, expr->col_.lexeme);
+        if (!s.Ok())
+            return s;
+    }
+
+    {
+        Status s = a.CheckConstraints(right_type);
+        if (!s.Ok())
+            return s;
+    }
+
+    *type = a.type;
+    expr->idx_ = a.idx;
+    expr->scope_ = a.scope;
+
+    return Status(); 
+}
+
+Status Executor::VerifyCall(Call* expr, DatumType* type) { 
+    DatumType arg_type;
+    {
+        Status s = Verify(expr->arg_, &arg_type);
+        if (!s.Ok()) {
+            return s;
+        }
+    }
+
+    switch (expr->fcn_.type) {
+        case TokenType::Avg:
+            //TODO: need to think about how we want to deal with integer division
+            //using floor division now if argument is integer type - what does postgres do?
+            *type = arg_type;
+            break;
+        case TokenType::Count:
+            *type = DatumType::Int8;
+            break;
+        case TokenType::Max:
+        case TokenType::Min:
+        case TokenType::Sum:
+            *type = arg_type;
+            break;
+        default:
+            return Status(false, "Error: Invalid function name");
+            break;
+    }
+
+    if (!TokenTypeIsAggregateFunction(expr->fcn_.type)) {
+        return Status(false, "Error: Function '" + expr->fcn_.lexeme + "' does not exist");
+    }
+
+    return Status(); 
+}
+
+Status Executor::VerifyIsNull(IsNull* expr, DatumType* type) { 
+    *type = DatumType::Bool;
+
+    DatumType left_type;
+    Status s = Verify(expr->left_, &left_type);
+    if (!s.Ok())
+        return s;
+
+    return Status(); 
+}
+
+Status Executor::VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type) { 
+    {
+        Status s = Verify(expr->stmt_);
+        if (!s.Ok())
+            return s;
+    }
+
+    //TODO: this should be taken from GetQueryState()->attrs
+    //at this point we don't know if the working table is a constant or physical or other table type
+    //so how can we set *evaluated_type for type checking?
+    if (proj_types_.size() != 1)
+        return Status(false, "Error: Scalar subquery must return a single value");
+
+    *type = proj_types_.back().at(0);
+
+    return Status();
+}
+
+Status Executor::EvalLiteral(Literal* expr, Row* row, Datum* result) { return Status(); }
+Status Executor::EvalBinary(Binary* expr, Row* row, Datum* result) { return Status(); }
+Status Executor::EvalUnary(Unary* expr, Row* row, Datum* result) { return Status(); }
+Status Executor::EvalColRef(ColRef* expr, Row* row, Datum* result) { return Status(); }
+Status Executor::EvalColAssign(ColAssign* expr, Row* row, Datum* result) { return Status(); }
+Status Executor::EvalCall(Call* expr, Row* row, Datum* result) { return Status(); }
+Status Executor::EvalIsNull(IsNull* expr, Row* row, Datum* result) { return Status(); }
+Status Executor::EvalScalarSubquery(ScalarSubquery* expr, Row* row, Datum* result) { return Status(); }
+
+Status Executor::Verify(WorkTable* scan, WorkingAttributeSet** working_attrs) {
+    switch (scan->Type()) {
+        case ScanType::Left:
+            return VerifyLeft((LeftJoin*)scan, working_attrs);
+        case ScanType::Full:
+            return VerifyFull((FullJoin*)scan, working_attrs);
+        case ScanType::Inner:
+            return VerifyInner((InnerJoin*)scan, working_attrs);
+        case ScanType::Cross:
+            return VerifyCross((CrossJoin*)scan, working_attrs);
+        case ScanType::Constant:
+            return VerifyConstant((ConstantTable*)scan, working_attrs);
+        case ScanType::Table:
+            return VerifyTable((PrimaryTable*)scan, working_attrs);
+        default:
+            return Status(false, "Execution Error: Invalid scan type");
+    }
+}
+
+Status Executor::VerifyLeft(LeftJoin* scan, WorkingAttributeSet** working_attrs) {
+    WorkingAttributeSet* left_attrs;
+    {
+        Status s = Verify(scan->left_, &left_attrs);
+        if (!s.Ok())
+            return s;
+    }
+
+    WorkingAttributeSet* right_attrs;
+    {
+        Status s = Verify(scan->right_, &right_attrs);
+        if (!s.Ok())
+            return s;
+    }
+
+    scan->right_attr_count_ = right_attrs->WorkingAttributeCount();
+
+    {
+        bool has_duplicate_tables;
+        *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+        scan->attrs_ = *working_attrs;
+        if (has_duplicate_tables)
+            return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
+    }
+
+    qs_.PushAnalysisScope(*working_attrs);
+    {
+        DatumType type;
+        Status s = Verify(scan->condition_, &type);
+        if (!s.Ok())
+            return s;
+
+        if (type != DatumType::Bool) {
+            return Status(false, "Error: Inner join condition must evaluate to a boolean type");
+        }
+    }
+    qs_.PopAnalysisScope();
+
+    return Status();
+}
+
+Status Executor::VerifyFull(FullJoin* scan, WorkingAttributeSet** working_attrs) {
+    Status s = Verify(scan->right_join_, working_attrs);
+    scan->attrs_ = *working_attrs;
+
+    if (!s.Ok())
+        return s;
+
+    scan->attr_count_ = (*working_attrs)->WorkingAttributeCount();
+
+    return Status();
+}
+
+Status Executor::VerifyInner(InnerJoin* scan, WorkingAttributeSet** working_attrs) {
+    WorkingAttributeSet* left_attrs;
+    {
+        Status s = Verify(scan->left_, &left_attrs);
+        if (!s.Ok())
+            return s;
+    }
+
+    WorkingAttributeSet* right_attrs;
+    {
+        Status s = Verify(scan->right_, &right_attrs);
+        if (!s.Ok())
+            return s;
+    }
+
+    {
+        bool has_duplicate_tables;
+        *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+        scan->attrs_ = *working_attrs;
+        if (has_duplicate_tables)
+            return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
+    }
+
+    //Need to put current attributeset into QueryState temporarily so that Expr::Analyze
+    //can use that data to perform semantic analysis for 'on' clause.  Normally Expr::Analyze is only
+    //called once entire WorkTable is Analyzed an at least a single WorkingAttributeSet is in QueryState,
+    //but InnerJoins have an Expr embedded as part of the WorkTable (the 'on' clause), so this is needed
+    //Something similar is done in InnerJoin::NextRow
+    qs_.PushAnalysisScope(*working_attrs);
+    {
+        DatumType type;
+        Status s = Verify(scan->condition_, &type);
+        if (!s.Ok())
+            return s;
+
+        if (type != DatumType::Bool) {
+            return Status(false, "Error: Inner join condition must evaluate to a boolean type");
+        }
+    }
+    qs_.PopAnalysisScope();
+
+    return Status(true, "ok");
+}
+
+Status Executor::VerifyCross(CrossJoin* scan, WorkingAttributeSet** working_attrs) {
+    WorkingAttributeSet* left_attrs;
+    {
+        Status s = Verify(scan->left_, &left_attrs);
+        if (!s.Ok())
+            return s;
+    }
+
+    WorkingAttributeSet* right_attrs;
+    {
+        Status s = Verify(scan->right_, &right_attrs);
+        if (!s.Ok())
+            return s;
+    }
+
+    {
+        bool has_duplicate_tables;
+        *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+        scan->attrs_ = *working_attrs;
+        if (has_duplicate_tables)
+            return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
+    }
+
+    return Status();
+}
+
+Status Executor::VerifyConstant(ConstantTable* scan, WorkingAttributeSet** working_attrs) {
+    std::vector<std::string> names;
+    std::vector<DatumType> types;
+    for (Expr* e: scan->target_cols_) {
+        DatumType type;
+        Status s = Verify(e, &type);
+        if (!s.Ok())
+            return s;
+        names.push_back("?col?");
+        types.push_back(type);
+    }
+
+    *working_attrs = new WorkingAttributeSet("?table?", names, types);
+    scan->attrs_ = *working_attrs;
+
+    return Status();
+}
+
+Status Executor::VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_attrs) {
+    std::string serialized_table;
+    TableHandle catalogue = qs_.storage->GetTable(qs_.storage->CatalogueTableName());
+    bool ok = catalogue.db->Get(rocksdb::ReadOptions(), scan->tab_name_, &serialized_table).ok();
+
+    if (!ok) {
+        return Status(false, "Error: Table '" + scan->tab_name_ + "' does not exist");
+    }
+    scan->table_ = new Table(scan->tab_name_, serialized_table);
+
+    *working_attrs = new WorkingAttributeSet(scan->table_, scan->ref_name_);
+    scan->attrs_ = *working_attrs;
+
+    return Status();
 }
 
 }

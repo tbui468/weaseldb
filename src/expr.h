@@ -153,7 +153,6 @@ public:
     //TODO: reuslt and is_agg can be put inside of query state
     virtual inline Status Eval(QueryState& qs, Row* r, Datum* result) = 0;
     virtual std::string ToString() = 0;
-    virtual Status Analyze(QueryState& qs, DatumType* evaluated_type) = 0;
     virtual ExprType Type() const = 0;
 };
 
@@ -170,14 +169,10 @@ public:
     std::string ToString() override {
         return t_.lexeme;
     }
-    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
-        *evaluated_type = Datum(LiteralTokenToDatumType(t_.type), t_.lexeme).Type();
-        return Status(true, "ok");
-    }
     ExprType Type() const override {
         return ExprType::Literal;
     }
-private:
+public:
     Token t_;
 };
 
@@ -222,64 +217,10 @@ public:
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
     }
-    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
-        DatumType left_type;
-        {
-            Status s = left_->Analyze(qs, &left_type);
-            if (!s.Ok())
-                return s;
-        }
-        DatumType right_type;
-        {
-            Status s = right_->Analyze(qs, &right_type);
-            if (!s.Ok())
-                return s;
-        }
-
-        if (left_type == DatumType::Null || right_type == DatumType::Null) {
-            *evaluated_type = DatumType::Null;
-            return Status();
-        }
-
-        switch (op_.type) {
-            case TokenType::Equal:
-            case TokenType::NotEqual:
-            case TokenType::Less:
-            case TokenType::LessEqual:
-            case TokenType::Greater:
-            case TokenType::GreaterEqual:
-                if (!(Datum::TypeIsNumeric(left_type) && Datum::TypeIsNumeric(right_type)) && left_type != right_type) {
-                        return Status(false, "Error: Equality and relational operands must be same data types");
-                }
-                *evaluated_type = DatumType::Bool;
-                break;
-            case TokenType::Or:
-            case TokenType::And:
-                if (!(left_type == DatumType::Bool && right_type == DatumType::Bool)) {
-                    return Status(false, "Error: Logical operator operands must be boolean types");
-                }
-                *evaluated_type = DatumType::Bool;
-                break;
-            case TokenType::Plus:
-            case TokenType::Minus:
-            case TokenType::Star:
-            case TokenType::Slash:
-                if (!(Datum::TypeIsNumeric(left_type) && Datum::TypeIsNumeric(right_type))) {
-                    return Status(false, "Error: The '" + op_.lexeme + "' operator operands must both be a numeric type");
-                } 
-                *evaluated_type = left_type;
-                break;
-            default:
-                return Status(false, "Implementation Error: op type not implemented in Binary expr!");
-                break;
-        }
-
-        return Status();
-    }
     ExprType Type() const override {
         return ExprType::Binary;
     }
-private:
+public:
     Token op_;
     Expr* left_;
     Expr* right_;
@@ -315,37 +256,10 @@ public:
     std::string ToString() override {
         return "(" + op_.lexeme + " " + right_->ToString() + ")";
     }
-    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
-        DatumType type;
-        {
-            Status s = right_->Analyze(qs, &type);
-            if (!s.Ok())
-                return s;
-        }
-        switch (op_.type) {
-            case TokenType::Not:
-                if (type != DatumType::Bool) {
-                    return Status(false, "Error: 'not' operand must be a boolean type.");
-                }
-                *evaluated_type = DatumType::Bool;
-                break;
-            case TokenType::Minus:
-                if (!Datum::TypeIsNumeric(type)) {
-                    return Status(false, "Error: '-' operator operand must be numeric type");
-                }
-                *evaluated_type = type;
-                break;
-            default:
-                return Status(false, "Implementation Error: op type not implemented in Binary expr!");
-                break;
-        }
-
-        return Status(true, "ok");
-    }
     ExprType Type() const override {
         return ExprType::Unary;
     }
-private:
+public:
     Token op_;
     Expr* right_;
 };
@@ -363,22 +277,10 @@ public:
     std::string ToString() override {
         return t_.lexeme;
     }
-    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
-        WorkingAttribute a;
-        Status s = qs.GetWorkingAttribute(&a, table_ref_, t_.lexeme);
-        if (!s.Ok())
-            return s;
-
-        idx_ = a.idx;
-        *evaluated_type = a.type;
-        scope_ = a.scope;
-
-        return Status(true, "ok");
-    }
     ExprType Type() const override {
         return ExprType::ColRef;
     }
-private:
+public:
     Token t_;
     std::string table_ref_;
     int idx_;
@@ -406,38 +308,10 @@ public:
     std::string ToString() override {
         return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
     }
-    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
-        DatumType type;
-        {
-            Status s = right_->Analyze(qs, &type);
-            if (!s.Ok())
-                return s;
-        }
-
-        WorkingAttribute a;
-        {
-            std::string table_ref = "";
-            Status s = qs.GetWorkingAttribute(&a, table_ref, col_.lexeme);
-            if (!s.Ok())
-                return s;
-        }
-
-        {
-            Status s = a.CheckConstraints(type);
-            if (!s.Ok())
-                return s;
-        }
-
-        *evaluated_type = a.type;
-        idx_ = a.idx;
-        scope_ = a.scope;
-
-        return Status(true, "ok");
-    }
     ExprType Type() const override {
         return ExprType::ColAssign;
     }
-private:
+public:
     Token col_;
     Expr* right_;
     int scope_;
@@ -500,44 +374,10 @@ public:
     std::string ToString() override {
         return fcn_.lexeme + arg_->ToString();
     }
-    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
-        DatumType type;
-        {
-            Status s = arg_->Analyze(qs, &type);
-            if (!s.Ok()) {
-                return s;
-            }
-        }
-
-        switch (fcn_.type) {
-            case TokenType::Avg:
-                //TODO: need to think about how we want to deal with integer division
-                //using floor division now if argument is integer type - what does postgres do?
-                *evaluated_type = type;
-                break;
-            case TokenType::Count:
-                *evaluated_type = DatumType::Int8;
-                break;
-            case TokenType::Max:
-            case TokenType::Min:
-            case TokenType::Sum:
-                *evaluated_type = type;
-                break;
-            default:
-                return Status(false, "Error: Invalid function name");
-                break;
-        }
-
-        if (!TokenTypeIsAggregateFunction(fcn_.type)) {
-            return Status(false, "Error: Function '" + fcn_.lexeme + "' does not exist");
-        }
-
-        return Status();
-    }
     ExprType Type() const override {
         return ExprType::Call;
     }
-private:
+public:
     Token fcn_;
     Expr* arg_;
 };
@@ -564,20 +404,10 @@ public:
     std::string ToString() override {
         return "IsNull";
     }
-    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
-        *evaluated_type = DatumType::Bool;
-
-        DatumType left_type;
-        Status s = left_->Analyze(qs, &left_type);
-        if (!s.Ok())
-            return s;
-
-        return Status(true, "ok");
-    }
     ExprType Type() const override {
         return ExprType::IsNull;
     }
-private:
+public:
     Expr* left_;
 };
 
@@ -608,86 +438,37 @@ public:
     std::string ToString() override {
         return "scalar subquery";
     }
-    Status Analyze(QueryState& qs, DatumType* evaluated_type) override {
-        std::vector<DatumType> types;
-        {
-            Status s = stmt_->Analyze(qs, types);
-            if (!s.Ok())
-                return s;
-        }
-
-        //TODO: this should be taken from GetQueryState()->attrs
-        //at this point we don't know if the working table is a constant or physical or other table type
-        //so how can we set *evaluated_type for type checking?
-        if (types.size() != 1)
-            return Status(false, "Error: Scalar subquery must return a single value");
-
-        *evaluated_type = types.at(0);
-
-        return Status();
-    }
     ExprType Type() const override {
         return ExprType::ScalarSubquery;
     }
-private:
+public:
     Stmt* stmt_;
+};
+
+enum class ScanType {
+    Left, //right-join is just a left-join with the input scans swapped
+    Full,
+    Inner,
+    Cross,
+    Constant,
+    Table
 };
 
 class WorkTable {
 public:
-    virtual Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) = 0;
     virtual Status BeginScan(QueryState& qs) = 0;
     virtual Status NextRow(QueryState& qs, Row** r) = 0;
     std::vector<Attribute> GetAttributes() const {
         return attrs_->GetAttributes();
     }
-protected:
+    virtual ScanType Type() const = 0;
+public:
     WorkingAttributeSet* attrs_ { nullptr };
 };
 
 class LeftJoin: public WorkTable {
 public:
     LeftJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
-        WorkingAttributeSet* left_attrs;
-        {
-            Status s = left_->Analyze(qs, &left_attrs);
-            if (!s.Ok())
-                return s;
-        }
-
-        WorkingAttributeSet* right_attrs;
-        {
-            Status s = right_->Analyze(qs, &right_attrs);
-            if (!s.Ok())
-                return s;
-        }
-
-        right_attr_count_ = right_attrs->WorkingAttributeCount();
-
-        {
-            bool has_duplicate_tables;
-            *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
-            attrs_ = *working_attrs;
-            if (has_duplicate_tables)
-                return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
-        }
-
-        qs.PushAnalysisScope(*working_attrs);
-        {
-            DatumType type;
-            Status s = condition_->Analyze(qs, &type);
-            if (!s.Ok())
-                return s;
-
-            if (type != DatumType::Bool) {
-                return Status(false, "Error: Inner join condition must evaluate to a boolean type");
-            }
-        }
-        qs.PopAnalysisScope();
-
-        return Status(true, "ok");
-    }
     Status BeginScan(QueryState& qs) override {
         left_->BeginScan(qs);
         right_->BeginScan(qs);
@@ -755,7 +536,10 @@ public:
 
         return Status(false, "Should never see this message");
     }
-private:
+    ScanType Type() const override {
+        return ScanType::Left;
+    }
+public:
     //used to track number of times a given left row is inserted into the final working table
     //if a row is inserted 0 times, then insert the left row and fill in the right row with nulls
     int lefts_inserted_;
@@ -772,18 +556,6 @@ class FullJoin: public WorkTable {
 public:
     FullJoin(WorkTable* left, WorkTable* right, Expr* condition): 
         left_(left), right_(right), condition_(condition), right_join_(new LeftJoin(right, left, condition)) {}
-
-    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
-        Status s = right_join_->Analyze(qs, working_attrs);
-        attrs_ = *working_attrs;
-
-        if (!s.Ok())
-            return s;
-
-        attr_count_ = (*working_attrs)->WorkingAttributeCount();
-
-        return s;
-    }
     Status BeginScan(QueryState& qs) override {
         right_join_->BeginScan(qs);
         do_right_ = true;
@@ -875,7 +647,10 @@ public:
 
         return Status(false, "Should never see this message");
     }
-private:
+    ScanType Type() const override {
+        return ScanType::Full;
+    }
+public:
     //used to track number of times a given left row is inserted into the final working table
     //if a row is inserted 0 times, then insert the left row and fill in the right row with nulls
     int lefts_inserted_;
@@ -893,49 +668,6 @@ private:
 class InnerJoin: public WorkTable {
 public:
     InnerJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
-        WorkingAttributeSet* left_attrs;
-        {
-            Status s = left_->Analyze(qs, &left_attrs);
-            if (!s.Ok())
-                return s;
-        }
-
-        WorkingAttributeSet* right_attrs;
-        {
-            Status s = right_->Analyze(qs, &right_attrs);
-            if (!s.Ok())
-                return s;
-        }
-
-        {
-            bool has_duplicate_tables;
-            *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
-            attrs_ = *working_attrs;
-            if (has_duplicate_tables)
-                return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
-        }
-
-        //Need to put current attributeset into QueryState temporarily so that Expr::Analyze
-        //can use that data to perform semantic analysis for 'on' clause.  Normally Expr::Analyze is only
-        //called once entire WorkTable is Analyzed an at least a single WorkingAttributeSet is in QueryState,
-        //but InnerJoins have an Expr embedded as part of the WorkTable (the 'on' clause), so this is needed
-        //Something similar is done in InnerJoin::NextRow
-        qs.PushAnalysisScope(*working_attrs);
-        {
-            DatumType type;
-            Status s = condition_->Analyze(qs, &type);
-            if (!s.Ok())
-                return s;
-
-            if (type != DatumType::Bool) {
-                return Status(false, "Error: Inner join condition must evaluate to a boolean type");
-            }
-        }
-        qs.PopAnalysisScope();
-
-        return Status(true, "ok");
-    }
     Status BeginScan(QueryState& qs) override {
         left_->BeginScan(qs);
         right_->BeginScan(qs);
@@ -990,7 +722,10 @@ public:
 
         return Status(false, "Should never see this message");
     }
-private:
+    ScanType Type() const override {
+        return ScanType::Inner;
+    }
+public:
     Row* left_row_;
     WorkTable* left_;
     WorkTable* right_;
@@ -1000,31 +735,6 @@ private:
 class CrossJoin: public WorkTable {
 public:
     CrossJoin(WorkTable* left, WorkTable* right): left_(left), right_(right), left_row_(nullptr) {}
-    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
-        WorkingAttributeSet* left_attrs;
-        {
-            Status s = left_->Analyze(qs, &left_attrs);
-            if (!s.Ok())
-                return s;
-        }
-
-        WorkingAttributeSet* right_attrs;
-        {
-            Status s = right_->Analyze(qs, &right_attrs);
-            if (!s.Ok())
-                return s;
-        }
-
-        {
-            bool has_duplicate_tables;
-            *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
-            attrs_ = *working_attrs;
-            if (has_duplicate_tables)
-                return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
-        }
-
-        return Status(true, "ok");
-    }
     Status BeginScan(QueryState& qs) override {
         left_->BeginScan(qs);
         right_->BeginScan(qs);
@@ -1060,7 +770,10 @@ public:
 
         return Status(true, "ok");
     }
-private:
+    ScanType Type() const override {
+        return ScanType::Cross;
+    }
+public:
     WorkTable* left_;
     WorkTable* right_;
     Row* left_row_;
@@ -1069,23 +782,6 @@ private:
 class ConstantTable: public WorkTable {
 public:
     ConstantTable(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
-    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
-        std::vector<std::string> names;
-        std::vector<DatumType> types;
-        for (Expr* e: target_cols_) {
-            DatumType type;
-            Status s = e->Analyze(qs, &type);      
-            if (!s.Ok())
-                return s;
-            names.push_back("?col?");
-            types.push_back(type);
-        }
-
-        *working_attrs = new WorkingAttributeSet("?table?", names, types);
-        attrs_ = *working_attrs;
-
-        return Status(true, "ok");
-    }
     Status BeginScan(QueryState& qs) override {
         cur_ = 0;
         return Status(true, "ok");
@@ -1102,7 +798,10 @@ public:
         cur_++;
         return Status(true, "ok");
     }
-private:
+    ScanType Type() const override {
+        return ScanType::Constant;
+    }
+public:
     std::vector<Expr*> target_cols_;
     int cur_;
 };
@@ -1112,29 +811,16 @@ public:
     PrimaryTable(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
     //if an alias is not provided, the reference name is the same as the physical table name
     PrimaryTable(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
-
-    Status Analyze(QueryState& qs, WorkingAttributeSet** working_attrs) override {
-        std::string serialized_table;
-        TableHandle catalogue = qs.storage->GetTable(qs.storage->CatalogueTableName());
-        bool ok = catalogue.db->Get(rocksdb::ReadOptions(), tab_name_, &serialized_table).ok();
-
-        if (!ok) {
-            return Status(false, "Error: Table '" + tab_name_ + "' does not exist");
-        }
-        table_ = new Table(tab_name_, serialized_table);
-
-        *working_attrs = new WorkingAttributeSet(table_, ref_name_);
-        attrs_ = *working_attrs;
-
-        return Status(true, "ok");
-    }
     Status BeginScan(QueryState& qs) override {
         return table_->BeginScan(qs.storage, qs.scan_idx);
     }
     Status NextRow(QueryState& qs, Row** r) override {
         return table_->NextRow(qs.storage, r);
     }
-private:
+    ScanType Type() const override {
+        return ScanType::Table;
+    }
+public:
     std::string tab_name_;
     std::string ref_name_;
     Table* table_;
