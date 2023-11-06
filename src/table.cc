@@ -4,6 +4,101 @@
 
 namespace wsldb {
 
+Schema::Schema(std::string table_name,
+               std::vector<Token> names,
+               std::vector<Token> types,
+               std::vector<bool> not_null_constraints, 
+               std::vector<std::vector<Token>> uniques) {
+
+    table_name_ = table_name;
+    rowid_counter_ = 0;
+
+    //NOTE: index creation requires attrs_ to be filled in beforehand
+    for (size_t i = 0; i < names.size(); i++) {
+        attrs_.emplace_back(names.at(i).lexeme, TypeTokenToDatumType(types.at(i).type), not_null_constraints.at(i));
+    }
+
+    bool is_primary = true;
+
+    //indexes
+    for (const std::vector<Token>& col_group: uniques) {
+        std::vector<int> idx_cols;
+        for (Token t: col_group) {
+            idx_cols.push_back(GetAttrIdx(t.lexeme));
+        }
+
+        if (is_primary) {
+            idxs_.emplace_back(IdxName("primary", idx_cols), idx_cols);
+            is_primary = false;
+            continue;
+        }
+
+        idxs_.emplace_back(IdxName("secondary", idx_cols), idx_cols);
+    }
+}
+
+Schema::Schema(std::string table_name, const std::string& buf) {
+    table_name_ = table_name;
+
+    int off = 0; 
+
+    rowid_counter_ = *((int64_t*)(buf.data() + off));
+    off += sizeof(int64_t);
+
+    //attributes
+    int count = *((int*)(buf.data() + off));
+    off += sizeof(int);
+
+    for (int i = 0; i < count; i++) {
+        DatumType type = *((DatumType*)(buf.data() + off));
+        off += sizeof(DatumType);
+
+        int str_size = *((int*)(buf.data() + off));
+        off += sizeof(int);
+        std::string name = buf.substr(off, str_size);
+        off += str_size;
+
+        bool not_null_constraint = *((bool*)(buf.data() + off));
+        off += sizeof(bool);
+
+        attrs_.emplace_back(name, type, not_null_constraint);
+    }
+
+    //deserialize indexes
+    int idx_count = *((int*)(buf.data() + off));
+    off += sizeof(int);
+    for (int i = 0; i < idx_count; i++) {
+        idxs_.emplace_back(buf, &off);
+    }
+}
+
+std::string Schema::Serialize() const {
+    std::string buf;
+
+    buf.append((char*)&rowid_counter_, sizeof(int64_t));
+
+    //attributes
+    int count = attrs_.size();
+    buf.append((char*)&count, sizeof(count));
+
+    for (const Attribute& a: attrs_) {
+        buf.append((char*)&a.type, sizeof(DatumType));
+        int str_size = a.name.length();
+        buf.append((char*)&str_size, sizeof(int));
+        buf += a.name;
+        buf.append((char*)&a.not_null_constraint, sizeof(bool));
+    }
+
+    //serialize indexes
+    int idx_count = idxs_.size();
+    buf.append((char*)&idx_count, sizeof(int));
+    for (const Index& i: idxs_) {
+        buf += i.Serialize();
+    }
+
+    return buf;
+}
+
 Table::Table(std::string table_name,
              std::vector<Token> names,
              std::vector<Token> types,
@@ -150,20 +245,6 @@ Status Table::NextRow(Storage* storage, Row** r) {
     return Status(true, "ok");
 }
 
-Status Table::DeleteRow(Storage* storage, Batch* batch, Row* row) {
-    int primary_cf = 0; 
-
-    //delete from primary index
-    TableHandle handle = storage->GetTable(table_name_);
-    batch->Delete(table_name_, handle.cfs.at(primary_cf), Idx(primary_cf).GetKeyFromFields(row->data_));
-
-    //delete key/value in all secondary indexes 
-    for (size_t i = 1; i < idxs_.size(); i++) {
-        batch->Delete(table_name_, handle.cfs.at(i), Idx(i).GetKeyFromFields(row->data_)); 
-    }
-
-    return Status(true, "ok");
-}
 
 //TODO: make sure to complete copy constructor for Row class
 Status Table::UpdateRow(Storage* storage, Batch* batch, Row* updated_row, Row* old_row) {
@@ -201,45 +282,5 @@ Status Table::UpdateRow(Storage* storage, Batch* batch, Row* updated_row, Row* o
     return Status(true, "ok");
 }
 
-
-Status Table::Insert(Storage* storage, Batch* batch, std::vector<Datum>& data) {
-    int cf_idx = 0;
-
-    //insertions will leave space at first index for _rowid
-    int64_t rowid = NextRowId();
-    data.at(0) = Datum(rowid);
-
-    //insert into primary index
-    std::string value = Datum::SerializeData(data);
-    std::string key = Idx(cf_idx).GetKeyFromFields(data);
-
-    std::string test_value;
-    TableHandle handle = storage->GetTable(table_name_);
-    rocksdb::Status status = handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(cf_idx), key, &test_value);
-
-    if (status.ok()) {
-        return Status(false, "Error: A record with the same primary key already exists");
-    }
-
-    batch->Put(table_name_, handle.cfs.at(cf_idx), key, value);
-
-    //update secondary indexes
-    for (size_t i = 1; i < idxs_.size(); i++) {
-        std::string secondary_key = Idx(i).GetKeyFromFields(data);
-        if (handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(i), secondary_key, &test_value).ok())
-            return Status(false, "Error: A record with the same secondary key already exists");
-
-        batch->Put(table_name_, handle.cfs.at(i), secondary_key, key);
-    }
-
-    //Writing table back to disk to ensure autoincrementing rowid is updated
-    //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
-    //!!!Potential problem with lost updates here if multiple processes try to update counter concurrently!!!
-    int default_name_idx = 0;
-    TableHandle catalogue = storage->GetTable(storage->CatalogueTableName());
-    batch->Put(storage->CatalogueTableName(), catalogue.cfs.at(default_name_idx), table_name_, Serialize());
-
-    return Status(true, "ok");
-}
 
 }

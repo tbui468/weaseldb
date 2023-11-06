@@ -128,7 +128,7 @@ public:
     }
 public:
     Token target_;
-    Table* table_;
+    Schema* schema_;
     std::vector<Token> attrs_;
     std::vector<std::vector<Expr*>> values_;
     std::vector<std::vector<Expr*>> col_assigns_;
@@ -151,14 +151,15 @@ public:
 class DeleteStmt: public Stmt {
 public:
     DeleteStmt(Token target, Expr* where_clause): 
-        target_(target), where_clause_(where_clause) {}
+        target_(target), where_clause_(where_clause), scan_(new PrimaryTable(target)) {}
     StmtType Type() const override {
         return StmtType::Delete;
     }
 public:
     Token target_;
-    Table* table_;
     Expr* where_clause_;
+    WorkTable* scan_;
+    Schema* schema_;
 };
 
 class DropTableStmt: public Stmt {
@@ -176,13 +177,13 @@ public:
 
 class DescribeTableStmt: public Stmt {
 public:
-    DescribeTableStmt(Token target_relation): target_relation_(target_relation), table_(nullptr) {}
+    DescribeTableStmt(Token target_relation): target_relation_(target_relation), schema_(nullptr) {}
     StmtType Type() const override {
         return StmtType::DescribeTable;
     }
 public:
     Token target_relation_;
-    Table* table_;
+    Schema* schema_;
 };
 
 }

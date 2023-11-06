@@ -15,6 +15,43 @@
 
 namespace wsldb {
 
+class Schema {
+public:
+    Schema(std::string table_name,
+           std::vector<Token> names,
+           std::vector<Token> types,
+           std::vector<bool> not_null_constraints, 
+           std::vector<std::vector<Token>> uniques);
+    Schema(std::string table_name, const std::string& buf);
+    std::string Serialize() const;
+    inline int64_t NextRowId() {
+        return rowid_counter_++;
+    }
+    inline std::string IdxName(const std::string& prefix, const std::vector<int>& idxs) const {
+        std::string result = prefix;
+
+        for (int i: idxs) {
+            result += "_" + attrs_.at(i).name;            
+        }
+
+        return result;
+    }
+    inline int GetAttrIdx(const std::string& name) const {
+        for (size_t i = 0; i < attrs_.size(); i++) {
+            if (name.compare(attrs_.at(i).name) == 0) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+public:
+    std::string table_name_;
+    int64_t rowid_counter_;
+    std::vector<Attribute> attrs_;
+    std::vector<Index> idxs_;
+};
+
 class Table {
 public:
     Table(std::string table_name,
@@ -28,9 +65,7 @@ public:
     int GetAttrIdx(const std::string& name);
     Status BeginScan(Storage* storage, int scan_idx);
     Status NextRow(Storage* storage, Row** r);
-    Status DeleteRow(Storage* storage, Batch* batch, Row* row);
     Status UpdateRow(Storage* storage, Batch* batch, Row* updated_row, Row* old_row);
-    Status Insert(Storage* storage, Batch* batch, std::vector<Datum>& data);
 
     inline const std::vector<Attribute>& Attrs() const {
         return attrs_;
@@ -105,6 +140,17 @@ public:
         attrs_.insert({ ref_name, attrs_vector });
 
         offset_ += names.size();
+    }
+
+    WorkingAttributeSet(Schema* schema, const std::string& ref_name) {
+        std::vector<WorkingAttribute>* attrs_vector = new std::vector<WorkingAttribute>();
+        for (size_t i = 0; i < schema->attrs_.size(); i++) {
+            attrs_vector->emplace_back(schema->attrs_.at(i), i + offset_);
+        }
+
+        attrs_.insert({ ref_name, attrs_vector });
+
+        offset_ += schema->attrs_.size();
     }
 
     WorkingAttributeSet(Table* table, const std::string& ref_name) {

@@ -51,22 +51,20 @@ Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
 }
 
 Status Executor::CreateExecutor(CreateStmt* stmt) { 
-    Table table(stmt->target_.lexeme, stmt->names_, stmt->types_, stmt->not_null_constraints_, stmt->uniques_);
+    Schema schema(stmt->target_.lexeme, stmt->names_, stmt->types_, stmt->not_null_constraints_, stmt->uniques_);
 
     //TODO: this should be a single transaction: just an example of how to use
     //rocksdb::TransactionDB.  Should put this in wrapper in storage class
     int default_column_family_idx = 0;
     TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
-
     rocksdb::WriteOptions options;
     rocksdb::Transaction* txn = catalogue.db->BeginTransaction(options);
-    txn->Put(catalogue.cfs.at(default_column_family_idx), stmt->target_.lexeme, table.Serialize());
+    txn->Put(catalogue.cfs.at(default_column_family_idx), stmt->target_.lexeme, schema.Serialize());
     txn->Commit();
     delete txn;
 
-    //qs.batch->Put(qs.storage->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), target_.lexeme, table.Serialize()); 
+    storage_->CreateTable(stmt->target_.lexeme, schema.idxs_);
 
-    storage_->CreateTable(stmt->target_.lexeme, table.idxs_);
     return Status(); 
 }
 
@@ -75,9 +73,10 @@ Status Executor::InsertExecutor(InsertStmt* stmt) {
     for (std::vector<Expr*> exprs: stmt->col_assigns_) {
         //fill call fields with default null
         std::vector<Datum> nulls;
-        for (size_t i = 0; i < stmt->table_->Attrs().size(); i++) {
+        for (size_t i = 0; i < stmt->schema_->attrs_.size(); i++) {
             nulls.push_back(Datum());
         }
+
         Row row(nulls);
 
         for (Expr* e: exprs) {
@@ -86,9 +85,45 @@ Status Executor::InsertExecutor(InsertStmt* stmt) {
             if (!s.Ok()) return s;
         }
 
-        Status s = stmt->table_->Insert(storage_, batch_, row.data_);
-        if (!s.Ok())
-            return s;
+        //TODO: should probably move INSERT to a Scan class
+        {
+            int cf_idx = 0;
+
+            //insertions will leave space at first index for _rowid
+            int64_t rowid = stmt->schema_->NextRowId();
+            row.data_.at(0) = Datum(rowid);
+
+            //insert into primary index
+            std::string value = Datum::SerializeData(row.data_);
+            std::string key = stmt->schema_->idxs_.at(cf_idx).GetKeyFromFields(row.data_);
+
+            std::string test_value;
+            TableHandle handle = storage_->GetTable(stmt->target_.lexeme);
+            rocksdb::Status status = handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(cf_idx), key, &test_value);
+
+            if (status.ok()) {
+                return Status(false, "Error: A record with the same primary key already exists");
+            }
+
+            batch_->Put(stmt->target_.lexeme, handle.cfs.at(cf_idx), key, value);
+
+            //update secondary indexes
+            for (size_t i = 1; i < stmt->schema_->idxs_.size(); i++) {
+                std::string secondary_key = stmt->schema_->idxs_.at(i).GetKeyFromFields(row.data_);
+                if (handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(i), secondary_key, &test_value).ok())
+                    return Status(false, "Error: A record with the same secondary key already exists");
+
+                batch_->Put(stmt->target_.lexeme, handle.cfs.at(i), secondary_key, key);
+            }
+
+            //Writing table back to disk to ensure autoincrementing rowid is updated
+            //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
+            //!!!Potential problem with lost updates here if multiple processes try to update counter concurrently!!!
+            int default_name_idx = 0;
+            TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
+            batch_->Put(storage_->CatalogueTableName(), catalogue.cfs.at(default_name_idx), stmt->target_.lexeme, stmt->schema_->Serialize());
+        }
+
     }
 
     return Status(); 
@@ -130,14 +165,13 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
     return Status(); 
 }
 
-Status Executor::DeleteExecutor(DeleteStmt* stmt) { 
-    int scan_idx = 0;
-    stmt->table_->BeginScan(storage_, scan_idx);
+Status Executor::DeleteExecutor(DeleteStmt* stmt) {
+    BeginScan(stmt->scan_);
 
     Row* r;
     int delete_count = 0;
     Datum d;
-    while (stmt->table_->NextRow(storage_, &r).Ok()) {
+    while (NextRow(stmt->scan_, &r).Ok()) {
 
         scopes_.push_back(r);
         Status s = Eval(stmt->where_clause_, r, &d);
@@ -149,7 +183,18 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
         if (!d.AsBool())
             continue;
 
-        stmt->table_->DeleteRow(storage_, batch_, r);
+        {
+            int primary_cf = 0; 
+
+            //delete from primary index
+            TableHandle handle = storage_->GetTable(stmt->target_.lexeme);
+            batch_->Delete(stmt->target_.lexeme, handle.cfs.at(primary_cf), stmt->schema_->idxs_.at(primary_cf).GetKeyFromFields(r->data_));
+
+            //delete key/value in all secondary indexes 
+            for (size_t i = 1; i < stmt->schema_->idxs_.size(); i++) {
+                batch_->Delete(stmt->target_.lexeme, handle.cfs.at(i), stmt->schema_->idxs_.at(i).GetKeyFromFields(r->data_)); 
+            }
+        }
         delete_count++;
     }
     return Status(); 
@@ -163,7 +208,7 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
     Row* r;
     while (NextRow(stmt->target_, &r).Ok()) {
         Datum d;
-        
+
         scopes_.push_back(r);
         Status s = Eval(stmt->where_clause_, r, &d);
         scopes_.pop_back();
@@ -183,34 +228,34 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
         std::vector<OrderCol>& order_cols = stmt->order_cols_;
 
         std::sort(rs->rows_.begin(), rs->rows_.end(), 
-                    //No error checking in lambda...
-                    //do scope rows need to be pushed/popped of query state stack here???
-                    [order_cols, this](Row* t1, Row* t2) -> bool { 
-                        for (OrderCol oc: order_cols) {
-                            Datum d1;
-                            this->scopes_.push_back(t1);
-                            this->Eval(oc.col, t1, &d1);
-                            this->scopes_.pop_back();
+                //No error checking in lambda...
+                //do scope rows need to be pushed/popped of query state stack here???
+                [order_cols, this](Row* t1, Row* t2) -> bool { 
+                for (OrderCol oc: order_cols) {
+                Datum d1;
+                this->scopes_.push_back(t1);
+                this->Eval(oc.col, t1, &d1);
+                this->scopes_.pop_back();
 
-                            Datum d2;
-                            this->scopes_.push_back(t2);
-                            this->Eval(oc.col, t2, &d2);
-                            this->scopes_.pop_back();
+                Datum d2;
+                this->scopes_.push_back(t2);
+                this->Eval(oc.col, t2, &d2);
+                this->scopes_.pop_back();
 
-                            if (d1 == d2)
-                                continue;
+                if (d1 == d2)
+                continue;
 
-                            Row* r = nullptr;
-                            Datum d;
-                            this->Eval(oc.asc, r, &d);
-                            if (d.AsBool()) {
-                                return d1 < d2;
-                            }
-                            return d1 > d2;
-                        }
+                Row* r = nullptr;
+                Datum d;
+                this->Eval(oc.asc, r, &d);
+                if (d.AsBool()) {
+                    return d1 < d2;
+                }
+                return d1 > d2;
+                }
 
-                        return true;
-                    });
+                return true;
+                });
     }
 
     //projection
@@ -298,11 +343,11 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
 Status Executor::DescribeTableExecutor(DescribeTableStmt* stmt) { 
     //column information
     std::vector<Attribute> row_description = { Attribute("name", DatumType::Text, true), 
-                                               Attribute("type", DatumType::Text, true), 
-                                               Attribute("not null", DatumType::Bool, true) };
+        Attribute("type", DatumType::Text, true), 
+        Attribute("not null", DatumType::Bool, true) };
     RowSet* rowset = new RowSet(row_description);
 
-    for (const Attribute& a: stmt->table_->Attrs()) {
+    for (const Attribute& a: stmt->schema_->attrs_) {
         std::vector<Datum> data = { Datum(a.name), Datum(Datum::TypeToString(a.type)) };
         data.emplace_back(a.not_null_constraint);
         rowset->rows_.push_back(new Row(data));
@@ -310,12 +355,12 @@ Status Executor::DescribeTableExecutor(DescribeTableStmt* stmt) {
 
     //index information
     std::vector<Attribute> idx_row_description = { Attribute("type", DatumType::Text, true),
-                                                   Attribute("name", DatumType::Text, true) };
+        Attribute("name", DatumType::Text, true) };
 
     RowSet* idx_rowset = new RowSet(idx_row_description);
 
     std::string type = "lsm tree";
-    for (const Index& i: stmt->table_->idxs_) {
+    for (const Index& i: stmt->schema_->idxs_) {
         std::vector<Datum> index_info = { Datum(type), Datum(i.name_) };
         idx_rowset->rows_.push_back(new Row(index_info));
     }
@@ -394,18 +439,18 @@ Status Executor::EvalUnary(Unary* expr, Row* row, Datum* result) {
 
     switch (expr->op_.type) {
         case TokenType::Minus: {
-            if (Datum::TypeIsInteger(right.Type())) {
-                *result = Datum(static_cast<int64_t>(-WSLDB_NUMERIC_LITERAL(right)));
-            } else {
-                *result = Datum(static_cast<float>(-WSLDB_NUMERIC_LITERAL(right)));
-            }
-            break;
-        }
+                                   if (Datum::TypeIsInteger(right.Type())) {
+                                       *result = Datum(static_cast<int64_t>(-WSLDB_NUMERIC_LITERAL(right)));
+                                   } else {
+                                       *result = Datum(static_cast<float>(-WSLDB_NUMERIC_LITERAL(right)));
+                                   }
+                                   break;
+                               }
         case TokenType::Not:
-            *result = Datum(!right.AsBool());
-            break;
+                               *result = Datum(!right.AsBool());
+                               break;
         default:
-            return Status(false, "Error: Invalid unary operator");
+                               return Status(false, "Error: Invalid unary operator");
     }
 
     return Status();
@@ -443,31 +488,31 @@ Status Executor::EvalCall(Call* expr, Row* row, Datum* result) {
             *result = sum_ / count_;
             break;
         case TokenType::Count: {
-            count_ += Datum(static_cast<int64_t>(1));
-            *result = count_;
-            break;
-        }
+                                   count_ += Datum(static_cast<int64_t>(1));
+                                   *result = count_;
+                                   break;
+                               }
         case TokenType::Max:
-            if (first_ || arg > max_) {
-                max_ = arg;
-                first_ = false;
-            }
-            *result = max_;
-            break;
+                               if (first_ || arg > max_) {
+                                   max_ = arg;
+                                   first_ = false;
+                               }
+                               *result = max_;
+                               break;
         case TokenType::Min:
-            if (first_ || arg < min_) {
-                min_ = arg;
-                first_ = false;
-            }
-            *result = min_;
-            break;
+                               if (first_ || arg < min_) {
+                                   min_ = arg;
+                                   first_ = false;
+                               }
+                               *result = min_;
+                               break;
         case TokenType::Sum:
-            sum_ += arg;
-            *result = sum_;
-            break;
+                               sum_ += arg;
+                               *result = sum_;
+                               break;
         default:
-            return Status(false, "Error: Invalid function name");
-            break;
+                               return Status(false, "Error: Invalid function name");
+                               break;
     }
 
     //Calling Eval on argument may set qs.is_agg to false, so need to set it after evaluating argument
@@ -689,7 +734,7 @@ Status Executor::NextRowFull(FullJoin* scan, Row** r) {
                 return Status(false, "No more rows");
         }
     }
-    
+
 
     //right join is done, so grabbing left join rows where the right side has no match, and will be nulled
     Row* right_row;
@@ -843,5 +888,6 @@ Status Executor::NextRowConstant(ConstantTable* scan, Row** r) {
 Status Executor::NextRowTable(PrimaryTable* scan, Row** r) {
     return scan->table_->NextRow(storage_, r);
 }
+
 
 }

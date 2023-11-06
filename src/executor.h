@@ -53,7 +53,6 @@ private:
     Status NextRowConstant(ConstantTable* scan, Row** r);
     Status NextRowTable(PrimaryTable* scan, Row** r);
 
-
     inline void ResetAggState() {
         is_agg_ = false;
         first_ = true;

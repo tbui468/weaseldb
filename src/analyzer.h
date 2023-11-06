@@ -43,6 +43,20 @@ private:
     Status VerifyConstant(ConstantTable* scan, WorkingAttributeSet** working_attrs);
     Status VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_attrs);
 
+    Status GetSchema(const std::string& table_name, Schema** schema) {
+        std::string serialized_schema;
+        TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
+        bool ok = catalogue.db->Get(rocksdb::ReadOptions(), table_name, &serialized_schema).ok();
+
+        if (!ok)
+            return Status(false, "Analysis Error: Table with name '" + table_name + "' doesn't exist");
+
+        *schema = new Schema(table_name, serialized_schema);
+
+        return Status();
+    }
+
+    //TODO: slowly replace this with OpenSchema
     Status OpenTable(const std::string& table_name, Table** table) {
         std::string serialized_table;
         TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());

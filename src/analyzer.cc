@@ -51,8 +51,8 @@ Status Analyzer::Verify(Expr* expr, DatumType* type) {
 }
 
 Status Analyzer::CreateVerifier(CreateStmt* stmt) { 
-    Table* table_ptr;
-    Status s = OpenTable(stmt->target_.lexeme, &table_ptr);
+    Schema* schema;
+    Status s = GetSchema(stmt->target_.lexeme, &schema);
     if (s.Ok()) {
         return Status(false, "Error: Table '" + stmt->target_.lexeme + "' already exists");
     }
@@ -78,11 +78,11 @@ Status Analyzer::CreateVerifier(CreateStmt* stmt) {
 }
 
 Status Analyzer::InsertVerifier(InsertStmt* stmt) { 
-    Status s = OpenTable(stmt->target_.lexeme, &stmt->table_);
+    Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
     if (!s.Ok())
         return s;
    
-    WorkingAttributeSet* working_attrs = new WorkingAttributeSet(stmt->table_, stmt->target_.lexeme); //does postgresql allow table aliases on insert?
+    WorkingAttributeSet* working_attrs = new WorkingAttributeSet(stmt->schema_, stmt->target_.lexeme); //does postgresql allow table aliases on insert?
 
     for (Token t: stmt->attrs_) {
         if (!working_attrs->Contains(stmt->target_.lexeme, t.lexeme)) {
@@ -149,11 +149,16 @@ Status Analyzer::UpdateVerifier(UpdateStmt* stmt) {
 
 
 Status Analyzer::DeleteVerifier(DeleteStmt* stmt) { 
-    Status s = OpenTable(stmt->target_.lexeme, &stmt->table_);
+    Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
     if (!s.Ok())
         return s;
-   
-    WorkingAttributeSet* working_attrs = new WorkingAttributeSet(stmt->table_, stmt->target_.lexeme);
+
+    WorkingAttributeSet* working_attrs;
+    {
+        Status s = Verify(stmt->scan_, &working_attrs);
+        if (!s.Ok())
+            return s;
+    }
 
     scopes_.push_back(working_attrs);
 
@@ -245,7 +250,7 @@ Status Analyzer::SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types)
 
 
 Status Analyzer::DescribeTableVerifier(DescribeTableStmt* stmt) { 
-    Status s = OpenTable(stmt->target_relation_.lexeme, &stmt->table_);
+    Status s = GetSchema(stmt->target_relation_.lexeme, &stmt->schema_);
     if (!s.Ok())
         return s;
 
