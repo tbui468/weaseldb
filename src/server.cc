@@ -4,8 +4,9 @@
 #include "server.h"
 #include "tokenizer.h"
 #include "parser.h"
-#include "interpreter.h"
 #include "rocksdb/db.h"
+#include "executor.h"
+#include "analyzer.h"
 
 namespace wsldb {
 
@@ -35,10 +36,9 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             if (!Recv(conn_fd, msg)) {
                 break;
             }
-            std::cout << "packet length: " << msg.size() << std::endl;
+
             int len = *((int*)(msg.data() + sizeof(char)));
             std::string query = msg.substr(sizeof(char) + sizeof(int), len - sizeof(int));
-            std::cout << "query: " << query << std::endl;
 
             Tokenizer tokenizer(query);
             bool tokenizer_failed = false;
@@ -71,9 +71,24 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             }
         }
 
-        Interpreter interp(storage);
         for (Txn txn: txns) {
-            Status s = interp.ExecuteTxn(txn);
+            Batch batch;
+            Status s;
+            for (Stmt* stmt: txn.stmts) {
+                Analyzer a(storage);
+                std::vector<DatumType> types;
+                s = a.Verify(stmt, types);
+                if (!s.Ok())
+                    break;
+
+                Executor e(storage, &batch);
+                s = e.Execute(stmt);
+                if (!s.Ok())
+                    break;
+            }
+
+            if (s.Ok() && txn.commit_on_success)
+                batch.Write(*storage);
 
             //TODO: if error, send 'E' + message and continue loop
             if (!s.Ok()) {
@@ -100,11 +115,6 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             Send(conn_fd, buf);
         }
 
-        //then iterate over data rows and send them one at a time here
-
-        //if error occured, send here also
-
-        //ready for next query response
         {
             std::string buf = PreparePacket('Z', ""); //ready for query
             Send(conn_fd, buf);
