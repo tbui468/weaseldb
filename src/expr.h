@@ -12,49 +12,8 @@
 
 namespace wsldb {
 
-//each query (and any subqueries nested inside) is associated with a single QueryState object
-//this state holds the database handle, and also a stack of attributes for use during semantic analysis
-//in case an inner subquery accesses a column in the outer query.  Similarly, a stack of the outer row(s)
-//is stored during execution in case a subquery needs access to a column in the outer scope.
-struct QueryState {
-public:
-    QueryState(): scan_idx(0) {
-        ResetAggState();
-    }
 
-    inline void ResetAggState() {
-        is_agg = false;
-        first_ = true;
-        sum_ = Datum(0);
-        count_ = Datum(0);
-    }
-public:
-    bool is_agg;
-    //state for aggregate functions
-    Datum min_;
-    Datum max_;
-    Datum sum_;
-    Datum count_;
-    bool first_;
-    int scan_idx;
-};
-
-enum class StmtType {
-    Create,
-    Insert,
-    Update,
-    Delete,
-    Select,
-    DescribeTable,
-    DropTable
-};
-
-//Putting class Stmt here since we need it in Expr,
-//but putting it in stmt.h would cause a circular dependency
-class Stmt {
-public:
-    virtual StmtType Type() const = 0;
-};
+class Stmt;
 
 enum class ExprType {
     Literal,
@@ -67,11 +26,8 @@ enum class ExprType {
     ScalarSubquery
 };
 
-//QueryState is saved in both Expr and Stmt, could probably
-//make a single class called QueryNode to store this, and have both Expr and Stmt inherit from that
 class Expr {
 public:
-    //TODO: reuslt and is_agg can be put inside of query state
     virtual std::string ToString() = 0;
     virtual ExprType Type() const = 0;
 };

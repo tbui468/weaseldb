@@ -2,7 +2,9 @@
 
 namespace wsldb {
 
-Executor::Executor(Storage* storage, Batch* batch): storage_(storage), batch_(batch), qs_(QueryState()) {}
+Executor::Executor(Storage* storage, Batch* batch): storage_(storage), batch_(batch) {
+    ResetAggState();
+}
 
 Status Executor::Execute(Stmt* stmt) {
     switch (stmt->Type()) {
@@ -224,6 +226,8 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
         std::vector<Datum> col;
         Datum result;
 
+        ResetAggState();
+
         for (Row* r: rs->rows_) {
             scopes_.push_back(r);
             Status s = Eval(e, r, &result);
@@ -232,11 +236,11 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
             if (!s.Ok())
                 return s;
 
-            if (!qs_.is_agg)
+            if (!is_agg_)
                 col.push_back(result);
         }
 
-        if (qs_.is_agg) {
+        if (is_agg_) {
             //put the result of the aggregate function onto column
             col.push_back(result);
 
@@ -244,7 +248,7 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
             Attribute a = stmt->row_description_.at(idx);
             stmt->row_description_.at(idx) = Attribute(a.name, result.Type(), a.not_null_constraint);
 
-            qs_.ResetAggState();
+            //TODO: Used to reset aggregate state here
         }
 
         if (col.size() < proj_rs->rows_.size()) {
@@ -337,13 +341,13 @@ Status Executor::DropTableExecutor(DropTableStmt* stmt) {
 }
 
 Status Executor::EvalLiteral(Literal* expr, Row* row, Datum* result) {
-    qs_.is_agg = false;
+    is_agg_ = false;
     *result = Datum(LiteralTokenToDatumType(expr->t_.type), expr->t_.lexeme);
     return Status();
 }
 
 Status Executor::EvalBinary(Binary* expr, Row* row, Datum* result) { 
-    qs_.is_agg = false;
+    is_agg_ = false;
 
     Datum l;
     {
@@ -382,7 +386,7 @@ Status Executor::EvalBinary(Binary* expr, Row* row, Datum* result) {
 }
 
 Status Executor::EvalUnary(Unary* expr, Row* row, Datum* result) {
-    qs_.is_agg = false;
+    is_agg_ = false;
 
     Datum right;
     Status s = Eval(expr->right_, row, &right);
@@ -408,13 +412,13 @@ Status Executor::EvalUnary(Unary* expr, Row* row, Datum* result) {
 }
 
 Status Executor::EvalColRef(ColRef* expr, Row* row, Datum* result) {
-    qs_.is_agg = false;
+    is_agg_ = false;
     *result = scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_);
     return Status();
 }
 
 Status Executor::EvalColAssign(ColAssign* expr, Row* row, Datum* result) {
-    qs_.is_agg = false;
+    is_agg_ = false;
 
     Datum right;
     Status s = Eval(expr->right_, row, &right);
@@ -434,32 +438,32 @@ Status Executor::EvalCall(Call* expr, Row* row, Datum* result) {
 
     switch (expr->fcn_.type) {
         case TokenType::Avg:
-            qs_.sum_ += arg;
-            qs_.count_ += Datum(static_cast<int64_t>(1));
-            *result = qs_.sum_ / qs_.count_;
+            sum_ += arg;
+            count_ += Datum(static_cast<int64_t>(1));
+            *result = sum_ / count_;
             break;
         case TokenType::Count: {
-            qs_.count_ += Datum(static_cast<int64_t>(1));
-            *result = qs_.count_;
+            count_ += Datum(static_cast<int64_t>(1));
+            *result = count_;
             break;
         }
         case TokenType::Max:
-            if (qs_.first_ || arg > qs_.max_) {
-                qs_.max_ = arg;
-                qs_.first_ = false;
+            if (first_ || arg > max_) {
+                max_ = arg;
+                first_ = false;
             }
-            *result = qs_.max_;
+            *result = max_;
             break;
         case TokenType::Min:
-            if (qs_.first_ || arg < qs_.min_) {
-                qs_.min_ = arg;
-                qs_.first_ = false;
+            if (first_ || arg < min_) {
+                min_ = arg;
+                first_ = false;
             }
-            *result = qs_.min_;
+            *result = min_;
             break;
         case TokenType::Sum:
-            qs_.sum_ += arg;
-            *result = qs_.sum_;
+            sum_ += arg;
+            *result = sum_;
             break;
         default:
             return Status(false, "Error: Invalid function name");
@@ -467,13 +471,13 @@ Status Executor::EvalCall(Call* expr, Row* row, Datum* result) {
     }
 
     //Calling Eval on argument may set qs.is_agg to false, so need to set it after evaluating argument
-    qs_.is_agg = true;
+    is_agg_ = true;
 
     return Status();
 }
 
 Status Executor::EvalIsNull(IsNull* expr, Row* row, Datum* result) {
-    qs_.is_agg = false;
+    is_agg_ = false;
 
     Datum d;
     Status s = Eval(expr->left_, row, &d);
@@ -490,7 +494,7 @@ Status Executor::EvalIsNull(IsNull* expr, Row* row, Datum* result) {
 }
 
 Status Executor::EvalScalarSubquery(ScalarSubquery* expr, Row* row, Datum* result) {
-    qs_.is_agg = false;
+    is_agg_ = false;
 
     Status s = Execute(expr->stmt_);
     if (!s.Ok())
@@ -588,7 +592,8 @@ Status Executor::BeginScanConstant(ConstantTable* scan) {
 }
 
 Status Executor::BeginScanTable(PrimaryTable* scan) {
-    return scan->table_->BeginScan(storage_, qs_.scan_idx);
+    int scan_idx = 0;
+    return scan->table_->BeginScan(storage_, scan_idx);
 }
 
 Status Executor::NextRow(WorkTable* scan, Row** row) {

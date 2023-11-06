@@ -14,6 +14,22 @@ namespace wsldb {
 
 //Moved class Stmt declaration to expr.h since we need it there,
 //but including stmt.h would cause a circular dependency
+enum class StmtType {
+    Create,
+    Insert,
+    Update,
+    Delete,
+    Select,
+    DescribeTable,
+    DropTable
+};
+
+//Putting class Stmt here since we need it in Expr,
+//but putting it in stmt.h would cause a circular dependency
+class Stmt {
+public:
+    virtual StmtType Type() const = 0;
+};
 
 struct Txn {
     Txn(): stmts({}), commit_on_success(true) {}

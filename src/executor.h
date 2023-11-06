@@ -53,11 +53,27 @@ private:
     Status NextRowConstant(ConstantTable* scan, Row** r);
     Status NextRowTable(PrimaryTable* scan, Row** r);
 
+
+    inline void ResetAggState() {
+        is_agg_ = false;
+        first_ = true;
+        sum_ = Datum(0);
+        count_ = Datum(0);
+    }
+
 private:
     Storage* storage_;
     Batch* batch_;
-    QueryState qs_;
     std::vector<Row*> scopes_;
+
+
+    //state for aggregate functions
+    bool is_agg_;
+    Datum min_;
+    Datum max_;
+    Datum sum_;
+    Datum count_;
+    bool first_;
 };
 
 }
