@@ -63,14 +63,6 @@ public:
         //insert primary key column group into uniques
         uniques_.insert(uniques_.begin(), primary_keys);
     }
-
-    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        return Status();
-    }
-
-    Status Execute(QueryState& qs) override {
-        return Status();
-    }
     StmtType Type() const override {
         return StmtType::Create;
     }
@@ -98,213 +90,6 @@ public:
                     remove_duplicates_(remove_duplicates),
                     row_description_({}) {}
 
-    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        /*
-        WorkingAttributeSet* working_attrs;
-        {
-            Status s = target_->Analyze(qs, &working_attrs);
-            if (!s.Ok())
-                return s;
-            qs.PushAnalysisScope(working_attrs);
-        }
-
-        //projection
-        for (Expr* e: projs_) {
-            DatumType type;
-            Status s = e->Analyze(qs, &type);
-            if (!s.Ok()) {
-                return s;
-            }
-            types.push_back(type);
-
-            //fill in row description for usage during execution stage
-            row_description_.emplace_back(e->ToString(), type, false);
-        }
-
-        //where clause
-        {
-            DatumType type;
-            Status s = where_clause_->Analyze(qs, &type);
-            if (!s.Ok()) {
-                return s;
-            }
-
-            if (type != DatumType::Bool) {
-                return Status(false, "Error: Where clause must be a boolean expression");
-            }
-        }
-
-        //order cols
-        for (OrderCol oc: order_cols_) {
-            {
-                DatumType type;
-                Status s = oc.col->Analyze(qs, &type);
-                if (!s.Ok())
-                    return s;
-            }
-
-            {
-                DatumType type;
-                Status s = oc.asc->Analyze(qs, &type);
-                if (!s.Ok()) {
-                    return s;
-                }
-            }
-        }
-
-        //limit
-        {
-            DatumType type;
-            Status s = limit_->Analyze(qs, &type);
-            if (!s.Ok()) {
-                return s;
-            }
-
-            if (!Datum::TypeIsInteger(type)) {
-                return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
-            }
-        }
-
-        qs.PopAnalysisScope();*/
-
-        return Status();
-    }
-    Status Execute(QueryState& qs) override {
-        /*
-        //scan table(s) and filter using 'where' clause
-        RowSet* rs = new RowSet(row_description_);
-        target_->BeginScan(qs);
-
-        Row* r;
-        while (target_->NextRow(qs, &r).Ok()) {
-            Datum d;
-            
-            qs.PushScopeRow(r);
-            Status s = where_clause_->Eval(qs, r, &d);
-            qs.PopScopeRow();
-
-            if (!s.Ok()) 
-                return s;
-
-            if (!d.AsBool())
-                continue;
-
-            rs->rows_.push_back(r);
-        }
-
-        //sort filtered rows in-place
-        if (!order_cols_.empty()) {
-            std::vector<OrderCol>& order_cols = order_cols_; //lambdas can only capture non-member variable
-
-            std::sort(rs->rows_.begin(), rs->rows_.end(), 
-                        //No error checking in lambda...
-                        //do scope rows need to be pushed/popped of query state stack here???
-                        [order_cols, &qs](Row* t1, Row* t2) -> bool { 
-                            for (OrderCol oc: order_cols) {
-                                Datum d1;
-                                qs.PushScopeRow(t1);
-                                oc.col->Eval(qs, t1, &d1);
-                                qs.PopScopeRow();
-
-                                Datum d2;
-                                qs.PushScopeRow(t2);
-                                oc.col->Eval(qs, t2, &d2);
-                                qs.PopScopeRow();
-
-                                if (d1 == d2)
-                                    continue;
-
-                                Row* r = nullptr;
-                                Datum d;
-                                oc.asc->Eval(qs, r, &d);
-                                if (d.AsBool()) {
-                                    return d1 < d2;
-                                }
-                                return d1 > d2;
-                            }
-
-                            return true;
-                        });
-        }
-
-        //projection
-        RowSet* proj_rs = new RowSet(row_description_);
-
-        for (size_t i = 0; i < rs->rows_.size(); i++) {
-            proj_rs->rows_.push_back(new Row({}));
-        }
-
-        int idx = 0;
-
-        for (Expr* e: projs_) {
-            std::vector<Datum> col;
-            Datum result;
-
-            for (Row* r: rs->rows_) {
-                qs.PushScopeRow(r);
-                Status s = e->Eval(qs, r, &result);
-                qs.PopScopeRow();
-
-                if (!s.Ok())
-                    return s;
-                if (!qs.is_agg)
-                    col.push_back(result);
-            }
-
-            if (qs.is_agg) {
-                col.push_back(result);
-
-                //if aggregate function, determine the DatumType here (DatumType::Null is used as placeholder in Analyze)
-                Attribute a = row_description_.at(idx);
-                row_description_.at(idx) = Attribute(a.name, result.Type(), a.not_null_constraint);
-
-                qs.ResetAggState();
-            }
-
-            if (col.size() < proj_rs->rows_.size()) {
-                proj_rs->rows_.resize(col.size());
-            } else if (col.size() > proj_rs->rows_.size()) {
-                return Status(false, "Error: Mixing column references with and without aggregation functions causes mismatched column sizes!");
-            }
-
-            for (size_t i = 0; i < col.size(); i++) {
-                proj_rs->rows_.at(i)->data_.push_back(col.at(i));
-            }
-
-            idx++;
-        }
-
-        //remove duplicates
-        RowSet* final_rs = new RowSet(row_description_);
-        if (remove_duplicates_) {
-            std::unordered_map<std::string, bool> map;
-            for (Row* r: proj_rs->rows_) {
-                std::string key = Datum::SerializeData(r->data_);
-                if (map.find(key) == map.end()) {
-                    map.insert({key, true});
-                    final_rs->rows_.push_back(r);
-                }
-            }
-        } else {
-            final_rs->rows_ = proj_rs->rows_;
-        }
-
-        //limit in-place
-        Row dummy_row({});
-        Datum d;
-        //do rows need to be pushed/popped on query state row stack here?
-        //should scalar subqueries be allowed in the limit clause?
-        Status s = limit_->Eval(qs, &dummy_row, &d);
-        if (!s.Ok()) return s;
-
-        size_t limit = d == -1 ? std::numeric_limits<size_t>::max() : d.AsInt8();
-        if (limit < final_rs->rows_.size()) {
-            final_rs->rows_.resize(limit);
-        }
-
-        return Status(true, "(" + std::to_string(final_rs->rows_.size()) + " rows)", {final_rs});*/
-        return Status();
-    }
     StmtType Type() const override {
         return StmtType::Select;
     }
@@ -322,14 +107,6 @@ class InsertStmt: public Stmt {
 public:
     InsertStmt(Token target, std::vector<Token> attrs, std::vector<std::vector<Expr*>> values):
         target_(target), attrs_(std::move(attrs)), values_(std::move(values)), col_assigns_({}) {}
-
-    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        return Status(true, "ok");
-    }
-
-    Status Execute(QueryState& qs) override {
-        return Status(true, "INSERT " + std::to_string(col_assigns_.size()));
-    }
     StmtType Type() const override {
         return StmtType::Insert;
     }
@@ -345,13 +122,6 @@ class UpdateStmt: public Stmt {
 public:
     UpdateStmt(Token target, std::vector<Expr*> assigns, Expr* where_clause):
         target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
-
-    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        return Status();
-    }
-    Status Execute(QueryState& qs) override {
-        return Status();
-    }
     StmtType Type() const override {
         return StmtType::Update;
     }
@@ -366,13 +136,6 @@ class DeleteStmt: public Stmt {
 public:
     DeleteStmt(Token target, Expr* where_clause): 
         target_(target), where_clause_(where_clause) {}
-
-    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        return Status();
-    }
-    Status Execute(QueryState& qs) override {
-        return Status();
-    }
     StmtType Type() const override {
         return StmtType::Delete;
     }
@@ -386,33 +149,6 @@ class DropTableStmt: public Stmt {
 public:
     DropTableStmt(Token target_relation, bool has_if_exists):
         target_relation_(target_relation), has_if_exists_(has_if_exists), table_(nullptr) {}
-
-    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        /*
-        Status s = OpenTable(qs, target_relation_.lexeme, &table_);
-        if (!s.Ok() && !has_if_exists_)
-            return s;
-*/
-        return Status();
-    }
-    Status Execute(QueryState& qs) override {
-        /*
-        //drop table name from catalogue
-        if (!table_) {
-            return Status(true, "(table '" + target_relation_.lexeme + "' doesn't exist and not dropped)");
-        }
-
-        //skip if table doesn't exist - error should be reported in the semantic analysis stage if missing table is error
-        if (table_) {
-            int default_column_family_idx = 0;
-            TableHandle catalogue = qs.storage->GetTable(qs.storage->CatalogueTableName());
-            qs.batch->Delete(qs.storage->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), target_relation_.lexeme);
-            qs.storage->DropTable(target_relation_.lexeme);
-        }
-
-        return Status(true, "(table '" + target_relation_.lexeme + "' dropped)");*/
-        return Status();
-    }
     StmtType Type() const override {
         return StmtType::DropTable;
     }
@@ -425,43 +161,6 @@ public:
 class DescribeTableStmt: public Stmt {
 public:
     DescribeTableStmt(Token target_relation): target_relation_(target_relation), table_(nullptr) {}
-    Status Analyze(QueryState& qs, std::vector<DatumType>& types) override {
-        /*
-        Status s = OpenTable(qs, target_relation_.lexeme, &table_);
-        if (!s.Ok())
-            return s;*/
-
-        return Status();
-    }
-    Status Execute(QueryState& qs) override {
-        /*
-        //column information
-        std::vector<Attribute> row_description = { Attribute("name", DatumType::Text, true), 
-                                                   Attribute("type", DatumType::Text, true), 
-                                                   Attribute("not null", DatumType::Bool, true) };
-        RowSet* rowset = new RowSet(row_description);
-
-        for (const Attribute& a: table_->Attrs()) {
-            std::vector<Datum> data = { Datum(a.name), Datum(Datum::TypeToString(a.type)) };
-            data.emplace_back(a.not_null_constraint);
-            rowset->rows_.push_back(new Row(data));
-        }
-
-        //index information
-        std::vector<Attribute> idx_row_description = { Attribute("type", DatumType::Text, true),
-                                                       Attribute("name", DatumType::Text, true) };
-
-        RowSet* idx_rowset = new RowSet(idx_row_description);
-
-        std::string type = "lsm tree";
-        for (const Index& i: table_->idxs_) {
-            std::vector<Datum> index_info = { Datum(type), Datum(i.name_) };
-            idx_rowset->rows_.push_back(new Row(index_info));
-        }
-
-        return Status(true, "table '" + target_relation_.lexeme + "'", { rowset, idx_rowset });*/
-        return Status();
-    }
     StmtType Type() const override {
         return StmtType::DescribeTable;
     }

@@ -2,7 +2,7 @@
 
 namespace wsldb {
 
-Executor::Executor(Storage* storage, Batch* batch): storage_(storage), batch_(batch), qs_(QueryState(storage, batch)) {}
+Executor::Executor(Storage* storage, Batch* batch): storage_(storage), batch_(batch), qs_(QueryState()) {}
 
 Status Executor::Execute(Stmt* stmt) {
     switch (stmt->Type()) {
@@ -54,7 +54,7 @@ Status Executor::CreateExecutor(CreateStmt* stmt) {
     //TODO: this should be a single transaction: just an example of how to use
     //rocksdb::TransactionDB.  Should put this in wrapper in storage class
     int default_column_family_idx = 0;
-    TableHandle catalogue = qs_.storage->GetTable(qs_.storage->CatalogueTableName());
+    TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
 
     rocksdb::WriteOptions options;
     rocksdb::Transaction* txn = catalogue.db->BeginTransaction(options);
@@ -64,7 +64,7 @@ Status Executor::CreateExecutor(CreateStmt* stmt) {
 
     //qs.batch->Put(qs.storage->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), target_.lexeme, table.Serialize()); 
 
-    qs_.storage->CreateTable(stmt->target_.lexeme, table.idxs_);
+    storage_->CreateTable(stmt->target_.lexeme, table.idxs_);
     return Status(); 
 }
 
@@ -84,7 +84,7 @@ Status Executor::InsertExecutor(InsertStmt* stmt) {
             if (!s.Ok()) return s;
         }
 
-        Status s = stmt->table_->Insert(qs_.storage, qs_.batch, row.data_);
+        Status s = stmt->table_->Insert(storage_, batch_, row.data_);
         if (!s.Ok())
             return s;
     }
@@ -94,15 +94,15 @@ Status Executor::InsertExecutor(InsertStmt* stmt) {
 
 Status Executor::UpdateExecutor(UpdateStmt* stmt) { 
     int scan_idx = 0;
-    stmt->table_->BeginScan(qs_.storage, scan_idx);
+    stmt->table_->BeginScan(storage_, scan_idx);
 
     Row* r;
     int update_count = 0;
     Datum d;
-    while (stmt->table_->NextRow(qs_.storage, &r).Ok()) {
-        qs_.PushScopeRow(r);
+    while (stmt->table_->NextRow(storage_, &r).Ok()) {
+        scopes_.push_back(r);
         Status s = Eval(stmt->where_clause_, r, &d);
-        qs_.PopScopeRow();
+        scopes_.pop_back();
 
         if (!s.Ok()) 
             return s;
@@ -113,15 +113,15 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
         Row updated_row = *r;
 
         for (Expr* e: stmt->assigns_) {
-            qs_.PushScopeRow(&updated_row);
+            scopes_.push_back(&updated_row);
             Status s = Eval(e, &updated_row, &d); //returned Datum of ColAssign expressions are ignored
-            qs_.PopScopeRow();
+            scopes_.pop_back();
 
             if (!s.Ok()) 
                 return s;
         }
 
-        stmt->table_->UpdateRow(qs_.storage, qs_.batch, &updated_row, r);
+        stmt->table_->UpdateRow(storage_, batch_, &updated_row, r);
         update_count++;
     }
 
@@ -130,16 +130,16 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
 
 Status Executor::DeleteExecutor(DeleteStmt* stmt) { 
     int scan_idx = 0;
-    stmt->table_->BeginScan(qs_.storage, scan_idx);
+    stmt->table_->BeginScan(storage_, scan_idx);
 
     Row* r;
     int delete_count = 0;
     Datum d;
-    while (stmt->table_->NextRow(qs_.storage, &r).Ok()) {
+    while (stmt->table_->NextRow(storage_, &r).Ok()) {
 
-        qs_.PushScopeRow(r);
+        scopes_.push_back(r);
         Status s = Eval(stmt->where_clause_, r, &d);
-        qs_.PopScopeRow();
+        scopes_.pop_back();
 
         if (!s.Ok()) 
             return s;
@@ -147,7 +147,7 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
         if (!d.AsBool())
             continue;
 
-        stmt->table_->DeleteRow(qs_.storage, qs_.batch, r);
+        stmt->table_->DeleteRow(storage_, batch_, r);
         delete_count++;
     }
     return Status(); 
@@ -162,9 +162,9 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
     while (NextRow(stmt->target_, &r).Ok()) {
         Datum d;
         
-        qs_.PushScopeRow(r);
+        scopes_.push_back(r);
         Status s = Eval(stmt->where_clause_, r, &d);
-        qs_.PopScopeRow();
+        scopes_.pop_back();
 
         if (!s.Ok()) 
             return s;
@@ -186,14 +186,14 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
                     [order_cols, this](Row* t1, Row* t2) -> bool { 
                         for (OrderCol oc: order_cols) {
                             Datum d1;
-                            this->qs_.PushScopeRow(t1);
+                            this->scopes_.push_back(t1);
                             this->Eval(oc.col, t1, &d1);
-                            this->qs_.PopScopeRow();
+                            this->scopes_.pop_back();
 
                             Datum d2;
-                            this->qs_.PushScopeRow(t2);
+                            this->scopes_.push_back(t2);
                             this->Eval(oc.col, t2, &d2);
-                            this->qs_.PopScopeRow();
+                            this->scopes_.pop_back();
 
                             if (d1 == d2)
                                 continue;
@@ -225,9 +225,9 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
         Datum result;
 
         for (Row* r: rs->rows_) {
-            qs_.PushScopeRow(r);
+            scopes_.push_back(r);
             Status s = Eval(e, r, &result);
-            qs_.PopScopeRow();
+            scopes_.pop_back();
 
             if (!s.Ok())
                 return s;
@@ -237,6 +237,7 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
         }
 
         if (qs_.is_agg) {
+            //put the result of the aggregate function onto column
             col.push_back(result);
 
             //if aggregate function, determine the DatumType here (DatumType::Null is used as placeholder in Analyze)
@@ -327,9 +328,9 @@ Status Executor::DropTableExecutor(DropTableStmt* stmt) {
     //skip if table doesn't exist - error should be reported in the semantic analysis stage if missing table is error
     if (stmt->table_) {
         int default_column_family_idx = 0;
-        TableHandle catalogue = qs_.storage->GetTable(qs_.storage->CatalogueTableName());
-        qs_.batch->Delete(qs_.storage->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), stmt->target_relation_.lexeme);
-        qs_.storage->DropTable(stmt->target_relation_.lexeme);
+        TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
+        batch_->Delete(storage_->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), stmt->target_relation_.lexeme);
+        storage_->DropTable(stmt->target_relation_.lexeme);
     }
 
     return Status(true, "(table '" + stmt->target_relation_.lexeme + "' dropped)");
@@ -408,7 +409,7 @@ Status Executor::EvalUnary(Unary* expr, Row* row, Datum* result) {
 
 Status Executor::EvalColRef(ColRef* expr, Row* row, Datum* result) {
     qs_.is_agg = false;
-    *result = qs_.ScopeRowAt(expr->scope_)->data_.at(expr->idx_);
+    *result = scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_);
     return Status();
 }
 
@@ -587,7 +588,7 @@ Status Executor::BeginScanConstant(ConstantTable* scan) {
 }
 
 Status Executor::BeginScanTable(PrimaryTable* scan) {
-    return scan->table_->BeginScan(qs_.storage, qs_.scan_idx);
+    return scan->table_->BeginScan(storage_, qs_.scan_idx);
 }
 
 Status Executor::NextRow(WorkTable* scan, Row** row) {
@@ -650,9 +651,9 @@ Status Executor::NextRowLeft(LeftJoin* scan, Row** r) {
             *r = new Row(result);
             Datum d;
 
-            qs_.PushScopeRow(*r);
+            scopes_.push_back(*r);
             Status s = Eval(scan->condition_, *r, &d);
-            qs_.PopScopeRow();
+            scopes_.pop_back();
 
             if (d.AsBool()) {
                 scan->lefts_inserted_++;
@@ -733,9 +734,9 @@ Status Executor::NextRowFull(FullJoin* scan, Row** r) {
             Row temp(result);
             Datum d;
 
-            qs_.PushScopeRow(&temp);
+            scopes_.push_back(&temp);
             Status s = Eval(scan->condition_, &temp, &d);
-            qs_.PopScopeRow();
+            scopes_.pop_back();
 
             //TODO: optimization opportunity here
             //if a left join row has a matching right side here, no need to check the
@@ -782,9 +783,9 @@ Status Executor::NextRowInner(InnerJoin* scan, Row** r) {
 
             //this is ugly, we need to do this since Expr::Eval is needed to generate a working table
             //something similar is done in InnerJoin::Analyze
-            qs_.PushScopeRow(*r);
+            scopes_.push_back(*r);
             Status s = Eval(scan->condition_, *r, &d);
-            qs_.PopScopeRow();
+            scopes_.pop_back();
 
             if (d.AsBool())
                 return Status();
@@ -835,7 +836,7 @@ Status Executor::NextRowConstant(ConstantTable* scan, Row** r) {
 }
 
 Status Executor::NextRowTable(PrimaryTable* scan, Row** r) {
-    return scan->table_->NextRow(qs_.storage, r);
+    return scan->table_->NextRow(storage_, r);
 }
 
 }

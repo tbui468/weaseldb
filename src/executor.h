@@ -57,6 +57,7 @@ private:
     Storage* storage_;
     Batch* batch_;
     QueryState qs_;
+    std::vector<Row*> scopes_;
 };
 
 }

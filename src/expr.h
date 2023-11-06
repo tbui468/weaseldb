@@ -18,28 +18,8 @@ namespace wsldb {
 //is stored during execution in case a subquery needs access to a column in the outer scope.
 struct QueryState {
 public:
-    QueryState(Storage* storage, Batch* batch): storage(storage), batch(batch), scan_idx(0) {
+    QueryState(): scan_idx(0) {
         ResetAggState();
-    }
-
-    inline WorkingAttributeSet* AnalysisScopesTop() const {
-        return analysis_scopes_.back();
-    }
-    inline void PushAnalysisScope(WorkingAttributeSet* as) {
-        analysis_scopes_.push_back(as);
-    }
-    inline void PopAnalysisScope() {
-        analysis_scopes_.pop_back();
-    }
-    
-    inline Row* ScopeRowAt(int scope) {
-        return scope_rows_.at(scope_rows_.size() - 1 - scope);
-    }
-    inline void PushScopeRow(Row* r) {
-        scope_rows_.push_back(r);
-    }
-    inline void PopScopeRow() {
-        scope_rows_.pop_back();
     }
 
     inline void ResetAggState() {
@@ -48,49 +28,7 @@ public:
         sum_ = Datum(0);
         count_ = Datum(0);
     }
-
-    Status GetWorkingAttribute(WorkingAttribute* attr, const std::string& table_ref_param, const std::string& col) const {
-        for (int i = analysis_scopes_.size() - 1; i >= 0; i--) {
-            Status s = GetWorkingAttributeAtScopeOffset(attr, table_ref_param, col, i);
-            if (s.Ok() || i == 0)
-                return s;
-        }
-
-        return Status(false, "should never reach this"); //keeping compiler quiet
-    }
-private:
-    Status GetWorkingAttributeAtScopeOffset(WorkingAttribute* attr, const std::string& table_ref_param, const std::string& col, int i) const {
-        std::string table_ref = table_ref_param;
-        WorkingAttributeSet* as = analysis_scopes_.at(i);
-        if (table_ref == "") {
-            std::vector<std::string> tables;
-            for (const std::string& name: as->TableNames()) {
-                if (as->Contains(name, col))
-                    tables.push_back(name);
-            }
-
-            if (tables.size() > 1) {
-                return Status(false, "Error: Column '" + col + "' can refer to columns in muliple tables.");
-            } else if (tables.empty()) {
-                return Status(false, "Error: Column '" + col + "' does not exist");
-            } else {
-                table_ref = tables.at(0);
-            }
-        }
-
-        if (!as->Contains(table_ref, col)) {
-            return Status(false, "Error: Column '" + table_ref + "." + col + "' does not exist");
-        }
-
-        *attr = as->GetWorkingAttribute(table_ref, col);
-        //0 is current scope, 1 is the immediate outer scope, 2 is two outer scopes out, etc
-        attr->scope = analysis_scopes_.size() - 1 - i;
-        
-        return Status(true, "ok");
-    }
 public:
-    Storage* storage;
-    Batch* batch;
     bool is_agg;
     //state for aggregate functions
     Datum min_;
@@ -99,9 +37,6 @@ public:
     Datum count_;
     bool first_;
     int scan_idx;
-private:
-    std::vector<WorkingAttributeSet*> analysis_scopes_;
-    std::vector<Row*> scope_rows_;
 };
 
 enum class StmtType {
@@ -118,20 +53,6 @@ enum class StmtType {
 //but putting it in stmt.h would cause a circular dependency
 class Stmt {
 public:
-    virtual Status Analyze(QueryState& qs, std::vector<DatumType>& types) = 0;
-    virtual Status Execute(QueryState& qs) = 0;
-    Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {
-        std::string serialized_table;
-        TableHandle catalogue = qs.storage->GetTable(qs.storage->CatalogueTableName());
-        bool ok = catalogue.db->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
-
-        if (!ok)
-            return Status(false, "Error: Table doesn't exist");
-
-        *table = new Table(table_name, serialized_table);
-
-        return Status(true, "ok");
-    }
     virtual StmtType Type() const = 0;
 };
 

@@ -43,7 +43,6 @@ private:
     Status VerifyConstant(ConstantTable* scan, WorkingAttributeSet** working_attrs);
     Status VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_attrs);
 
-    //TODO: similar function in Executor - should merge them
     Status OpenTable(const std::string& table_name, Table** table) {
         std::string serialized_table;
         TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
