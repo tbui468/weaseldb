@@ -21,8 +21,8 @@ public:
         Status s;
         for (Stmt* stmt: txn.stmts) {
             Executor e(storage_, &batch);
-
-            s = e.Verify(stmt);
+            std::vector<DatumType> types;
+            s = e.Verify(stmt, types);
             if (!s.Ok())
                 break;
 

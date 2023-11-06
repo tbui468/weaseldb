@@ -151,7 +151,6 @@ enum class ExprType {
 class Expr {
 public:
     //TODO: reuslt and is_agg can be put inside of query state
-    //virtual inline Status Eval(QueryState& qs, Row* r, Datum* result) = 0;
     virtual std::string ToString() = 0;
     virtual ExprType Type() const = 0;
 };
@@ -161,12 +160,6 @@ public:
     Literal(Token t): t_(t) {}
     Literal(bool b): t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
     Literal(int i): t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
-    /*
-    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
-        qs.is_agg = false;
-        *result = Datum(LiteralTokenToDatumType(t_.type), t_.lexeme);
-        return Status(true, "ok");
-    }*/
     std::string ToString() override {
         return t_.lexeme;
     }
@@ -181,41 +174,6 @@ class Binary: public Expr {
 public:
     Binary(Token op, Expr* left, Expr* right):
         op_(op), left_(left), right_(right) {}
-    /*
-    inline Status Eval(QueryState& qs, Row* row, Datum* result) override {
-        qs.is_agg = false;
-
-        Datum l;
-        Status s1 = left_->Eval(qs, row, &l);
-        if (!s1.Ok()) return s1;
-
-        Datum r;
-        Status s2 = right_->Eval(qs, row, &r);
-        if (!s2.Ok()) return s2;
-
-        if (l.IsType(DatumType::Null) || r.IsType(DatumType::Null)) {
-            *result = Datum();
-            return Status();
-        }
-
-        switch (op_.type) {
-            case TokenType::Equal:          *result = Datum(l == r); break;
-            case TokenType::NotEqual:       *result = Datum(l != r); break;
-            case TokenType::Less:           *result = Datum(l < r); break;
-            case TokenType::LessEqual:      *result = Datum(l <= r); break;
-            case TokenType::Greater:        *result = Datum(l > r); break;
-            case TokenType::GreaterEqual:   *result = Datum(l >= r); break;
-            case TokenType::Plus:           *result = Datum(l + r); break;
-            case TokenType::Minus:          *result = Datum(l - r); break;
-            case TokenType::Star:           *result = Datum(l * r); break;
-            case TokenType::Slash:          *result = Datum(l / r); break;
-            case TokenType::Or:             *result = Datum(l || r); break;
-            case TokenType::And:            *result = Datum(l && r);break;
-            default:                        return Status(false, "Error: Invalid binary operator");
-        }
-
-        return Status();
-    }*/
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
     }
@@ -231,30 +189,6 @@ public:
 class Unary: public Expr {
 public:
     Unary(Token op, Expr* right): op_(op), right_(right) {}
-    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
-        qs.is_agg = false;
-
-        Datum right;
-        Status s = right_->Eval(qs, r, &right);
-        if (!s.Ok()) return s;
-
-        switch (op_.type) {
-            case TokenType::Minus: {
-                if (Datum::TypeIsInteger(right.Type())) {
-                    *result = Datum(static_cast<int64_t>(-WSLDB_NUMERIC_LITERAL(right)));
-                } else {
-                    *result = Datum(static_cast<float>(-WSLDB_NUMERIC_LITERAL(right)));
-                }
-                break;
-            }
-            case TokenType::Not:
-                *result = Datum(!right.AsBool());
-                break;
-            default:
-                return Status(false, "Error: Invalid unary operator");
-        }
-        return Status(true, "ok");
-    }*/
     std::string ToString() override {
         return "(" + op_.lexeme + " " + right_->ToString() + ")";
     }
@@ -271,11 +205,6 @@ class ColRef: public Expr {
 public:
     ColRef(Token t): t_(t), table_ref_(""), idx_(-1), scope_(-1) {}
     ColRef(Token t, Token table_ref): t_(t), table_ref_(table_ref.lexeme), idx_(-1), scope_(-1) {}
-    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
-        qs.is_agg = false;
-        *result = qs.ScopeRowAt(scope_)->data_.at(idx_);
-        return Status(true, "ok");
-    }*/
     std::string ToString() override {
         return t_.lexeme;
     }
@@ -295,18 +224,6 @@ class ColAssign: public Expr {
 public:
     ColAssign(Token col, Expr* right): 
         col_(col), right_(right), scope_(-1), idx_(-1) {}
-    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
-        qs.is_agg = false;
-
-        Datum right;
-        Status s = right_->Eval(qs, r, &right);
-        if (!s.Ok()) return s;
-
-        r->data_.at(idx_) = right;
-
-        *result = right; //result not used
-        return Status(true, "ok");
-    }*/
     std::string ToString() override {
         return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
     }
@@ -328,51 +245,6 @@ struct OrderCol {
 struct Call: public Expr {
 public:
     Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
-    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
-
-        Datum arg;
-        Status s = arg_->Eval(qs, r, &arg);
-        if (!s.Ok())
-            return s;
-
-        switch (fcn_.type) {
-            case TokenType::Avg:
-                qs.sum_ += arg;
-                qs.count_ += Datum(static_cast<int64_t>(1));
-                *result = qs.sum_ / qs.count_;
-                break;
-            case TokenType::Count: {
-                qs.count_ += Datum(static_cast<int64_t>(1));
-                *result = qs.count_;
-                break;
-            }
-            case TokenType::Max:
-                if (qs.first_ || arg > qs.max_) {
-                    qs.max_ = arg;
-                    qs.first_ = false;
-                }
-                *result = qs.max_;
-                break;
-            case TokenType::Min:
-                if (qs.first_ || arg < qs.min_) {
-                    qs.min_ = arg;
-                    qs.first_ = false;
-                }
-                *result = qs.min_;
-                break;
-            case TokenType::Sum:
-                qs.sum_ += arg;
-                *result = qs.sum_;
-                break;
-            default:
-                return Status(false, "Error: Invalid function name");
-                break;
-        }
-
-        //Calling Eval on argument may set qs.is_agg to false, so need to set it after evaluating argument
-        qs.is_agg = true;
-        return Status(true, "ok");
-    }*/
     std::string ToString() override {
         return fcn_.lexeme + arg_->ToString();
     }
@@ -387,22 +259,6 @@ public:
 class IsNull: public Expr {
 public:
     IsNull(Expr* left): left_(left) {}
-    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
-        qs.is_agg = false;
-
-        Datum d;
-        Status s = left_->Eval(qs, r, &d);
-        if (!s.Ok())
-            return s;
-
-        if (d.IsType(DatumType::Null)) {
-            *result = Datum(true);
-        } else {
-            *result = Datum(false);
-        }
-
-        return Status(true, "ok");
-    }*/
     std::string ToString() override {
         return "IsNull";
     }
@@ -416,27 +272,6 @@ public:
 class ScalarSubquery: public Expr {
 public:
     ScalarSubquery(Stmt* stmt): stmt_(stmt) {}
-    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
-        qs.is_agg = false;
-
-        Status s = stmt_->Execute(qs);
-        if (!s.Ok())
-            return s;
-
-        if (s.Tuples().empty())
-            return Status(false, "Error: RowSet is empty - dbms programmer needs to fix this");
-
-        RowSet* rs = s.Tuples().at(0);
-        if (rs->rows_.size() != 1)
-            return Status(false, "Error: Subquery must produce a single row");
-
-        if (rs->rows_.at(0)->data_.size() != 1)
-            return Status(false, "Error: Subquery row must contain a single column");
-
-        *result = rs->rows_.at(0)->data_.at(0);
-
-        return Status();
-    }*/
     std::string ToString() override {
         return "scalar subquery";
     }
@@ -471,74 +306,6 @@ public:
 class LeftJoin: public WorkTable {
 public:
     LeftJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    /*
-    Status BeginScan(QueryState& qs) override {
-        left_->BeginScan(qs);
-        right_->BeginScan(qs);
-
-        //initialize left row
-        Status s = left_->NextRow(qs, &left_row_);
-        lefts_inserted_ = 0;
-        if (!s.Ok())
-            return Status(false, "No more rows");
-
-        return Status(true, "ok");
-    }
-    Status NextRow(QueryState& qs, Row** r) override {
-        Row* right_row;
-
-        while (true) {
-            Status s = right_->NextRow(qs, &right_row);
-            if (!s.Ok()) {
-                //get new left
-                {
-                    if (lefts_inserted_ == 0) {
-                        std::vector<Datum> result = left_row_->data_;
-                        for (int i = 0; i < right_attr_count_; i++) {
-                            result.push_back(Datum());
-                        }
-
-                        *r = new Row(result);
-                        lefts_inserted_++;
-
-                        return Status(true, "ok");
-                    }
-
-                    Status s = left_->NextRow(qs, &left_row_);
-                    lefts_inserted_ = 0;
-                    if (!s.Ok())
-                        return Status(false, "No more rows");
-                }
-
-                {
-                    right_->BeginScan(qs);
-                    Status s = right_->NextRow(qs, &right_row);
-                    if (!s.Ok())
-                        return Status(false, "No more rows");
-                } 
-            }
-
-            {
-                std::vector<Datum> result = left_row_->data_;
-                result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());
-
-                *r = new Row(result);
-                Datum d;
-
-                qs.PushScopeRow(*r);
-                Status s = condition_->Eval(qs, *r, &d);
-                qs.PopScopeRow();
-
-                if (d.AsBool()) {
-                    lefts_inserted_++;
-                    return Status(true, "ok");
-                }
-
-            }
-        }
-
-        return Status(false, "Should never see this message");
-    }*/
     ScanType Type() const override {
         return ScanType::Left;
     }
@@ -559,98 +326,6 @@ class FullJoin: public WorkTable {
 public:
     FullJoin(WorkTable* left, WorkTable* right, Expr* condition): 
         left_(left), right_(right), condition_(condition), right_join_(new LeftJoin(right, left, condition)) {}
-    /*
-    Status BeginScan(QueryState& qs) override {
-        right_join_->BeginScan(qs);
-        do_right_ = true;
-
-        return Status(true, "ok");
-    }
-    Status NextRow(QueryState& qs, Row** r) override {
-        //attempt grabbing row from right_join_
-        //if none left, initialize left_ and right_, and start processing left join but only use values with nulled right sides
-        if (do_right_) {
-            Status s = right_join_->NextRow(qs, r);
-            if (s.Ok()) {
-                return s;
-            } else {
-                //reset to begin augmented left outer join scan
-                do_right_ = false;
-                left_->BeginScan(qs);
-                right_->BeginScan(qs);
-                Status s = left_->NextRow(qs, &left_row_);
-                lefts_inserted_ = 0;
-                if (!s.Ok())
-                    return Status(false, "No more rows");
-            }
-        }
-        
-
-        //right join is done, so grabbing left join rows where the right side has no match, and will be nulled
-        Row* right_row;
-
-        while (true) {
-            Status s = right_->NextRow(qs, &right_row);
-            if (!s.Ok()) {
-                //get new left
-                if (lefts_inserted_ == 0) {
-                    std::vector<Datum> result;
-                    int right_attr_count = attr_count_ - left_row_->data_.size();
-                    for (int i = 0; i < right_attr_count; i++) {
-                        result.push_back(Datum());
-                    }
-
-                    result.insert(result.end(), left_row_->data_.begin(), left_row_->data_.end());
-
-                    *r = new Row(result);
-                    lefts_inserted_++;
-
-                    return Status(true, "ok");
-                }
-
-                {
-                    Status s = left_->NextRow(qs, &left_row_);
-                    lefts_inserted_ = 0;
-                    if (!s.Ok())
-                        return Status(false, "No more rows");
-                }
-
-                {
-                    right_->BeginScan(qs);
-                    Status s = right_->NextRow(qs, &right_row);
-                    if (!s.Ok())
-                        return Status(false, "No more rows");
-                } 
-            }
-
-            //checking 'on' condition, but not adding row if true since
-            //that was already taken care of with the right outer join
-            //only checking if condition is met or not so that we know
-            //whether the current left row needs to be concatenated with a nulled right row 
-            {
-                std::vector<Datum> result = right_row->data_;
-                result.insert(result.end(), left_row_->data_.begin(), left_row_->data_.end());
-
-                Row temp(result);
-                Datum d;
-
-                qs.PushScopeRow(&temp);
-                Status s = condition_->Eval(qs, &temp, &d);
-                qs.PopScopeRow();
-
-                //TODO: optimization opportunity here
-                //if a left join row has a matching right side here, no need to check the
-                //rest of the right rows to determine if a left + nulled-right is necessary
-                //can go straight to the next left row immediately
-                if (d.AsBool()) {
-                    lefts_inserted_++;
-                }
-
-            }
-        }
-
-        return Status(false, "Should never see this message");
-    }*/
     ScanType Type() const override {
         return ScanType::Full;
     }
@@ -672,61 +347,6 @@ public:
 class InnerJoin: public WorkTable {
 public:
     InnerJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    /*
-    Status BeginScan(QueryState& qs) override {
-        left_->BeginScan(qs);
-        right_->BeginScan(qs);
-
-        //initialize left row
-        Status s = left_->NextRow(qs, &left_row_);
-        if (!s.Ok())
-            return Status(false, "No more rows");
-
-        return Status(true, "ok");
-    }
-    Status NextRow(QueryState& qs, Row** r) override {
-        Row* right_row;
-
-        while (true) {
-            Status s = right_->NextRow(qs, &right_row);
-            if (!s.Ok()) {
-                //get new left
-                {
-                    Status s = left_->NextRow(qs, &left_row_);
-                    if (!s.Ok())
-                        return Status(false, "No more rows");
-                }
-
-                {
-                    right_->BeginScan(qs);
-                    Status s = right_->NextRow(qs, &right_row);
-                    if (!s.Ok())
-                        return Status(false, "No more rows");
-                } 
-            }
-
-            //return concatenated row if condition is met - otherwise continue loop
-            {
-                std::vector<Datum> result = left_row_->data_;
-                result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());
-
-                *r = new Row(result);
-                Datum d;
-
-                //this is ugly, we need to do this since Expr::Eval is needed to generate a working table
-                //something similar is done in InnerJoin::Analyze
-                qs.PushScopeRow(*r);
-                Status s = condition_->Eval(qs, *r, &d);
-                qs.PopScopeRow();
-
-                if (d.AsBool())
-                    return Status(true, "ok");
-
-            }
-        }
-
-        return Status(false, "Should never see this message");
-    }*/
     ScanType Type() const override {
         return ScanType::Inner;
     }
@@ -740,42 +360,6 @@ public:
 class CrossJoin: public WorkTable {
 public:
     CrossJoin(WorkTable* left, WorkTable* right): left_(left), right_(right), left_row_(nullptr) {}
-    /*
-    Status BeginScan(QueryState& qs) override {
-        left_->BeginScan(qs);
-        right_->BeginScan(qs);
-
-        //initialize left row
-        Status s = left_->NextRow(qs, &left_row_);
-        if (!s.Ok())
-            return Status(false, "No more rows");
-
-        return Status(true, "ok");
-    }
-    Status NextRow(QueryState& qs, Row** r) override {
-        Row* right_row;
-        Status s = right_->NextRow(qs, &right_row);
-        if (!s.Ok()) {
-            {
-                Status s = left_->NextRow(qs, &left_row_);
-                if (!s.Ok())
-                    return Status(false, "No more rows");
-            }
-
-            {
-                right_->BeginScan(qs);
-                Status s = right_->NextRow(qs, &right_row);
-                if (!s.Ok())
-                    return Status(false, "No more rows");
-            } 
-        }
-
-        std::vector<Datum> result = left_row_->data_;
-        result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());
-        *r = new Row(result);
-
-        return Status(true, "ok");
-    }*/
     ScanType Type() const override {
         return ScanType::Cross;
     }
@@ -788,23 +372,6 @@ public:
 class ConstantTable: public WorkTable {
 public:
     ConstantTable(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
-    /*
-    Status BeginScan(QueryState& qs) override {
-        cur_ = 0;
-        return Status(true, "ok");
-    }
-    Status NextRow(QueryState& qs, Row** r) override {
-        if (cur_ > 0)
-            return Status(false, "No more rows");
-
-        std::vector<Datum> data;
-        for (size_t i = 0; i < target_cols_.size(); i++) {
-            data.emplace_back(0);
-        }
-        *r = new Row(data);
-        cur_++;
-        return Status(true, "ok");
-    }*/
     ScanType Type() const override {
         return ScanType::Constant;
     }
@@ -818,13 +385,6 @@ public:
     PrimaryTable(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
     //if an alias is not provided, the reference name is the same as the physical table name
     PrimaryTable(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
-    /*
-    Status BeginScan(QueryState& qs) override {
-        return table_->BeginScan(qs.storage, qs.scan_idx);
-    }
-    Status NextRow(QueryState& qs, Row** r) override {
-        return table_->NextRow(qs.storage, r);
-    }*/
     ScanType Type() const override {
         return ScanType::Table;
     }

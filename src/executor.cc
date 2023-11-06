@@ -2,9 +2,9 @@
 
 namespace wsldb {
 
-Executor::Executor(Storage* storage, Batch* batch): storage_(storage), batch_(batch), qs_(QueryState(storage, batch)), proj_types_({}) {}
+Executor::Executor(Storage* storage, Batch* batch): storage_(storage), batch_(batch), qs_(QueryState(storage, batch)) {}
 
-Status Executor::Verify(Stmt* stmt) {
+Status Executor::Verify(Stmt* stmt, std::vector<DatumType>& types) {
     switch (stmt->Type()) {
         case StmtType::Create:
             return CreateVerifier((CreateStmt*)stmt); //C-style cast since dynamic_cast requires rtti, but rocksdb not currently compiled with rtti
@@ -15,7 +15,7 @@ Status Executor::Verify(Stmt* stmt) {
         case StmtType::Delete:
             return DeleteVerifier((DeleteStmt*)stmt);
         case StmtType::Select:
-            return SelectVerifier((SelectStmt*)stmt);
+            return SelectVerifier((SelectStmt*)stmt, types);
         case StmtType::DescribeTable:
             return DescribeTableVerifier((DescribeTableStmt*)stmt);
         case StmtType::DropTable:
@@ -315,8 +315,7 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
     return Status(); 
 }
 
-Status Executor::SelectVerifier(SelectStmt* stmt) { 
-    proj_types_.push_back({});
+Status Executor::SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types) { 
     WorkingAttributeSet* working_attrs;
     {
         Status s = Verify(stmt->target_, &working_attrs);
@@ -332,7 +331,7 @@ Status Executor::SelectVerifier(SelectStmt* stmt) {
         if (!s.Ok()) {
             return s;
         }
-        proj_types_.back().push_back(type);
+        types.push_back(type);
 
         //fill in row description for usage during execution stage
         stmt->row_description_.emplace_back(e->ToString(), type, false);
@@ -383,7 +382,6 @@ Status Executor::SelectVerifier(SelectStmt* stmt) {
     }
 
     qs_.PopAnalysisScope();
-    proj_types_.pop_back();
 
     return Status(); 
 }
@@ -763,8 +761,9 @@ Status Executor::VerifyIsNull(IsNull* expr, DatumType* type) {
 }
 
 Status Executor::VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type) { 
+    std::vector<DatumType> types;
     {
-        Status s = Verify(expr->stmt_);
+        Status s = Verify(expr->stmt_, types);
         if (!s.Ok())
             return s;
     }
@@ -772,10 +771,10 @@ Status Executor::VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type) {
     //TODO: this should be taken from GetQueryState()->attrs
     //at this point we don't know if the working table is a constant or physical or other table type
     //so how can we set *evaluated_type for type checking?
-    if (proj_types_.size() != 1)
+    if (types.size() != 1)
         return Status(false, "Error: Scalar subquery must return a single value");
 
-    *type = proj_types_.back().at(0);
+    *type = types.at(0);
 
     return Status();
 }

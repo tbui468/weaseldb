@@ -11,7 +11,7 @@ namespace wsldb {
 class Executor {
 public:
     Executor(Storage* storage, Batch* batch);
-    Status Verify(Stmt* stmt);
+    Status Verify(Stmt* stmt, std::vector<DatumType>& types);
     Status Execute(Stmt* stmt);
 private:
     //statements
@@ -23,7 +23,7 @@ private:
     Status UpdateExecutor(UpdateStmt* stmt);
     Status DeleteVerifier(DeleteStmt* stmt);
     Status DeleteExecutor(DeleteStmt* stmt);
-    Status SelectVerifier(SelectStmt* stmt);
+    Status SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types);
     Status SelectExecutor(SelectStmt* stmt);
     Status DescribeTableVerifier(DescribeTableStmt* stmt);
     Status DescribeTableExecutor(DescribeTableStmt* stmt);
@@ -97,9 +97,6 @@ private:
     Storage* storage_;
     Batch* batch_;
     QueryState qs_;
-    //proj_types only being filled in by SelectStmt
-    //and only ScalarSubquery::Expr type checking it - probably doesn't need to exist...
-    std::vector<std::vector<DatumType>> proj_types_;
 };
 
 }
