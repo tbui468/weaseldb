@@ -53,19 +53,6 @@ private:
     Status NextRowConstant(ConstantTable* scan, Row** r);
     Status NextRowTable(PrimaryTable* scan, Row** r);
 
-    //TODO: similar function in Analyzer - should merge them
-    Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {
-        std::string serialized_table;
-        TableHandle catalogue = qs.storage->GetTable(qs.storage->CatalogueTableName());
-        bool ok = catalogue.db->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
-
-        if (!ok)
-            return Status(false, "Error: Table doesn't exist");
-
-        *table = new Table(table_name, serialized_table);
-
-        return Status(true, "ok");
-    }
 private:
     Storage* storage_;
     Batch* batch_;
