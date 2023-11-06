@@ -61,15 +61,24 @@ private:
     Status VerifyConstant(ConstantTable* scan, WorkingAttributeSet** working_attrs);
     Status VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_attrs);
 
-    /*
-     * Status Scan(WorkTable* scan, RowSet* result);
-     * Status ScanLeft(LeftJoin* scan, RowSet* result);
-     * Status ScanFull(FullJoin* scan, RowSet* result);
-     * Status ScanInner(InnerJoin* scan, RowSet* result);
-     * Status ScanCross(CrossJoin* scan, RowSet* result);
-     * Status ScanConstant(ConstantTable* scan, RowSet* result);
-     * Status ScanTable(PrimaryTable* scan, RowSet* result);
-     */
+    //TODO: make this Scan wrapper - this it the function SelectStmt should call rather than calling BeginScan/NextRow directly
+//    Status Scan(WorkTable* scan, RowSet* result);
+    
+    Status BeginScan(WorkTable* scan);
+    Status BeginScanLeft(LeftJoin* scan);
+    Status BeginScanFull(FullJoin* scan);
+    Status BeginScanInner(InnerJoin* scan);
+    Status BeginScanCross(CrossJoin* scan);
+    Status BeginScanConstant(ConstantTable* scan);
+    Status BeginScanTable(PrimaryTable* scan);
+    
+    Status NextRow(WorkTable* scan, Row** r);
+    Status NextRowLeft(LeftJoin* scan, Row** r);
+    Status NextRowFull(FullJoin* scan, Row** r);
+    Status NextRowInner(InnerJoin* scan, Row** r);
+    Status NextRowCross(CrossJoin* scan, Row** r);
+    Status NextRowConstant(ConstantTable* scan, Row** r);
+    Status NextRowTable(PrimaryTable* scan, Row** r);
 
     //Originally part of Stmt, but need it inside of Executor for Analyze/Execute functions to word
     Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {

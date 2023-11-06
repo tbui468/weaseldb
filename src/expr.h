@@ -151,7 +151,7 @@ enum class ExprType {
 class Expr {
 public:
     //TODO: reuslt and is_agg can be put inside of query state
-    virtual inline Status Eval(QueryState& qs, Row* r, Datum* result) = 0;
+    //virtual inline Status Eval(QueryState& qs, Row* r, Datum* result) = 0;
     virtual std::string ToString() = 0;
     virtual ExprType Type() const = 0;
 };
@@ -161,11 +161,12 @@ public:
     Literal(Token t): t_(t) {}
     Literal(bool b): t_(b ? Token("true", TokenType::TrueLiteral) : Token("false", TokenType::FalseLiteral)) {}
     Literal(int i): t_(Token(std::to_string(i), TokenType::IntLiteral)) {}
+    /*
     inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
         qs.is_agg = false;
         *result = Datum(LiteralTokenToDatumType(t_.type), t_.lexeme);
         return Status(true, "ok");
-    }
+    }*/
     std::string ToString() override {
         return t_.lexeme;
     }
@@ -180,6 +181,7 @@ class Binary: public Expr {
 public:
     Binary(Token op, Expr* left, Expr* right):
         op_(op), left_(left), right_(right) {}
+    /*
     inline Status Eval(QueryState& qs, Row* row, Datum* result) override {
         qs.is_agg = false;
 
@@ -213,7 +215,7 @@ public:
         }
 
         return Status();
-    }
+    }*/
     std::string ToString() override {
         return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
     }
@@ -229,7 +231,7 @@ public:
 class Unary: public Expr {
 public:
     Unary(Token op, Expr* right): op_(op), right_(right) {}
-    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
         qs.is_agg = false;
 
         Datum right;
@@ -252,7 +254,7 @@ public:
                 return Status(false, "Error: Invalid unary operator");
         }
         return Status(true, "ok");
-    }
+    }*/
     std::string ToString() override {
         return "(" + op_.lexeme + " " + right_->ToString() + ")";
     }
@@ -269,11 +271,11 @@ class ColRef: public Expr {
 public:
     ColRef(Token t): t_(t), table_ref_(""), idx_(-1), scope_(-1) {}
     ColRef(Token t, Token table_ref): t_(t), table_ref_(table_ref.lexeme), idx_(-1), scope_(-1) {}
-    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
         qs.is_agg = false;
         *result = qs.ScopeRowAt(scope_)->data_.at(idx_);
         return Status(true, "ok");
-    }
+    }*/
     std::string ToString() override {
         return t_.lexeme;
     }
@@ -293,7 +295,7 @@ class ColAssign: public Expr {
 public:
     ColAssign(Token col, Expr* right): 
         col_(col), right_(right), scope_(-1), idx_(-1) {}
-    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
         qs.is_agg = false;
 
         Datum right;
@@ -304,7 +306,7 @@ public:
 
         *result = right; //result not used
         return Status(true, "ok");
-    }
+    }*/
     std::string ToString() override {
         return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
     }
@@ -326,7 +328,7 @@ struct OrderCol {
 struct Call: public Expr {
 public:
     Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
-    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
 
         Datum arg;
         Status s = arg_->Eval(qs, r, &arg);
@@ -370,7 +372,7 @@ public:
         //Calling Eval on argument may set qs.is_agg to false, so need to set it after evaluating argument
         qs.is_agg = true;
         return Status(true, "ok");
-    }
+    }*/
     std::string ToString() override {
         return fcn_.lexeme + arg_->ToString();
     }
@@ -385,7 +387,7 @@ public:
 class IsNull: public Expr {
 public:
     IsNull(Expr* left): left_(left) {}
-    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
         qs.is_agg = false;
 
         Datum d;
@@ -400,7 +402,7 @@ public:
         }
 
         return Status(true, "ok");
-    }
+    }*/
     std::string ToString() override {
         return "IsNull";
     }
@@ -414,7 +416,7 @@ public:
 class ScalarSubquery: public Expr {
 public:
     ScalarSubquery(Stmt* stmt): stmt_(stmt) {}
-    inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
+    /*inline Status Eval(QueryState& qs, Row* r, Datum* result) override {
         qs.is_agg = false;
 
         Status s = stmt_->Execute(qs);
@@ -434,7 +436,7 @@ public:
         *result = rs->rows_.at(0)->data_.at(0);
 
         return Status();
-    }
+    }*/
     std::string ToString() override {
         return "scalar subquery";
     }
@@ -456,8 +458,8 @@ enum class ScanType {
 
 class WorkTable {
 public:
-    virtual Status BeginScan(QueryState& qs) = 0;
-    virtual Status NextRow(QueryState& qs, Row** r) = 0;
+//    virtual Status BeginScan(QueryState& qs) = 0;
+//    virtual Status NextRow(QueryState& qs, Row** r) = 0;
     std::vector<Attribute> GetAttributes() const {
         return attrs_->GetAttributes();
     }
@@ -469,6 +471,7 @@ public:
 class LeftJoin: public WorkTable {
 public:
     LeftJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
+    /*
     Status BeginScan(QueryState& qs) override {
         left_->BeginScan(qs);
         right_->BeginScan(qs);
@@ -535,7 +538,7 @@ public:
         }
 
         return Status(false, "Should never see this message");
-    }
+    }*/
     ScanType Type() const override {
         return ScanType::Left;
     }
@@ -556,6 +559,7 @@ class FullJoin: public WorkTable {
 public:
     FullJoin(WorkTable* left, WorkTable* right, Expr* condition): 
         left_(left), right_(right), condition_(condition), right_join_(new LeftJoin(right, left, condition)) {}
+    /*
     Status BeginScan(QueryState& qs) override {
         right_join_->BeginScan(qs);
         do_right_ = true;
@@ -646,7 +650,7 @@ public:
         }
 
         return Status(false, "Should never see this message");
-    }
+    }*/
     ScanType Type() const override {
         return ScanType::Full;
     }
@@ -668,6 +672,7 @@ public:
 class InnerJoin: public WorkTable {
 public:
     InnerJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
+    /*
     Status BeginScan(QueryState& qs) override {
         left_->BeginScan(qs);
         right_->BeginScan(qs);
@@ -721,7 +726,7 @@ public:
         }
 
         return Status(false, "Should never see this message");
-    }
+    }*/
     ScanType Type() const override {
         return ScanType::Inner;
     }
@@ -735,6 +740,7 @@ public:
 class CrossJoin: public WorkTable {
 public:
     CrossJoin(WorkTable* left, WorkTable* right): left_(left), right_(right), left_row_(nullptr) {}
+    /*
     Status BeginScan(QueryState& qs) override {
         left_->BeginScan(qs);
         right_->BeginScan(qs);
@@ -769,7 +775,7 @@ public:
         *r = new Row(result);
 
         return Status(true, "ok");
-    }
+    }*/
     ScanType Type() const override {
         return ScanType::Cross;
     }
@@ -782,6 +788,7 @@ public:
 class ConstantTable: public WorkTable {
 public:
     ConstantTable(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
+    /*
     Status BeginScan(QueryState& qs) override {
         cur_ = 0;
         return Status(true, "ok");
@@ -797,7 +804,7 @@ public:
         *r = new Row(data);
         cur_++;
         return Status(true, "ok");
-    }
+    }*/
     ScanType Type() const override {
         return ScanType::Constant;
     }
@@ -811,12 +818,13 @@ public:
     PrimaryTable(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
     //if an alias is not provided, the reference name is the same as the physical table name
     PrimaryTable(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
+    /*
     Status BeginScan(QueryState& qs) override {
         return table_->BeginScan(qs.storage, qs.scan_idx);
     }
     Status NextRow(QueryState& qs, Row** r) override {
         return table_->NextRow(qs.storage, r);
-    }
+    }*/
     ScanType Type() const override {
         return ScanType::Table;
     }
