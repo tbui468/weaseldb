@@ -119,11 +119,16 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
 
 
 Status Analyzer::UpdateVerifier(UpdateStmt* stmt) { 
-    Status s = OpenTable(stmt->target_.lexeme, &stmt->table_);
+    Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
     if (!s.Ok())
         return s;
    
-    WorkingAttributeSet* working_attrs = new WorkingAttributeSet(stmt->table_, stmt->target_.lexeme); //Does postgresql allow table aliases on update?
+    WorkingAttributeSet* working_attrs;
+    {
+        Status s = Verify(stmt->scan_, &working_attrs);
+        if (!s.Ok())
+            return s;
+    }
 
     scopes_.push_back(working_attrs);
 
@@ -623,16 +628,17 @@ Status Analyzer::VerifyConstant(ConstantTable* scan, WorkingAttributeSet** worki
 }
 
 Status Analyzer::VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_attrs) {
-    std::string serialized_table;
+    std::string serialized_schema;
     TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
-    bool ok = catalogue.db->Get(rocksdb::ReadOptions(), scan->tab_name_, &serialized_table).ok();
+    bool ok = catalogue.db->Get(rocksdb::ReadOptions(), scan->tab_name_, &serialized_schema).ok();
 
     if (!ok) {
         return Status(false, "Error: Table '" + scan->tab_name_ + "' does not exist");
     }
-    scan->table_ = new Table(scan->tab_name_, serialized_table);
 
-    *working_attrs = new WorkingAttributeSet(scan->table_, scan->ref_name_);
+    scan->schema_ = new Schema(scan->tab_name_, serialized_schema);
+
+    *working_attrs = new WorkingAttributeSet(scan->schema_, scan->ref_name_);
     scan->attrs_ = *working_attrs;
 
     return Status();

@@ -45,6 +45,15 @@ public:
 
         return -1;
     }
+    std::vector<Datum> DeserializeData(const std::string& value) {
+        std::vector<Datum> data = std::vector<Datum>();
+        int off = 0;
+        for (const Attribute& a: attrs_) {
+            data.push_back(Datum(value, &off, a.type));
+        }
+
+        return data;
+    }
 public:
     std::string table_name_;
     int64_t rowid_counter_;
@@ -63,9 +72,6 @@ public:
     std::string Serialize();
     std::vector<Datum> DeserializeData(const std::string& value);
     int GetAttrIdx(const std::string& name);
-    Status BeginScan(Storage* storage, int scan_idx);
-    Status NextRow(Storage* storage, Row** r);
-    Status UpdateRow(Storage* storage, Batch* batch, Row* updated_row, Row* old_row);
 
     inline const std::vector<Attribute>& Attrs() const {
         return attrs_;

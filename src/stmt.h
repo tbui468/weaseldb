@@ -137,15 +137,16 @@ public:
 class UpdateStmt: public Stmt {
 public:
     UpdateStmt(Token target, std::vector<Expr*> assigns, Expr* where_clause):
-        target_(target), assigns_(std::move(assigns)), where_clause_(where_clause) {}
+        target_(target), assigns_(std::move(assigns)), where_clause_(where_clause), scan_(new PrimaryTable(target)) {}
     StmtType Type() const override {
         return StmtType::Update;
     }
 public:
     Token target_;
-    Table* table_;
     std::vector<Expr*> assigns_;
     Expr* where_clause_;
+    WorkTable* scan_;
+    Schema* schema_;
 };
 
 class DeleteStmt: public Stmt {
