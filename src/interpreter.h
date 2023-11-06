@@ -9,6 +9,7 @@
 #include "storage.h"
 #include "rocksdb/db.h"
 #include "executor.h"
+#include "analyzer.h"
 
 namespace wsldb {
 
@@ -20,12 +21,13 @@ public:
         Batch batch;
         Status s;
         for (Stmt* stmt: txn.stmts) {
-            Executor e(storage_, &batch);
+            Analyzer a(storage_);
             std::vector<DatumType> types;
-            s = e.Verify(stmt, types);
+            s = a.Verify(stmt, types);
             if (!s.Ok())
                 break;
 
+            Executor e(storage_, &batch);
             s = e.Execute(stmt);
             if (!s.Ok())
                 break;

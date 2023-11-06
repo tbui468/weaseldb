@@ -11,37 +11,19 @@ namespace wsldb {
 class Executor {
 public:
     Executor(Storage* storage, Batch* batch);
-    Status Verify(Stmt* stmt, std::vector<DatumType>& types);
     Status Execute(Stmt* stmt);
 private:
     //statements
-    Status CreateVerifier(CreateStmt* stmt);
     Status CreateExecutor(CreateStmt* stmt);
-    Status InsertVerifier(InsertStmt* stmt);
     Status InsertExecutor(InsertStmt* stmt);
-    Status UpdateVerifier(UpdateStmt* stmt);
     Status UpdateExecutor(UpdateStmt* stmt);
-    Status DeleteVerifier(DeleteStmt* stmt);
     Status DeleteExecutor(DeleteStmt* stmt);
-    Status SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types);
     Status SelectExecutor(SelectStmt* stmt);
-    Status DescribeTableVerifier(DescribeTableStmt* stmt);
     Status DescribeTableExecutor(DescribeTableStmt* stmt);
-    Status DropTableVerifier(DropTableStmt* stmt);
     Status DropTableExecutor(DropTableStmt* stmt);
 
     //expressions
-    Status Verify(Expr* expr, DatumType* type);
     Status Eval(Expr* expr, Row* row, Datum* result);
-
-    Status VerifyLiteral(Literal* expr, DatumType* type);
-    Status VerifyBinary(Binary* expr, DatumType* type);
-    Status VerifyUnary(Unary* expr, DatumType* type);
-    Status VerifyColRef(ColRef* expr, DatumType* type);
-    Status VerifyColAssign(ColAssign* expr, DatumType* type);
-    Status VerifyCall(Call* expr, DatumType* type);
-    Status VerifyIsNull(IsNull* expr, DatumType* type);
-    Status VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type);
 
     Status EvalLiteral(Literal* expr, Row* row, Datum* result);
     Status EvalBinary(Binary* expr, Row* row, Datum* result);
@@ -51,15 +33,6 @@ private:
     Status EvalCall(Call* expr, Row* row, Datum* result);
     Status EvalIsNull(IsNull* expr, Row* row, Datum* result);
     Status EvalScalarSubquery(ScalarSubquery* expr, Row* row, Datum* result);
-
-    //TODO: rename WorkTable to scan
-    Status Verify(WorkTable* scan, WorkingAttributeSet** working_attrs);
-    Status VerifyLeft(LeftJoin* scan, WorkingAttributeSet** working_attrs); 
-    Status VerifyFull(FullJoin* scan, WorkingAttributeSet** working_attrs);
-    Status VerifyInner(InnerJoin* scan, WorkingAttributeSet** working_attrs);
-    Status VerifyCross(CrossJoin* scan, WorkingAttributeSet** working_attrs);
-    Status VerifyConstant(ConstantTable* scan, WorkingAttributeSet** working_attrs);
-    Status VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_attrs);
 
     //TODO: make this Scan wrapper - this it the function SelectStmt should call rather than calling BeginScan/NextRow directly
 //    Status Scan(WorkTable* scan, RowSet* result);
@@ -80,7 +53,7 @@ private:
     Status NextRowConstant(ConstantTable* scan, Row** r);
     Status NextRowTable(PrimaryTable* scan, Row** r);
 
-    //Originally part of Stmt, but need it inside of Executor for Analyze/Execute functions to word
+    //TODO: similar function in Analyzer - should merge them
     Status OpenTable(QueryState& qs, const std::string& table_name, Table** table) {
         std::string serialized_table;
         TableHandle catalogue = qs.storage->GetTable(qs.storage->CatalogueTableName());
