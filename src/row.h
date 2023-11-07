@@ -6,27 +6,9 @@
 #include <vector>
 
 #include "datum.h"
+#include "attribute.h"
 
 namespace wsldb {
-
-struct Attribute {
-    Attribute(const std::string& name, DatumType type, bool not_null_constraint):
-        name(name), type(type), not_null_constraint(not_null_constraint) {}
-
-    std::string name;
-    DatumType type;
-    bool not_null_constraint;
-
-    std::string ToString() const {
-        std::string ret;
-
-        ret += name + ",";
-        ret += Datum::TypeToString(type) + ",";
-        ret += not_null_constraint ? "true" : "false";
-
-        return ret;
-    }
-};
 
 //Row will have either a single tuple (just the input row) or many (group row)
 class Row {

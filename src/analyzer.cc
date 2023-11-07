@@ -83,7 +83,7 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
     if (!s.Ok())
         return s;
    
-    WorkingAttributeSet* working_attrs = new WorkingAttributeSet(stmt->schema_, stmt->target_.lexeme); //does postgresql allow table aliases on insert?
+    WorkingAttributeSet* working_attrs = stmt->schema_->MakeWorkingAttributeSet(stmt->target_.lexeme);
 
     for (Token t: stmt->attrs_) {
         if (!working_attrs->Contains(stmt->target_.lexeme, t.lexeme)) {
@@ -613,6 +613,7 @@ Status Analyzer::VerifyCross(CrossJoin* scan, WorkingAttributeSet** working_attr
 Status Analyzer::VerifyConstant(ConstantTable* scan, WorkingAttributeSet** working_attrs) {
     std::vector<std::string> names;
     std::vector<DatumType> types;
+    std::vector<bool> not_nulls;
     for (Expr* e: scan->target_cols_) {
         DatumType type;
         Status s = Verify(e, &type);
@@ -620,9 +621,10 @@ Status Analyzer::VerifyConstant(ConstantTable* scan, WorkingAttributeSet** worki
             return s;
         names.push_back("?col?");
         types.push_back(type);
+        not_nulls.push_back(true);
     }
 
-    *working_attrs = new WorkingAttributeSet("?table?", names, types);
+    *working_attrs = new WorkingAttributeSet("?table?", names, types, not_nulls);
     scan->attrs_ = *working_attrs;
 
     return Status();
@@ -639,7 +641,7 @@ Status Analyzer::VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_a
 
     scan->schema_ = new Schema(scan->tab_name_, serialized_schema);
 
-    *working_attrs = new WorkingAttributeSet(scan->schema_, scan->ref_name_);
+    *working_attrs = scan->schema_->MakeWorkingAttributeSet(scan->ref_name_);
     scan->attrs_ = *working_attrs;
 
     return Status();
