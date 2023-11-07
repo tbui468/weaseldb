@@ -202,7 +202,7 @@ Status Analyzer::SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types)
         types.push_back(type);
 
         //fill in row description for usage during execution stage
-        stmt->row_description_.emplace_back(e->ToString(), type, false);
+        stmt->row_description_.emplace_back("?rel_ref?", e->ToString(), type, false);
     }
 
     //where clause

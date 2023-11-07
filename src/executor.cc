@@ -324,7 +324,7 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
 
             //if aggregate function, determine the DatumType here (DatumType::Null is used as placeholder in Analyze)
             Attribute a = stmt->row_description_.at(idx);
-            stmt->row_description_.at(idx) = Attribute(a.name, result.Type(), a.not_null_constraint);
+            stmt->row_description_.at(idx) = Attribute(a.rel_ref, a.name, result.Type(), a.not_null_constraint);
 
             //TODO: Used to reset aggregate state here
         }
@@ -375,9 +375,9 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
 
 Status Executor::DescribeTableExecutor(DescribeTableStmt* stmt) { 
     //column information
-    std::vector<Attribute> row_description = { Attribute("name", DatumType::Text, true), 
-        Attribute("type", DatumType::Text, true), 
-        Attribute("not null", DatumType::Bool, true) };
+    std::vector<Attribute> row_description = { Attribute("rel_ref", "name", DatumType::Text, true), 
+                                               Attribute("rel_ref", "type", DatumType::Text, true), 
+                                               Attribute("rel_ref", "not null", DatumType::Bool, true) };
     RowSet* rowset = new RowSet(row_description);
 
     for (const Attribute& a: stmt->schema_->attrs_) {
@@ -387,8 +387,8 @@ Status Executor::DescribeTableExecutor(DescribeTableStmt* stmt) {
     }
 
     //index information
-    std::vector<Attribute> idx_row_description = { Attribute("type", DatumType::Text, true),
-        Attribute("name", DatumType::Text, true) };
+    std::vector<Attribute> idx_row_description = { Attribute("rel_ref", "type", DatumType::Text, true),
+                                                   Attribute("rel_ref", "name", DatumType::Text, true) };
 
     RowSet* idx_rowset = new RowSet(idx_row_description);
 

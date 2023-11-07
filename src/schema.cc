@@ -15,7 +15,7 @@ Schema::Schema(std::string table_name,
 
     //NOTE: index creation requires attrs_ to be filled in beforehand
     for (size_t i = 0; i < names.size(); i++) {
-        attrs_.emplace_back(names.at(i).lexeme, TypeTokenToDatumType(types.at(i).type), not_null_constraints.at(i));
+        attrs_.emplace_back(table_name, names.at(i).lexeme, TypeTokenToDatumType(types.at(i).type), not_null_constraints.at(i));
     }
 
     bool is_primary = true;
@@ -61,7 +61,7 @@ Schema::Schema(std::string table_name, const std::string& buf) {
         bool not_null_constraint = *((bool*)(buf.data() + off));
         off += sizeof(bool);
 
-        attrs_.emplace_back(name, type, not_null_constraint);
+        attrs_.emplace_back(table_name, name, type, not_null_constraint);
     }
 
     //deserialize indexes

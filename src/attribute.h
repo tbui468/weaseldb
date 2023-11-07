@@ -9,9 +9,10 @@
 namespace wsldb {
 
 struct Attribute {
-    Attribute(const std::string& name, DatumType type, bool not_null_constraint):
-        name(name), type(type), not_null_constraint(not_null_constraint) {}
+    Attribute(const std::string& rel_ref, const std::string& name, DatumType type, bool not_null_constraint):
+        rel_ref(rel_ref), name(name), type(type), not_null_constraint(not_null_constraint) {}
 
+    std::string rel_ref;
     std::string name;
     DatumType type;
     bool not_null_constraint;
@@ -32,8 +33,8 @@ struct Attribute {
 //in case the same attribute name is used across multiple tables
 struct WorkingAttribute: public Attribute {
     //dummy constructor to allow creation on stack (used in WorkingAttributeSet functions)
-    WorkingAttribute(): Attribute("", DatumType::Null, true), idx(-1), scope(-1) {} //placeholders
-    WorkingAttribute(Attribute a, int idx): Attribute(a.name, a.type, a.not_null_constraint), idx(idx), scope(-1) {} //scope is placeholder
+    WorkingAttribute(): Attribute("", "", DatumType::Null, true), idx(-1), scope(-1) {} //placeholders
+    WorkingAttribute(Attribute a, int idx): Attribute(a.rel_ref, a.name, a.type, a.not_null_constraint), idx(idx), scope(-1) {} //scope is placeholder
 
     int idx; //attributes of later tables are offset if multiple tables are joined into a single working table
     int scope; //default is -1.  Should be filled in with correct relative scope position during semantic analysis phase
@@ -56,43 +57,30 @@ struct WorkingAttribute: public Attribute {
 class WorkingAttributeSet {
 public:
     WorkingAttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<DatumType> types, std::vector<bool> not_nulls) {
-        std::vector<WorkingAttribute>* attrs_vector = new std::vector<WorkingAttribute>();
         for (size_t i = 0; i < names.size(); i++) {
-            attrs_vector->emplace_back(Attribute(names.at(i), types.at(i), not_nulls.at(i)), i + offset_);
+            attrs_.emplace_back(Attribute(ref_name, names.at(i), types.at(i), not_nulls.at(i)), i + offset_);
         }
-
-        attrs_.insert({ ref_name, attrs_vector });
 
         offset_ += names.size();
     }
 
     WorkingAttributeSet(WorkingAttributeSet* left, WorkingAttributeSet* right, bool* has_duplicate_tables) {
-        for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: left->attrs_) {
-            if (right->attrs_.find(p.first) != right->attrs_.end()) {
-                *has_duplicate_tables = true;
-            }
-        }
-
-        attrs_.insert(left->attrs_.begin(), left->attrs_.end());
-        attrs_.insert(right->attrs_.begin(), right->attrs_.end());
-
-        //offset right attributes
-        for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: right->attrs_) {
-            for (WorkingAttribute& a: *(p.second)) {
-                a.idx += left->offset_;
-            }
-        }
-
+        //TODO: not implementing has_duplicate_tables for now
         *has_duplicate_tables = false;
+
+        for (WorkingAttribute& a: right->attrs_) {
+            a.idx += left->offset_;
+        }
+
+        attrs_.insert(attrs_.end(), left->attrs_.begin(), left->attrs_.end());
+        attrs_.insert(attrs_.end(), right->attrs_.begin(), right->attrs_.end());
+
         offset_ += right->offset_;
     }
 
     bool Contains(const std::string& table, const std::string& col) const {
-        if (attrs_.find(table) == attrs_.end())
-            return false;
-
-        for (const WorkingAttribute& a: *(attrs_.at(table))) {
-            if (a.name.compare(col) == 0)
+        for (const WorkingAttribute& a: attrs_) {
+            if (a.rel_ref.compare(table) == 0 && a.name.compare(col) == 0)
                 return true;
         }
 
@@ -100,9 +88,8 @@ public:
     }
 
     WorkingAttribute GetWorkingAttribute(const std::string& table, const std::string& col) const {
-        std::vector<WorkingAttribute>* v = attrs_.at(table);
-        for (WorkingAttribute a: *v) {
-            if (a.name.compare(col) == 0)
+        for (WorkingAttribute a: attrs_) {
+            if (a.rel_ref.compare(table) == 0 && a.name.compare(col) == 0)
                 return a;
         }
 
@@ -111,45 +98,40 @@ public:
 
     std::vector<std::string> TableNames() const {
         std::vector<std::string> result;
-
-        for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: attrs_) {
-            result.push_back(p.first);
+        for (const WorkingAttribute& a: attrs_) {
+            if (std::find(result.begin(), result.end(), a.rel_ref) == result.end())
+                result.push_back(a.rel_ref);
         }
 
         return result;
     }
 
     std::vector<WorkingAttribute>* TableWorkingAttributes(const std::string& table) const {
-        return attrs_.at(table);
+        std::vector<WorkingAttribute>* result = new std::vector<WorkingAttribute>(); //TODO: should return a copy instead of pointer
+        for (const WorkingAttribute& a: attrs_) {
+            if (a.rel_ref.compare(table) == 0)
+                result->push_back(a);
+        }
+
+        return result;
     }
 
     int WorkingAttributeCount() const {
-        int count = 0;
-        for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: attrs_) {
-            count += p.second->size();
-        }
-
-        return count;
+        return attrs_.size();
     }
 
     std::vector<Attribute> GetAttributes() const {
-        std::vector<Attribute> ret;
-        for (int i = 0; i < WorkingAttributeCount(); i++) {
-            ret.emplace_back("", DatumType::Null, true); //placeholder just so that vector is correct size (probably a better way to do this)
+        std::vector<Attribute> result;
+        for (const WorkingAttribute& a: attrs_) {
+            result.emplace_back(a.rel_ref, a.name, a.type, a.not_null_constraint);
         }
 
-        for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: attrs_) {
-            for (const WorkingAttribute& a: *(p.second)) {
-                ret.at(a.idx) = Attribute(a.name, a.type, true); //not_null_constraint no used, so arbitrarily setting it to true
-            }
-        }
-
-        return ret;
+        return result;
     }
 
-public:
-    std::unordered_map<std::string, std::vector<WorkingAttribute>*> attrs_;
-    int offset_ = 0; //used to offset Attributes when multiple tables are joined - can just use WorkingAttribute.idx directly 
+private:
+    int offset_ = 0; //used to offset Attributes when multiple tables are joined
+    std::vector<WorkingAttribute> attrs_;
 };
 
 
