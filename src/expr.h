@@ -3,10 +3,11 @@
 #include <string>
 #include <iostream>
 #include <algorithm>
+
 #include "token.h"
 #include "datum.h"
 #include "row.h"
-#include "table.h"
+#include "schema.h"
 #include "status.h"
 #include "storage.h"
 

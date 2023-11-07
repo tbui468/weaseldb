@@ -61,52 +61,6 @@ public:
     std::vector<Index> idxs_;
 };
 
-class Table {
-public:
-    Table(std::string table_name,
-          std::vector<Token> names,
-          std::vector<Token> types,
-          std::vector<bool> not_null_constraints, 
-          std::vector<std::vector<Token>> uniques);
-    Table(std::string table_name, const std::string& buf);
-    std::string Serialize();
-    std::vector<Datum> DeserializeData(const std::string& value);
-    int GetAttrIdx(const std::string& name);
-
-    inline const std::vector<Attribute>& Attrs() const {
-        return attrs_;
-    }
-    inline std::string TableName() {
-        return table_name_;
-    }
-    inline int64_t NextRowId() {
-        return rowid_counter_++;
-    }
-    inline std::string IdxName(const std::string& prefix, const std::vector<int>& idxs) {
-        std::string result = prefix;
-
-        for (int i: idxs) {
-            result += "_" + attrs_.at(i).name;            
-        }
-
-        return result;
-    }
-    inline const Index& Idx(int i) const {
-        return idxs_.at(i);
-    }
-    inline std::vector<Attribute> GetAttributes() const {
-        return attrs_;
-    }
-private:
-    std::string table_name_;
-    std::vector<Attribute> attrs_;
-    int64_t rowid_counter_;
-    rocksdb::Iterator* it_;
-    int scan_idx_;
-public:
-    std::vector<Index> idxs_;
-};
-
 //WorkTables are (often) a bunch of physical tables concatenated together,
 //WorkingAttribute includes offsets/table names associated with each attribute
 //in case the same attribute name is used across multiple tables
@@ -159,17 +113,6 @@ public:
         offset_ += schema->attrs_.size();
     }
 
-    WorkingAttributeSet(Table* table, const std::string& ref_name) {
-        std::vector<WorkingAttribute>* attrs_vector = new std::vector<WorkingAttribute>();
-        for (size_t i = 0; i < table->Attrs().size(); i++) {
-            attrs_vector->emplace_back(table->Attrs().at(i), i + offset_);
-        }
-
-        attrs_.insert({ ref_name, attrs_vector });
-
-        offset_ += table->Attrs().size();
-    }
-
     WorkingAttributeSet(WorkingAttributeSet* left, WorkingAttributeSet* right, bool* has_duplicate_tables) {
         for (const std::pair<const std::string, std::vector<WorkingAttribute>*>& p: left->attrs_) {
             if (right->attrs_.find(p.first) != right->attrs_.end()) {
@@ -190,8 +133,6 @@ public:
         *has_duplicate_tables = false;
         offset_ += right->offset_;
     }
-
-    WorkingAttributeSet(Table* table): WorkingAttributeSet(table, table->TableName()) {}
 
     bool Contains(const std::string& table, const std::string& col) const {
         if (attrs_.find(table) == attrs_.end())

@@ -44,6 +44,8 @@ private:
     Status VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_attrs);
 
     Status GetSchema(const std::string& table_name, Schema** schema) {
+        *schema = nullptr;
+
         std::string serialized_schema;
         TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
         bool ok = catalogue.db->Get(rocksdb::ReadOptions(), table_name, &serialized_schema).ok();
@@ -56,19 +58,6 @@ private:
         return Status();
     }
 
-    //TODO: slowly replace this with OpenSchema
-    Status OpenTable(const std::string& table_name, Table** table) {
-        std::string serialized_table;
-        TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
-        bool ok = catalogue.db->Get(rocksdb::ReadOptions(), table_name, &serialized_table).ok();
-
-        if (!ok)
-            return Status(false, "Error: Table doesn't exist");
-
-        *table = new Table(table_name, serialized_table);
-
-        return Status();
-    }
     Status GetWorkingAttribute(WorkingAttribute* attr, const std::string& table_ref_param, const std::string& col) const {
         for (int i = scopes_.size() - 1; i >= 0; i--) {
             Status s = GetWorkingAttributeAtScopeOffset(attr, table_ref_param, col, i);

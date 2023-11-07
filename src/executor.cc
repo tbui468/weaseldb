@@ -1,4 +1,5 @@
 #include "executor.h"
+#include "schema.h"
 
 namespace wsldb {
 
@@ -402,17 +403,14 @@ Status Executor::DescribeTableExecutor(DescribeTableStmt* stmt) {
 
 Status Executor::DropTableExecutor(DropTableStmt* stmt) { 
     //drop table name from catalogue
-    if (!stmt->table_) {
+    if (!stmt->schema_) {
         return Status(true, "(table '" + stmt->target_relation_.lexeme + "' doesn't exist and not dropped)");
     }
 
-    //skip if table doesn't exist - error should be reported in the semantic analysis stage if missing table is error
-    if (stmt->table_) {
-        int default_column_family_idx = 0;
-        TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
-        batch_->Delete(storage_->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), stmt->target_relation_.lexeme);
-        storage_->DropTable(stmt->target_relation_.lexeme);
-    }
+    int default_column_family_idx = 0;
+    TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
+    batch_->Delete(storage_->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), stmt->target_relation_.lexeme);
+    storage_->DropTable(stmt->target_relation_.lexeme);
 
     return Status(true, "(table '" + stmt->target_relation_.lexeme + "' dropped)");
 }

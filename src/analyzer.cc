@@ -1,4 +1,5 @@
 #include "analyzer.h"
+#include "schema.h"
 
 namespace wsldb {
 
@@ -264,7 +265,7 @@ Status Analyzer::DescribeTableVerifier(DescribeTableStmt* stmt) {
 
 
 Status Analyzer::DropTableVerifier(DropTableStmt* stmt) { 
-    Status s = OpenTable(stmt->target_relation_.lexeme, &stmt->table_);
+    Status s = GetSchema(stmt->target_relation_.lexeme, &stmt->schema_);
     if (!s.Ok() && !stmt->has_if_exists_)
         return s;
 

@@ -6,7 +6,7 @@
 
 #include "expr.h"
 #include "token.h"
-#include "table.h"
+#include "schema.h"
 #include "status.h"
 #include "rocksdb/db.h"
 
@@ -166,14 +166,14 @@ public:
 class DropTableStmt: public Stmt {
 public:
     DropTableStmt(Token target_relation, bool has_if_exists):
-        target_relation_(target_relation), has_if_exists_(has_if_exists), table_(nullptr) {}
+        target_relation_(target_relation), has_if_exists_(has_if_exists), schema_(nullptr) {}
     StmtType Type() const override {
         return StmtType::DropTable;
     }
 public:
     Token target_relation_;
     bool has_if_exists_;
-    Table* table_;
+    Schema* schema_;
 };
 
 class DescribeTableStmt: public Stmt {
