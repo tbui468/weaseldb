@@ -34,14 +34,14 @@ private:
     Status VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type);
 
     //TODO: rename WorkTable to scan
-    Status Verify(WorkTable* scan, WorkingAttributeSet** working_attrs);
+    Status Verify(WorkTable* scan, AttributeSet** working_attrs);
 
-    Status VerifyLeft(LeftJoin* scan, WorkingAttributeSet** working_attrs); 
-    Status VerifyFull(FullJoin* scan, WorkingAttributeSet** working_attrs);
-    Status VerifyInner(InnerJoin* scan, WorkingAttributeSet** working_attrs);
-    Status VerifyCross(CrossJoin* scan, WorkingAttributeSet** working_attrs);
-    Status VerifyConstant(ConstantTable* scan, WorkingAttributeSet** working_attrs);
-    Status VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_attrs);
+    Status VerifyLeft(LeftJoin* scan, AttributeSet** working_attrs); 
+    Status VerifyFull(FullJoin* scan, AttributeSet** working_attrs);
+    Status VerifyInner(InnerJoin* scan, AttributeSet** working_attrs);
+    Status VerifyCross(CrossJoin* scan, AttributeSet** working_attrs);
+    Status VerifyConstant(ConstantTable* scan, AttributeSet** working_attrs);
+    Status VerifyTable(PrimaryTable* scan, AttributeSet** working_attrs);
 
     Status GetSchema(const std::string& table_name, Schema** schema) {
         *schema = nullptr;
@@ -58,18 +58,18 @@ private:
         return Status();
     }
 
-    Status GetWorkingAttribute(WorkingAttribute* attr, int* idx, const std::string& table_ref_param, const std::string& col) const {
+    Status GetAttribute(Attribute* attr, int* idx, int* scope, const std::string& table_ref_param, const std::string& col) const {
         for (int i = scopes_.size() - 1; i >= 0; i--) {
-            Status s = GetWorkingAttributeAtScopeOffset(attr, idx, table_ref_param, col, i);
+            Status s = GetAttributeAtScopeOffset(attr, idx, scope, table_ref_param, col, i);
             if (s.Ok() || i == 0)
                 return s;
         }
 
         return Status(false, "should never reach this"); //keeping compiler quiet
     }
-    Status GetWorkingAttributeAtScopeOffset(WorkingAttribute* attr, int* idx, const std::string& table_ref_param, const std::string& col, int i) const {
+    Status GetAttributeAtScopeOffset(Attribute* attr, int* idx, int* scope, const std::string& table_ref_param, const std::string& col, int i) const {
         std::string table_ref = table_ref_param;
-        WorkingAttributeSet* as = scopes_.at(i);
+        AttributeSet* as = scopes_.at(i);
         if (table_ref == "") {
             std::vector<std::string> tables;
             for (const std::string& name: as->TableNames()) {
@@ -90,17 +90,15 @@ private:
             return Status(false, "Error: Column '" + table_ref + "." + col + "' does not exist");
         }
 
-        *attr = as->GetWorkingAttribute(table_ref, col);
-        *idx = as->GetWorkingAttributeIdx(table_ref, col);
-        //0 is current scope, 1 is the immediate outer scope, 2 is two outer scopes out, etc
-        //TODO: this is hard to understand - it mutates WorkAttribute state
-        attr->scope = scopes_.size() - 1 - i;
+        *attr = as->GetAttribute(table_ref, col);
+        *idx = as->GetAttributeIdx(table_ref, col);
+        *scope = scopes_.size() - 1 - i;
         
         return Status();
     }
 private:
     Storage* storage_;
-    std::vector<WorkingAttributeSet*> scopes_;
+    std::vector<AttributeSet*> scopes_;
 };
 
 }

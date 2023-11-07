@@ -83,7 +83,7 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
     if (!s.Ok())
         return s;
    
-    WorkingAttributeSet* working_attrs = stmt->schema_->MakeWorkingAttributeSet(stmt->target_.lexeme);
+    AttributeSet* working_attrs = stmt->schema_->MakeAttributeSet(stmt->target_.lexeme);
 
     for (Token t: stmt->attrs_) {
         if (!working_attrs->Contains(stmt->target_.lexeme, t.lexeme)) {
@@ -91,7 +91,7 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
         }
     }
 
-    size_t attr_count = working_attrs->WorkingAttributeCount() - 1; //ignore _rowid since caller doesn't explicitly insert that
+    size_t attr_count = working_attrs->AttributeCount() - 1; //ignore _rowid since caller doesn't explicitly insert that
 
     for (const std::vector<Expr*>& tuple: stmt->values_) {
         if (attr_count < tuple.size())
@@ -124,7 +124,7 @@ Status Analyzer::UpdateVerifier(UpdateStmt* stmt) {
     if (!s.Ok())
         return s;
    
-    WorkingAttributeSet* working_attrs;
+    AttributeSet* working_attrs;
     {
         Status s = Verify(stmt->scan_, &working_attrs);
         if (!s.Ok())
@@ -159,7 +159,7 @@ Status Analyzer::DeleteVerifier(DeleteStmt* stmt) {
     if (!s.Ok())
         return s;
 
-    WorkingAttributeSet* working_attrs;
+    AttributeSet* working_attrs;
     {
         Status s = Verify(stmt->scan_, &working_attrs);
         if (!s.Ok())
@@ -183,7 +183,7 @@ Status Analyzer::DeleteVerifier(DeleteStmt* stmt) {
 }
 
 Status Analyzer::SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types) { 
-    WorkingAttributeSet* working_attrs;
+    AttributeSet* working_attrs;
     {
         Status s = Verify(stmt->target_, &working_attrs);
         if (!s.Ok())
@@ -361,13 +361,12 @@ Status Analyzer::VerifyUnary(Unary* expr, DatumType* type) {
 }
 
 Status Analyzer::VerifyColRef(ColRef* expr, DatumType* type) { 
-    WorkingAttribute a;
-    Status s = GetWorkingAttribute(&a, &expr->idx_, expr->table_ref_, expr->t_.lexeme);
+    Attribute a;
+    Status s = GetAttribute(&a, &expr->idx_, &expr->scope_, expr->table_ref_, expr->t_.lexeme);
     if (!s.Ok())
         return s;
 
     *type = a.type;
-    expr->scope_ = a.scope;
 
     return Status(); 
 }
@@ -380,10 +379,10 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
             return s;
     }
 
-    WorkingAttribute a;
+    Attribute a;
     {
         std::string table_ref = "";
-        Status s = GetWorkingAttribute(&a, &expr->idx_, table_ref, expr->col_.lexeme);
+        Status s = GetAttribute(&a, &expr->idx_, &expr->scope_, table_ref, expr->col_.lexeme);
         if (!s.Ok())
             return s;
     }
@@ -395,7 +394,6 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
     }
 
     *type = a.type;
-    expr->scope_ = a.scope;
 
     return Status(); 
 }
@@ -466,7 +464,7 @@ Status Analyzer::VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type) {
 }
 
 
-Status Analyzer::Verify(WorkTable* scan, WorkingAttributeSet** working_attrs) {
+Status Analyzer::Verify(WorkTable* scan, AttributeSet** working_attrs) {
     switch (scan->Type()) {
         case ScanType::Left:
             return VerifyLeft((LeftJoin*)scan, working_attrs);
@@ -485,26 +483,26 @@ Status Analyzer::Verify(WorkTable* scan, WorkingAttributeSet** working_attrs) {
     }
 }
 
-Status Analyzer::VerifyLeft(LeftJoin* scan, WorkingAttributeSet** working_attrs) {
-    WorkingAttributeSet* left_attrs;
+Status Analyzer::VerifyLeft(LeftJoin* scan, AttributeSet** working_attrs) {
+    AttributeSet* left_attrs;
     {
         Status s = Verify(scan->left_, &left_attrs);
         if (!s.Ok())
             return s;
     }
 
-    WorkingAttributeSet* right_attrs;
+    AttributeSet* right_attrs;
     {
         Status s = Verify(scan->right_, &right_attrs);
         if (!s.Ok())
             return s;
     }
 
-    scan->right_attr_count_ = right_attrs->WorkingAttributeCount();
+    scan->right_attr_count_ = right_attrs->AttributeCount();
 
     {
         bool has_duplicate_tables;
-        *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+        *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
         scan->attrs_ = *working_attrs;
         if (has_duplicate_tables)
             return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
@@ -526,27 +524,27 @@ Status Analyzer::VerifyLeft(LeftJoin* scan, WorkingAttributeSet** working_attrs)
     return Status();
 }
 
-Status Analyzer::VerifyFull(FullJoin* scan, WorkingAttributeSet** working_attrs) {
+Status Analyzer::VerifyFull(FullJoin* scan, AttributeSet** working_attrs) {
     Status s = Verify(scan->right_join_, working_attrs);
     scan->attrs_ = *working_attrs;
 
     if (!s.Ok())
         return s;
 
-    scan->attr_count_ = (*working_attrs)->WorkingAttributeCount();
+    scan->attr_count_ = (*working_attrs)->AttributeCount();
 
     return Status();
 }
 
-Status Analyzer::VerifyInner(InnerJoin* scan, WorkingAttributeSet** working_attrs) {
-    WorkingAttributeSet* left_attrs;
+Status Analyzer::VerifyInner(InnerJoin* scan, AttributeSet** working_attrs) {
+    AttributeSet* left_attrs;
     {
         Status s = Verify(scan->left_, &left_attrs);
         if (!s.Ok())
             return s;
     }
 
-    WorkingAttributeSet* right_attrs;
+    AttributeSet* right_attrs;
     {
         Status s = Verify(scan->right_, &right_attrs);
         if (!s.Ok())
@@ -555,7 +553,7 @@ Status Analyzer::VerifyInner(InnerJoin* scan, WorkingAttributeSet** working_attr
 
     {
         bool has_duplicate_tables;
-        *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+        *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
         scan->attrs_ = *working_attrs;
         if (has_duplicate_tables)
             return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
@@ -563,7 +561,7 @@ Status Analyzer::VerifyInner(InnerJoin* scan, WorkingAttributeSet** working_attr
 
     //Need to put current attributeset into QueryState temporarily so that Expr::Analyze
     //can use that data to perform semantic analysis for 'on' clause.  Normally Expr::Analyze is only
-    //called once entire WorkTable is Analyzed an at least a single WorkingAttributeSet is in QueryState,
+    //called once entire WorkTable is Analyzed an at least a single AttributeSet is in QueryState,
     //but InnerJoins have an Expr embedded as part of the WorkTable (the 'on' clause), so this is needed
     //Something similar is done in InnerJoin::NextRow
     scopes_.push_back(*working_attrs);
@@ -582,15 +580,15 @@ Status Analyzer::VerifyInner(InnerJoin* scan, WorkingAttributeSet** working_attr
     return Status(true, "ok");
 }
 
-Status Analyzer::VerifyCross(CrossJoin* scan, WorkingAttributeSet** working_attrs) {
-    WorkingAttributeSet* left_attrs;
+Status Analyzer::VerifyCross(CrossJoin* scan, AttributeSet** working_attrs) {
+    AttributeSet* left_attrs;
     {
         Status s = Verify(scan->left_, &left_attrs);
         if (!s.Ok())
             return s;
     }
 
-    WorkingAttributeSet* right_attrs;
+    AttributeSet* right_attrs;
     {
         Status s = Verify(scan->right_, &right_attrs);
         if (!s.Ok())
@@ -599,7 +597,7 @@ Status Analyzer::VerifyCross(CrossJoin* scan, WorkingAttributeSet** working_attr
 
     {
         bool has_duplicate_tables;
-        *working_attrs = new WorkingAttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+        *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
         scan->attrs_ = *working_attrs;
         if (has_duplicate_tables)
             return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
@@ -608,7 +606,7 @@ Status Analyzer::VerifyCross(CrossJoin* scan, WorkingAttributeSet** working_attr
     return Status();
 }
 
-Status Analyzer::VerifyConstant(ConstantTable* scan, WorkingAttributeSet** working_attrs) {
+Status Analyzer::VerifyConstant(ConstantTable* scan, AttributeSet** working_attrs) {
     std::vector<std::string> names;
     std::vector<DatumType> types;
     std::vector<bool> not_nulls;
@@ -622,13 +620,13 @@ Status Analyzer::VerifyConstant(ConstantTable* scan, WorkingAttributeSet** worki
         not_nulls.push_back(true);
     }
 
-    *working_attrs = new WorkingAttributeSet("?table?", names, types, not_nulls);
+    *working_attrs = new AttributeSet("?table?", names, types, not_nulls);
     scan->attrs_ = *working_attrs;
 
     return Status();
 }
 
-Status Analyzer::VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_attrs) {
+Status Analyzer::VerifyTable(PrimaryTable* scan, AttributeSet** working_attrs) {
     std::string serialized_schema;
     TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
     bool ok = catalogue.db->Get(rocksdb::ReadOptions(), scan->tab_name_, &serialized_schema).ok();
@@ -639,7 +637,7 @@ Status Analyzer::VerifyTable(PrimaryTable* scan, WorkingAttributeSet** working_a
 
     scan->schema_ = new Schema(scan->tab_name_, serialized_schema);
 
-    *working_attrs = scan->schema_->MakeWorkingAttributeSet(scan->ref_name_);
+    *working_attrs = scan->schema_->MakeAttributeSet(scan->ref_name_);
     scan->attrs_ = *working_attrs;
 
     return Status();

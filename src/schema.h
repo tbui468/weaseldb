@@ -55,7 +55,7 @@ public:
         return data;
     }
 
-    WorkingAttributeSet* MakeWorkingAttributeSet(const std::string& ref_name) const {
+    AttributeSet* MakeAttributeSet(const std::string& ref_name) const {
         std::vector<std::string> names;
         std::vector<DatumType> types;
         std::vector<bool> not_nulls;
@@ -66,7 +66,7 @@ public:
             not_nulls.push_back(a.not_null_constraint);
         }
                 
-        return new WorkingAttributeSet(ref_name, names, types, not_nulls);
+        return new AttributeSet(ref_name, names, types, not_nulls);
     }
 public:
     std::string table_name_;

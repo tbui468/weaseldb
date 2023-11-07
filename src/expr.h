@@ -171,14 +171,12 @@ enum class ScanType {
 
 class WorkTable {
 public:
-//    virtual Status BeginScan(QueryState& qs) = 0;
-//    virtual Status NextRow(QueryState& qs, Row** r) = 0;
     std::vector<Attribute> GetAttributes() const {
         return attrs_->GetAttributes();
     }
     virtual ScanType Type() const = 0;
 public:
-    WorkingAttributeSet* attrs_ { nullptr };
+    AttributeSet* attrs_ { nullptr };
 };
 
 class LeftJoin: public WorkTable {
