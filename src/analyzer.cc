@@ -362,11 +362,10 @@ Status Analyzer::VerifyUnary(Unary* expr, DatumType* type) {
 
 Status Analyzer::VerifyColRef(ColRef* expr, DatumType* type) { 
     WorkingAttribute a;
-    Status s = GetWorkingAttribute(&a, expr->table_ref_, expr->t_.lexeme);
+    Status s = GetWorkingAttribute(&a, &expr->idx_, expr->table_ref_, expr->t_.lexeme);
     if (!s.Ok())
         return s;
 
-    expr->idx_ = a.idx;
     *type = a.type;
     expr->scope_ = a.scope;
 
@@ -384,7 +383,7 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
     WorkingAttribute a;
     {
         std::string table_ref = "";
-        Status s = GetWorkingAttribute(&a, table_ref, expr->col_.lexeme);
+        Status s = GetWorkingAttribute(&a, &expr->idx_, table_ref, expr->col_.lexeme);
         if (!s.Ok())
             return s;
     }
@@ -396,7 +395,6 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
     }
 
     *type = a.type;
-    expr->idx_ = a.idx;
     expr->scope_ = a.scope;
 
     return Status(); 

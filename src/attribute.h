@@ -33,10 +33,9 @@ struct Attribute {
 //in case the same attribute name is used across multiple tables
 struct WorkingAttribute: public Attribute {
     //dummy constructor to allow creation on stack (used in WorkingAttributeSet functions)
-    WorkingAttribute(): Attribute("", "", DatumType::Null, true), idx(-1), scope(-1) {} //placeholders
-    WorkingAttribute(Attribute a, int idx): Attribute(a.rel_ref, a.name, a.type, a.not_null_constraint), idx(idx), scope(-1) {} //scope is placeholder
+    WorkingAttribute(): Attribute("", "", DatumType::Null, true), scope(-1) {} //placeholders
+    WorkingAttribute(Attribute a): Attribute(a.rel_ref, a.name, a.type, a.not_null_constraint), scope(-1) {} //scope is placeholder
 
-    int idx; //attributes of later tables are offset if multiple tables are joined into a single working table
     int scope; //default is -1.  Should be filled in with correct relative scope position during semantic analysis phase
 
     Status CheckConstraints(DatumType type) {
@@ -58,24 +57,16 @@ class WorkingAttributeSet {
 public:
     WorkingAttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<DatumType> types, std::vector<bool> not_nulls) {
         for (size_t i = 0; i < names.size(); i++) {
-            attrs_.emplace_back(Attribute(ref_name, names.at(i), types.at(i), not_nulls.at(i)), i + offset_);
+            attrs_.emplace_back(Attribute(ref_name, names.at(i), types.at(i), not_nulls.at(i)));
         }
-
-        offset_ += names.size();
     }
 
     WorkingAttributeSet(WorkingAttributeSet* left, WorkingAttributeSet* right, bool* has_duplicate_tables) {
         //TODO: not implementing has_duplicate_tables for now
         *has_duplicate_tables = false;
 
-        for (WorkingAttribute& a: right->attrs_) {
-            a.idx += left->offset_;
-        }
-
         attrs_.insert(attrs_.end(), left->attrs_.begin(), left->attrs_.end());
         attrs_.insert(attrs_.end(), right->attrs_.begin(), right->attrs_.end());
-
-        offset_ += right->offset_;
     }
 
     bool Contains(const std::string& table, const std::string& col) const {
@@ -94,6 +85,17 @@ public:
         }
 
         return {}; //keep compiler quiet
+    }
+
+    int GetWorkingAttributeIdx(const std::string& table, const std::string& col) const {
+        int i = 0;
+        for (WorkingAttribute a: attrs_) {
+            if (a.rel_ref.compare(table) == 0 && a.name.compare(col) == 0)
+                return i;
+            i++;
+        }
+
+        return i; //keep compiler quiet
     }
 
     std::vector<std::string> TableNames() const {
@@ -130,7 +132,6 @@ public:
     }
 
 private:
-    int offset_ = 0; //used to offset Attributes when multiple tables are joined
     std::vector<WorkingAttribute> attrs_;
 };
 

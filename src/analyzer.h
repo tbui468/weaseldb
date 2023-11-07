@@ -58,16 +58,16 @@ private:
         return Status();
     }
 
-    Status GetWorkingAttribute(WorkingAttribute* attr, const std::string& table_ref_param, const std::string& col) const {
+    Status GetWorkingAttribute(WorkingAttribute* attr, int* idx, const std::string& table_ref_param, const std::string& col) const {
         for (int i = scopes_.size() - 1; i >= 0; i--) {
-            Status s = GetWorkingAttributeAtScopeOffset(attr, table_ref_param, col, i);
+            Status s = GetWorkingAttributeAtScopeOffset(attr, idx, table_ref_param, col, i);
             if (s.Ok() || i == 0)
                 return s;
         }
 
         return Status(false, "should never reach this"); //keeping compiler quiet
     }
-    Status GetWorkingAttributeAtScopeOffset(WorkingAttribute* attr, const std::string& table_ref_param, const std::string& col, int i) const {
+    Status GetWorkingAttributeAtScopeOffset(WorkingAttribute* attr, int* idx, const std::string& table_ref_param, const std::string& col, int i) const {
         std::string table_ref = table_ref_param;
         WorkingAttributeSet* as = scopes_.at(i);
         if (table_ref == "") {
@@ -91,7 +91,9 @@ private:
         }
 
         *attr = as->GetWorkingAttribute(table_ref, col);
+        *idx = as->GetWorkingAttributeIdx(table_ref, col);
         //0 is current scope, 1 is the immediate outer scope, 2 is two outer scopes out, etc
+        //TODO: this is hard to understand - it mutates WorkAttribute state
         attr->scope = scopes_.size() - 1 - i;
         
         return Status();
