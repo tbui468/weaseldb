@@ -21,7 +21,9 @@ public:
            std::vector<Token> types,
            std::vector<bool> not_null_constraints, 
            std::vector<std::vector<Token>> uniques);
+
     Schema(std::string table_name, const std::string& buf);
+
     std::string Serialize() const;
     inline int64_t NextRowId() {
         return rowid_counter_++;

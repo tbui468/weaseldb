@@ -74,14 +74,15 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
         for (Txn txn: txns) {
             Batch batch;
             Status s;
+            Analyzer a(storage);
+            Executor e(storage, &batch);
+
             for (Stmt* stmt: txn.stmts) {
-                Analyzer a(storage);
                 std::vector<DatumType> types;
                 s = a.Verify(stmt, types);
                 if (!s.Ok())
                     break;
 
-                Executor e(storage, &batch);
                 s = e.Execute(stmt);
                 if (!s.Ok())
                     break;
