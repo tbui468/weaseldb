@@ -29,20 +29,20 @@ namespace wsldb {
        if (std::find(tv.begin(), tv.end(), t.type) == tv.end()) return Status(false, err_msg); \
        t; })
 
-Status Parser::ParseTxns(std::vector<Txn>& txns) {
+Status Parser::ParseBlocks(std::vector<Block>& blocks) {
     while (!AdvanceIf(TokenType::Eof)) {
-        Txn txn;
-        Status s = ParseTxn(&txn);
+        Block block;
+        Status s = ParseBlock(&block);
         if (!s.Ok())
             return s;
 
-        txns.push_back(txn);
+        blocks.push_back(block);
     }
 
     return Status();
 }
 
-Status Parser::ParseTxn(Txn* txn) {
+Status Parser::ParseBlock(Block* block) {
     std::vector<Stmt*> stmts;
 
     bool single_stmt_txn = true;
@@ -70,7 +70,7 @@ Status Parser::ParseTxn(Txn* txn) {
             break;
     }
 
-    *txn = {stmts, commit_on_success};
+    *block = {stmts, commit_on_success};
     return Status();
 }
 

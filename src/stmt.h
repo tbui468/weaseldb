@@ -31,9 +31,9 @@ public:
     virtual StmtType Type() const = 0;
 };
 
-struct Txn {
-    Txn(): stmts({}), commit_on_success(true) {}
-    Txn(std::vector<Stmt*> stmts, bool commit_on_success): stmts(std::move(stmts)), commit_on_success(commit_on_success) {}
+struct Block {
+    Block(): stmts({}), commit_on_success(true) {}
+    Block(std::vector<Stmt*> stmts, bool commit_on_success): stmts(std::move(stmts)), commit_on_success(commit_on_success) {}
     std::vector<Stmt*> stmts;
     bool commit_on_success;
 };

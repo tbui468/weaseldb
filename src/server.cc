@@ -58,10 +58,10 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             if (tokenizer_failed) continue;
         }
 
-        std::vector<Txn> txns;
+        std::vector<Block> blocks;
         {
             Parser parser(tokens);
-            Status s = parser.ParseTxns(txns);
+            Status s = parser.ParseBlocks(blocks);
             if (!s.Ok()) {
                 std::string buf = PreparePacket('E', s.Msg());
                 Send(conn_fd, buf);
@@ -71,13 +71,13 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             }
         }
 
-        for (Txn txn: txns) {
+        for (Block block: blocks) {
             Batch batch;
             Status s;
             Analyzer a(storage);
             Executor e(storage, &batch);
 
-            for (Stmt* stmt: txn.stmts) {
+            for (Stmt* stmt: block.stmts) {
                 std::vector<DatumType> types;
                 s = a.Verify(stmt, types);
                 if (!s.Ok())
@@ -88,7 +88,7 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
                     break;
             }
 
-            if (s.Ok() && txn.commit_on_success)
+            if (s.Ok() && block.commit_on_success)
                 batch.Write(*storage);
 
             //TODO: if error, send 'E' + message and continue loop

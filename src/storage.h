@@ -14,17 +14,16 @@
 
 namespace wsldb {
 
-//TODO: need to replace other struct Txn with this one
-class NewTxn {
+class Txn {
 public:
-    NewTxn(rocksdb::Transaction* rocksdb_txn, 
+    Txn(rocksdb::Transaction* rocksdb_txn, 
            std::vector<rocksdb::ColumnFamilyDescriptor>* col_fam_descriptors, 
            std::vector<rocksdb::ColumnFamilyHandle*>* col_fam_handles): 
                 rocksdb_txn_(rocksdb_txn),
                 col_fam_descriptors_(col_fam_descriptors),
                 col_fam_handles_(col_fam_handles) {}
 
-    virtual ~NewTxn() { delete rocksdb_txn_; }
+    virtual ~Txn() { delete rocksdb_txn_; }
 
     Status Put(const std::string& col_fam, const std::string& key, const std::string& value) {
         rocksdb::Status s = rocksdb_txn_->Put(GetColFamHandle(col_fam), key, value);
@@ -148,8 +147,7 @@ public:
     Status CreateTable(Schema* schema) {
         //TODO: obtain exclusive lock on db_;
    
-        NewTxn* txn;
-        BeginTxn(&txn);
+        Txn* txn = BeginTxn();
         txn->Put(Catalog(), schema->table_name_, schema->Serialize());
         txn->Commit();
         delete txn;
@@ -166,8 +164,7 @@ public:
     Status DropTable(Schema* schema) {
         //TODO: obtain exclusive lock on db_;
 
-        NewTxn* txn;
-        BeginTxn(&txn);
+        Txn* txn = BeginTxn();
         txn->Delete(Catalog(), schema->table_name_);
         txn->Commit();
         delete txn;
@@ -181,11 +178,10 @@ public:
         return Status();
     }
 
-    Status BeginTxn(NewTxn** txn) {
+    Txn* BeginTxn() {
         rocksdb::WriteOptions options;
         rocksdb::Transaction* rocksdb_txn = db_->BeginTransaction(options);
-        *txn = new NewTxn(rocksdb_txn, &col_fam_descriptors_, &col_fam_handles_);
-        return Status();
+        return new Txn(rocksdb_txn, &col_fam_descriptors_, &col_fam_handles_);
     }
 private:
     std::string path_;

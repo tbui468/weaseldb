@@ -11,7 +11,7 @@ class Parser {
 public:
     Parser(std::vector<Token> tokens): tokens_(std::move(tokens)), idx_(0) {}
 
-    Status ParseTxns(std::vector<Txn>& txns);
+    Status ParseBlocks(std::vector<Block>& blocks);
 private:
     Status Primary(Expr**);
     Status ParseUnary(Expr**); //Expression is named Unary already
@@ -44,7 +44,7 @@ private:
     }
 
     Status ParseStmt(Stmt** stmt);
-    Status ParseTxn(Txn* tx);
+    Status ParseBlock(Block* block);
 private:
     std::vector<Token> tokens_;
     int idx_;
