@@ -5,7 +5,8 @@
 #include "storage.h"
 
 int main(int argc, char** argv) {
-    wsldb::Storage::DropDatabase("/tmp/testdb"); //dropping database everytime to simplify testing
+    wsldb::Storage::DropDatabase("/tmp/testdb");
+    wsldb::Storage::CreateDatabase("/tmp/testdb");
     wsldb::Storage storage("/tmp/testdb");
 
     wsldb::Server server(storage);

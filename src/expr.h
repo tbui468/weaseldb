@@ -267,7 +267,7 @@ public:
 public:
     std::string tab_name_;
     std::string ref_name_;
-    rocksdb::Iterator* it_;
+    Iterator* it_;
     int scan_idx_;
     Schema* schema_;
 };

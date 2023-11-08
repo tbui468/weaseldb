@@ -9,7 +9,7 @@ namespace wsldb {
 
 class Analyzer {
 public:
-    Analyzer(Storage* storage);
+    Analyzer(Txn* txn): txn_(txn) {}
     Status Verify(Stmt* stmt, std::vector<DatumType>& types);
 private:
     //statements
@@ -47,8 +47,7 @@ private:
         *schema = nullptr;
 
         std::string serialized_schema;
-        TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
-        bool ok = catalogue.db->Get(rocksdb::ReadOptions(), table_name, &serialized_schema).ok();
+        bool ok = txn_->Get(Storage::Catalog(), table_name, &serialized_schema).Ok();
 
         if (!ok)
             return Status(false, "Analysis Error: Table with name '" + table_name + "' doesn't exist");
@@ -97,7 +96,7 @@ private:
         return Status();
     }
 private:
-    Storage* storage_;
+    Txn* txn_;
     std::vector<AttributeSet*> scopes_;
 };
 

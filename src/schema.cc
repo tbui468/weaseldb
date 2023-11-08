@@ -18,7 +18,7 @@ Schema::Schema(std::string table_name,
         attrs_.emplace_back(table_name, names.at(i).lexeme, TypeTokenToDatumType(types.at(i).type), not_null_constraints.at(i));
     }
 
-    bool is_primary = true;
+    //bool is_primary = true;
 
     //indexes
     for (const std::vector<Token>& col_group: uniques) {
@@ -27,13 +27,14 @@ Schema::Schema(std::string table_name,
             idx_cols.push_back(GetAttrIdx(t.lexeme));
         }
 
+        /*
         if (is_primary) {
             idxs_.emplace_back(IdxName("primary", idx_cols), idx_cols);
             is_primary = false;
             continue;
-        }
+        }*/
 
-        idxs_.emplace_back(IdxName("secondary", idx_cols), idx_cols);
+        idxs_.emplace_back(IdxName(table_name, idx_cols), idx_cols);
     }
 }
 

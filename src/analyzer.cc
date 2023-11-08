@@ -3,10 +3,6 @@
 
 namespace wsldb {
 
-Analyzer::Analyzer(Storage* storage): storage_(storage) {
-
-}
-
 Status Analyzer::Verify(Stmt* stmt, std::vector<DatumType>& types) {
     switch (stmt->Type()) {
         case StmtType::Create:
@@ -628,8 +624,7 @@ Status Analyzer::VerifyConstant(ConstantTable* scan, AttributeSet** working_attr
 
 Status Analyzer::VerifyTable(PrimaryTable* scan, AttributeSet** working_attrs) {
     std::string serialized_schema;
-    TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
-    bool ok = catalogue.db->Get(rocksdb::ReadOptions(), scan->tab_name_, &serialized_schema).ok();
+    bool ok = txn_->Get(Storage::Catalog(), scan->tab_name_, &serialized_schema).Ok();
 
     if (!ok) {
         return Status(false, "Error: Table '" + scan->tab_name_ + "' does not exist");

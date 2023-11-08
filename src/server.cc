@@ -21,17 +21,14 @@ void Server::SigChildHandler(int s) {
 }
 
 void Server::ConnHandler(ConnHandlerArgs* args) {
+    std::cout << "handling connection\n";
     Storage* storage = args->storage;
     int conn_fd = args->conn_fd;
     free(args);
 
-    //TODO: should hide lexer/parser inside of a Planner class (rather than calling it a Interpreter)
-
     while (true) {
-        //read in message
         std::vector<Token> tokens = std::vector<Token>();
         {
-            std::cout << "handling connection\n";
             std::string msg;
             if (!Recv(conn_fd, msg)) {
                 break;
@@ -72,10 +69,10 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
         }
 
         for (Block block: blocks) {
-            Batch batch;
             Status s;
-            Analyzer a(storage);
-            Executor e(storage, &batch);
+            Txn* txn = storage->BeginTxn();
+            Analyzer a(txn);
+            Executor e(storage, txn);
 
             for (Stmt* stmt: block.stmts) {
                 std::vector<DatumType> types;
@@ -89,7 +86,11 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             }
 
             if (s.Ok() && block.commit_on_success)
-                batch.Write(*storage);
+                txn->Commit();
+            else
+                txn->Rollback();
+
+            delete txn;
 
             //TODO: if error, send 'E' + message and continue loop
             if (!s.Ok()) {
@@ -124,9 +125,8 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
         
     }
 
-    std::cout << "connection closed\n";
-
     close(conn_fd);
+    std::cout << "connection closed\n";
 }
 
 int Server::GetListenerFD(const char* port) {

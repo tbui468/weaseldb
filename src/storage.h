@@ -14,6 +14,30 @@
 
 namespace wsldb {
 
+class Iterator {
+public:
+    Iterator(rocksdb::Iterator* it): it_(it) {}
+    virtual ~Iterator() { delete it_; }
+
+    void Next() {
+        it_->Next();
+    }
+    bool Valid() {
+        return it_->Valid();
+    }
+    std::string Key() {
+        return it_->key().ToString();
+    }
+    std::string Value() {
+        return it_->value().ToString();
+    }
+    void SeekToFirst() {
+        it_->SeekToFirst();
+    }
+private:
+    rocksdb::Iterator* it_;
+};
+
 class Txn {
 public:
     Txn(rocksdb::Transaction* rocksdb_txn, 
@@ -40,6 +64,8 @@ public:
         return Status(false, "Execution Error: Rocksdb transaction Get failed");
     }
 
+    //TODO: Implement GetForUpdate (and use in Executor) for repeat-read/snapshot isolation level
+
     Status Delete(const std::string& col_fam, const std::string& key) {
         rocksdb::Status s = rocksdb_txn_->Delete(GetColFamHandle(col_fam), key);
         if (s.ok())
@@ -47,6 +73,8 @@ public:
         return Status(false, "Execution Error: Rocksdb transaction Delete failed");
     }
 
+    //TODO: Storage has the exact same function, Txn should get a function pointer to that function
+    //rather than having its own version
     rocksdb::ColumnFamilyHandle* GetColFamHandle(const std::string& col_fam) {
         for (size_t i = 0; i < col_fam_descriptors_->size(); i++) {
             if (col_fam.compare(col_fam_descriptors_->at(i).name) == 0) {
@@ -54,24 +82,27 @@ public:
             }
         }
 
-        std::cout << "Invalid column family name\n";
+        std::cout << "Txn::GetColFamHandle - Invalid column family name: " + col_fam + "\n";
         std::exit(1);
-        return nullptr; //should never reach here
     }
 
     Status Commit() {
         rocksdb::Status s = rocksdb_txn_->Commit();
-        if (s.ok()) {
-            return Status();
+        if (!s.ok()) {
+            std::cout << "Rocksdb Commit Error: " << s.ToString() << std::endl;
+            std::exit(1);
         }
-        return Status(false, "Execution Error: Rocksdb transaction commit failed");
+
+        return Status();
     }
+
     Status Rollback() {
         rocksdb::Status s = rocksdb_txn_->Rollback();
-        if (s.ok()) {
-            return Status();
+        if (!s.ok()) {
+            std::cout << "Rocksdb Rollback Error: " << s.ToString() << std::endl;
+            std::exit(1);
         }
-        return Status(false, "Execution Error: Rocksdb transaction rollback failed");
+        return Status();
     }
 private:
     rocksdb::Transaction* rocksdb_txn_;
@@ -79,14 +110,21 @@ private:
     std::vector<rocksdb::ColumnFamilyHandle*>* col_fam_handles_;
 };
 
-class NewStorage {
+class Storage {
 public:
-    NewStorage(const std::string& path): path_(path) {
+    Storage(const std::string& path): path_(path) {
         LoadColFamDescriptors();
         OpenDB();
     }
 
-    virtual ~NewStorage() {
+    virtual ~Storage() {
+        for (rocksdb::ColumnFamilyHandle* handle: col_fam_handles_) {
+            rocksdb::Status s = db_->DestroyColumnFamilyHandle(handle);
+            if (!s.ok()) {
+                std::cout << s.ToString() << std::endl;
+                std::exit(1);
+            }
+        }
         delete db_;
     }
 
@@ -98,7 +136,7 @@ public:
         rocksdb::Status s = rocksdb::TransactionDB::Open(options, txndb_options, path_, col_fam_descriptors_, &col_fam_handles_, &db_);
 
         if (!s.ok()) {
-            std::cout << "Failed to open rocksdb database\n";
+            std::cout << "Rocksdb Error: " << s.ToString() << std::endl;
             std::exit(1);
         }
     }
@@ -110,9 +148,11 @@ public:
         rocksdb::Status s = rocksdb::DB::Open(options, path_, &db);
 
         if (!s.ok()) {
-            std::cout << "Failed to open rocksdb database\n";
+            std::cout << "Rocksdb Error: " << s.ToString() << std::endl;
             std::exit(1);
         }
+
+        col_fam_descriptors_.emplace_back(Catalog(), rocksdb::ColumnFamilyOptions());
 
         rocksdb::Iterator* it = db->NewIterator(rocksdb::ReadOptions());
         for (it->SeekToFirst(); it->Valid(); it->Next()) {
@@ -144,35 +184,52 @@ public:
         return rocksdb::kDefaultColumnFamilyName;
     }
 
-    Status CreateTable(Schema* schema) {
+    Status CreateTable(Schema* schema, Txn* txn) {
         //TODO: obtain exclusive lock on db_;
-   
-        Txn* txn = BeginTxn();
-        txn->Put(Catalog(), schema->table_name_, schema->Serialize());
-        txn->Commit();
-        delete txn;
 
-        delete db_;
-        col_fam_descriptors_.clear();
-        LoadColFamDescriptors();
-        OpenDB();
+        txn->Put(Catalog(), schema->table_name_, schema->Serialize());
+
+        for (const Index& idx: schema->idxs_) {
+            rocksdb::ColumnFamilyHandle* cf;
+            rocksdb::Status s = db_->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), idx.name_, &cf);
+            if (!s.ok()) {
+                std::cout << s.ToString() << std::endl;
+                std::exit(1);
+            }
+            col_fam_handles_.push_back(cf);
+            col_fam_descriptors_.emplace_back(idx.name_, rocksdb::ColumnFamilyOptions());
+        }
 
         //TODO: release exclusive lock on db_;
         return Status();
     }
 
-    Status DropTable(Schema* schema) {
+    Status DropTable(Schema* schema, Txn* txn) {
         //TODO: obtain exclusive lock on db_;
 
-        Txn* txn = BeginTxn();
-        txn->Delete(Catalog(), schema->table_name_);
-        txn->Commit();
-        delete txn;
 
-        delete db_;
-        col_fam_descriptors_.clear();
-        LoadColFamDescriptors();
-        OpenDB();
+        txn->Delete(Catalog(), schema->table_name_);
+
+        for (const Index& idx: schema->idxs_) {
+            int i = GetColFamIdx(idx.name_);
+
+            rocksdb::Status s = db_->DropColumnFamily(col_fam_handles_[i]);
+            if (!s.ok()) {
+                std::cout << s.ToString() << std::endl;
+                std::exit(1);
+            }
+
+            s = db_->DestroyColumnFamilyHandle(col_fam_handles_[i]);
+            if (!s.ok()) {
+                std::cout << s.ToString() << std::endl;
+                std::exit(1);
+            }
+
+            col_fam_handles_.erase(col_fam_handles_.begin() + i);
+            col_fam_descriptors_.erase(col_fam_descriptors_.begin() + i);
+        }
+
+
 
         //TODO: release exclusive lock on db_;
         return Status();
@@ -183,6 +240,33 @@ public:
         rocksdb::Transaction* rocksdb_txn = db_->BeginTransaction(options);
         return new Txn(rocksdb_txn, &col_fam_descriptors_, &col_fam_handles_);
     }
+
+    Iterator* NewIterator(const std::string& col_fam) {
+        return new Iterator(db_->NewIterator(rocksdb::ReadOptions(), GetColFamHandle(col_fam)));
+    }
+
+    int GetColFamIdx(const std::string& col_fam) {
+        for (size_t i = 0; i < col_fam_descriptors_.size(); i++) {
+            if (col_fam.compare(col_fam_descriptors_.at(i).name) == 0) {
+                return i;
+            }
+        }
+
+        std::cout << "GetColFamIdx - Invalid column family name: " + col_fam + "\n";
+        std::exit(1);
+    }
+
+    //TODO: same function exists in Txn class - Txn class should just get a function pointer to this function
+    rocksdb::ColumnFamilyHandle* GetColFamHandle(const std::string& col_fam) {
+        for (size_t i = 0; i < col_fam_descriptors_.size(); i++) {
+            if (col_fam.compare(col_fam_descriptors_.at(i).name) == 0) {
+                return col_fam_handles_.at(i);
+            }
+        }
+
+        std::cout << "GetColFamHandle - Invalid column family name: " + col_fam + "\n";
+        std::exit(1);
+    }
 private:
     std::string path_;
     rocksdb::TransactionDB* db_;
@@ -191,79 +275,5 @@ private:
     std::vector<rocksdb::ColumnFamilyHandle*> col_fam_handles_;
 };
 
-struct TableHandle {
-    rocksdb::TransactionDB* db;
-    std::vector<rocksdb::ColumnFamilyHandle*> cfs;
-};
-
-class Storage {
-public:
-    Storage(const std::string& db_path);
-    virtual ~Storage();
-    void CreateTable(const std::string& name, const std::vector<Index>& idxs);
-    TableHandle GetTable(const std::string& name);
-    void DropTable(const std::string& name);
-    inline std::string CatalogueTableName() const { return "_catalogue"; }
-    inline std::string PrependDBPath(const std::string& db_name) { return path_ + "/" + db_name; }
-private:
-    void OpenTable(const std::string& name);
-    void CloseTable(const std::string& name);
-
-public:
-    static bool DatabaseExists(const std::string& db_path, rocksdb::DB** db) {
-        rocksdb::Options options;
-        options.create_if_missing = false;
-       
-        rocksdb::Status s = rocksdb::DB::Open(options, db_path, db);
-        return s.ok();
-    }
-
-    static void DropDatabase(const std::string& db_path) {
-        rocksdb::DB* db;
-        if (!DatabaseExists(db_path, &db))
-            return;
-
-        rocksdb::Options options;
-
-        //get catalogue
-        rocksdb::DB* catalogue;
-        rocksdb::Status s = rocksdb::DB::Open(options, db_path + "/_catalogue", &catalogue);
-
-        if (s.ok()) {
-            //iterate through tables in catalogue and call DestroyDB on each one
-            rocksdb::Iterator* it = catalogue->NewIterator(rocksdb::ReadOptions());
-            for (it->SeekToFirst(); it->Valid(); it->Next()) {
-                std::string table = it->key().ToString();
-                rocksdb::DestroyDB(db_path + "/" + table, options);
-            }
-
-            delete catalogue;
-
-            //call DestroyDB on catalogue
-            rocksdb::DestroyDB(db_path + "/_catalogue", options);
-        }
-
-        delete db;
-
-        s = rocksdb::DestroyDB(db_path, options);
-        if (!s.ok())
-            std::cout << "DestroyDB failed:" << s.getState() << std::endl;
-    }
-
-private:
-    std::string path_;
-    rocksdb::Options options_;
-    rocksdb::TransactionDBOptions txndb_options_;
-    std::unordered_map<std::string, TableHandle> table_handles_;
-};
-
-class Batch {
-public:
-    void Put(const std::string& db_name, rocksdb::ColumnFamilyHandle* cfh, const std::string& key, const std::string& value);
-    void Delete(const std::string& db_name, rocksdb::ColumnFamilyHandle* cfh, const std::string& key);
-    void Write(Storage& storage);
-private:
-    std::unordered_map<std::string, std::unique_ptr<rocksdb::WriteBatch>> batches_;
-};
 
 }

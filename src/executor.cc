@@ -3,10 +3,6 @@
 
 namespace wsldb {
 
-Executor::Executor(Storage* storage, Batch* batch): storage_(storage), batch_(batch) {
-    ResetAggState();
-}
-
 Status Executor::Execute(Stmt* stmt) {
     switch (stmt->Type()) {
         case StmtType::Create:
@@ -53,18 +49,7 @@ Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
 
 Status Executor::CreateExecutor(CreateStmt* stmt) { 
     Schema schema(stmt->target_.lexeme, stmt->names_, stmt->types_, stmt->not_null_constraints_, stmt->uniques_);
-
-    //TODO: this should be a single transaction: just an example of how to use
-    //rocksdb::TransactionDB.  Should put this in wrapper in storage class
-    int default_column_family_idx = 0;
-    TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
-    rocksdb::WriteOptions options;
-    rocksdb::Transaction* txn = catalogue.db->BeginTransaction(options);
-    txn->Put(catalogue.cfs.at(default_column_family_idx), stmt->target_.lexeme, schema.Serialize());
-    txn->Commit();
-    delete txn;
-
-    storage_->CreateTable(stmt->target_.lexeme, schema.idxs_);
+    storage_->CreateTable(&schema, txn_);
 
     return Status(); 
 }
@@ -86,43 +71,42 @@ Status Executor::InsertExecutor(InsertStmt* stmt) {
             if (!s.Ok()) return s;
         }
 
-        //TODO: should probably move INSERT to a Scan class
+        //insert autoincrementing _rowid
         {
-            int cf_idx = 0;
-
             //insertions will leave space at first index for _rowid
+            //TODO: this will NOT work if multiple txns try to use RowId at the same time - lost update problem here
+            //When schema is read, need to use GetForUpdate to prevent lost updates
             int64_t rowid = stmt->schema_->NextRowId();
             row.data_.at(0) = Datum(rowid);
+        }
 
-            //insert into primary index
+        //insert into primary index
+        std::string primary_key;
+        {
+
+            Index* primary_idx = &stmt->schema_->idxs_.at(0);
             std::string value = Datum::SerializeData(row.data_);
-            std::string key = stmt->schema_->idxs_.at(cf_idx).GetKeyFromFields(row.data_);
-
+            primary_key = primary_idx->GetKeyFromFields(row.data_);
             std::string test_value;
-            TableHandle handle = storage_->GetTable(stmt->target_.lexeme);
-            rocksdb::Status status = handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(cf_idx), key, &test_value);
-
-            if (status.ok()) {
+            if (txn_->Get(primary_idx->name_, primary_key, &test_value).Ok())
                 return Status(false, "Error: A record with the same primary key already exists");
-            }
 
-            batch_->Put(stmt->target_.lexeme, handle.cfs.at(cf_idx), key, value);
+            txn_->Put(primary_idx->name_, primary_key, value);
+        }
 
-            //update secondary indexes
+        //insert into secondary indexes
+        {
+            std::string test_value;
             for (size_t i = 1; i < stmt->schema_->idxs_.size(); i++) {
-                std::string secondary_key = stmt->schema_->idxs_.at(i).GetKeyFromFields(row.data_);
-                if (handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(i), secondary_key, &test_value).ok())
+                Index* idx = &stmt->schema_->idxs_.at(i);
+                std::string secondary_key = idx->GetKeyFromFields(row.data_);
+                if (txn_->Get(idx->name_, secondary_key, &test_value).Ok())
                     return Status(false, "Error: A record with the same secondary key already exists");
 
-                batch_->Put(stmt->target_.lexeme, handle.cfs.at(i), secondary_key, key);
+                txn_->Put(idx->name_, secondary_key, primary_key);
             }
 
-            //Writing table back to disk to ensure autoincrementing rowid is updated
-            //TODO: optimzation opportunity - only need to write table once all inserts are done, not after each one
-            //!!!Potential problem with lost updates here if multiple processes try to update counter concurrently!!!
-            int default_name_idx = 0;
-            TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
-            batch_->Put(storage_->CatalogueTableName(), catalogue.cfs.at(default_name_idx), stmt->target_.lexeme, stmt->schema_->Serialize());
+            txn_->Put(Storage::Catalog(), stmt->target_.lexeme, stmt->schema_->Serialize());
         }
 
     }
@@ -158,36 +142,41 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
                 return s;
         }
 
+        //update primary index
+        std::string updated_primary_key;
         {
-            int primary_cf = 0; 
-
-            TableHandle handle = storage_->GetTable(stmt->target_.lexeme);
-            std::string old_key = stmt->schema_->idxs_.at(primary_cf).GetKeyFromFields(r->data_);
-            std::string updated_primary_key = stmt->schema_->idxs_.at(primary_cf).GetKeyFromFields(updated_row.data_);
+            Index* primary_idx = &stmt->schema_->idxs_.at(0);
+            std::string old_key = primary_idx->GetKeyFromFields(r->data_);
+            updated_primary_key = primary_idx->GetKeyFromFields(updated_row.data_);
 
             if (old_key.compare(updated_primary_key) != 0) {
-                std::string tmp_value;
-                if (handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(primary_cf), updated_primary_key, &tmp_value).ok())
+                std::string dummy_value;
+                if (txn_->Get(primary_idx->name_, updated_primary_key, &dummy_value).Ok())
                     return Status(false, "Error: A record with the same primary key already exists");
 
-                batch_->Delete(stmt->target_.lexeme, handle.cfs.at(primary_cf), old_key);
+                txn_->Delete(primary_idx->name_, old_key);
             }
 
-            batch_->Put(stmt->target_.lexeme, handle.cfs.at(primary_cf), updated_primary_key, Datum::SerializeData(updated_row.data_));
+            txn_->Put(primary_idx->name_, updated_primary_key, Datum::SerializeData(updated_row.data_));
+        }
 
+        //update secondary indexes
+        {
+            std::string dummy_value;
             for (size_t i = 1; i < stmt->schema_->idxs_.size(); i++) {
-                std::string old_key = stmt->schema_->idxs_.at(i).GetKeyFromFields(r->data_);
-                std::string updated_key = stmt->schema_->idxs_.at(i).GetKeyFromFields(updated_row.data_);
+                Index* secondary_idx = &stmt->schema_->idxs_.at(i);
+                std::string old_key = secondary_idx->GetKeyFromFields(r->data_);
+                std::string updated_key = secondary_idx->GetKeyFromFields(updated_row.data_);
 
                 if (old_key.compare(updated_key) != 0) {
                     std::string tmp_value;
-                    if (handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(i), updated_key, &tmp_value).ok())
+                    if (txn_->Get(secondary_idx->name_, updated_key, &dummy_value).Ok())
                         return Status(false, "Error: A record with the same secondary key already exists");
 
-                    batch_->Delete(stmt->target_.lexeme, handle.cfs.at(i), old_key);
+                    txn_->Delete(secondary_idx->name_, old_key);
                 }
 
-                batch_->Put(stmt->target_.lexeme, handle.cfs.at(i), updated_key, updated_primary_key);
+                txn_->Put(secondary_idx->name_, updated_key, updated_primary_key);
             }
 
         }
@@ -216,16 +205,17 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
         if (!d.AsBool())
             continue;
 
+        //delete from primary index
         {
-            int primary_cf = 0; 
+            Index* primary_idx = &stmt->schema_->idxs_.at(0);
+            txn_->Delete(primary_idx->name_, primary_idx->GetKeyFromFields(r->data_));
+        }
 
-            //delete from primary index
-            TableHandle handle = storage_->GetTable(stmt->target_.lexeme);
-            batch_->Delete(stmt->target_.lexeme, handle.cfs.at(primary_cf), stmt->schema_->idxs_.at(primary_cf).GetKeyFromFields(r->data_));
-
-            //delete key/value in all secondary indexes 
+        //delete key/value in all secondary indexes 
+        {
             for (size_t i = 1; i < stmt->schema_->idxs_.size(); i++) {
-                batch_->Delete(stmt->target_.lexeme, handle.cfs.at(i), stmt->schema_->idxs_.at(i).GetKeyFromFields(r->data_)); 
+                Index* secondary_idx = &stmt->schema_->idxs_.at(i);
+                txn_->Delete(secondary_idx->name_, secondary_idx->GetKeyFromFields(r->data_));
             }
         }
         delete_count++;
@@ -407,10 +397,7 @@ Status Executor::DropTableExecutor(DropTableStmt* stmt) {
         return Status(true, "(table '" + stmt->target_relation_.lexeme + "' doesn't exist and not dropped)");
     }
 
-    int default_column_family_idx = 0;
-    TableHandle catalogue = storage_->GetTable(storage_->CatalogueTableName());
-    batch_->Delete(storage_->CatalogueTableName(), catalogue.cfs.at(default_column_family_idx), stmt->target_relation_.lexeme);
-    storage_->DropTable(stmt->target_relation_.lexeme);
+    storage_->DropTable(stmt->schema_, txn_);
 
     return Status(true, "(table '" + stmt->target_relation_.lexeme + "' dropped)");
 }
@@ -671,10 +658,7 @@ Status Executor::BeginScanTable(PrimaryTable* scan) {
     int scan_idx = 0;
     return scan->table_->BeginScan(storage_, scan_idx);*/
     scan->scan_idx_ = 0; //TODO: should change this if using index scan
-
-    TableHandle handle = storage_->GetTable(scan->tab_name_);
-    scan->it_ = handle.db->NewIterator(rocksdb::ReadOptions(), handle.cfs.at(scan->scan_idx_));
-
+    scan->it_ = storage_->NewIterator(scan->schema_->idxs_.at(scan->scan_idx_).name_);
     scan->it_->SeekToFirst();
 
     return Status();
@@ -927,15 +911,17 @@ Status Executor::NextRowConstant(ConstantTable* scan, Row** r) {
 Status Executor::NextRowTable(PrimaryTable* scan, Row** r) {
     if (!scan->it_->Valid()) return Status(false, "no more records");
 
-    std::string value = scan->it_->value().ToString();
+    std::string value = scan->it_->Value();
   
     //if scan is using secondary index, value is primary key
     //return record stored in primary index
     int primary_cf = 0; 
     if (scan->scan_idx_ != primary_cf) {
-        TableHandle handle = storage_->GetTable(scan->tab_name_);
+        //TableHandle handle = storage_->GetTable(scan->tab_name_);
         std::string primary_key = value;
-        handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(primary_cf), primary_key, &value);
+        //handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(primary_cf), primary_key, &value);
+
+        txn_->Get(scan->schema_->idxs_.at(0).name_, primary_key, &value);
     }
 
     *r = new Row(scan->schema_->DeserializeData(value));
