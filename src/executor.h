@@ -10,7 +10,7 @@ namespace wsldb {
 
 class Executor {
 public:
-    Executor(Storage* storage, Txn* txn): storage_(storage), txn_(txn) {
+    Executor(Storage* storage, Txn** txn): storage_(storage), txn_(txn) {
         ResetAggState();
     }
     Status Execute(Stmt* stmt);
@@ -23,6 +23,7 @@ private:
     Status SelectExecutor(SelectStmt* stmt);
     Status DescribeTableExecutor(DescribeTableStmt* stmt);
     Status DropTableExecutor(DropTableStmt* stmt);
+    Status TxnControlExecutor(TxnControlStmt* stmt);
 
     //expressions
     Status Eval(Expr* expr, Row* row, Datum* result);
@@ -64,7 +65,7 @@ private:
 
 private:
     Storage* storage_;
-    Txn* txn_;
+    Txn** txn_;
     std::vector<Row*> scopes_;
 
 

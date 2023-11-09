@@ -29,48 +29,16 @@ namespace wsldb {
        if (std::find(tv.begin(), tv.end(), t.type) == tv.end()) return Status(false, err_msg); \
        t; })
 
-Status Parser::ParseBlocks(std::vector<Block>& blocks) {
+Status Parser::ParseStmts(std::vector<Stmt*>& stmts) {
     while (!AdvanceIf(TokenType::Eof)) {
-        Block block;
-        Status s = ParseBlock(&block);
-        if (!s.Ok())
-            return s;
-
-        blocks.push_back(block);
-    }
-
-    return Status();
-}
-
-Status Parser::ParseBlock(Block* block) {
-    std::vector<Stmt*> stmts;
-
-    bool single_stmt_txn = true;
-    bool commit_on_success = true;
-    if (AdvanceIf(TokenType::Begin)) {
-        single_stmt_txn = false;
-        EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at the end of begin statement");
-    }
-
-    while (!AdvanceIf(TokenType::Eof)) {
-        if (PeekToken().type == TokenType::Commit || PeekToken().type == TokenType::Rollback) {
-            if (NextToken().type == TokenType::Rollback) { //rollback or commit
-                commit_on_success = false;
-            }
-            EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at the end of statement");
-            break;
-        }
         Stmt* stmt;
         Status s = ParseStmt(&stmt);
         if (!s.Ok())
             return s;
 
         stmts.push_back(stmt);
-        if (single_stmt_txn)
-            break;
     }
 
-    *block = {stmts, commit_on_success};
     return Status();
 }
 
@@ -314,7 +282,8 @@ Status Parser::ParseWorkTable(WorkTable** wt) {
 
 
 Status Parser::ParseStmt(Stmt** stmt) {
-    switch (NextToken().type) {
+    Token next = NextToken();
+    switch (next.type) {
         case TokenType::Create: {
             EatToken(TokenType::Table, "Parse Error: Expected 'table' keyword after 'create' keyword");
             Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name after 'table' keyword");
@@ -493,6 +462,12 @@ Status Parser::ParseStmt(Stmt** stmt) {
             *stmt = new DescribeTableStmt(target);
             return Status();
         }
+        case TokenType::Begin:
+        case TokenType::Commit:
+        case TokenType::Rollback:
+            EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of describe statement");
+            *stmt = new TxnControlStmt(next);
+            return Status();
         default:
             return Status(false, "Parse Error: Invalid token");
     }

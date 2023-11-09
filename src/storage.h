@@ -267,6 +267,16 @@ public:
         std::cout << "GetColFamHandle - Invalid column family name: " + col_fam + "\n";
         std::exit(1);
     }
+
+    Status GetSchema(const std::string& tab_name, std::string* serialized_schema) {
+        rocksdb::ReadOptions read_options;
+        rocksdb::Status s = db_->Get(read_options, tab_name, serialized_schema);
+        if (!s.ok()) {
+            return Status(false, "Table not found");
+        }
+
+        return Status();
+    }
 private:
     std::string path_;
     rocksdb::TransactionDB* db_;

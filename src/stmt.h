@@ -21,7 +21,8 @@ enum class StmtType {
     Delete,
     Select,
     DescribeTable,
-    DropTable
+    DropTable,
+    TxnControl
 };
 
 //Putting class Stmt here since we need it in Expr,
@@ -185,6 +186,16 @@ public:
 public:
     Token target_relation_;
     Schema* schema_;
+};
+
+class TxnControlStmt: public Stmt {
+public:
+    TxnControlStmt(Token t): t_(t) {}
+    StmtType Type() const override {
+        return StmtType::TxnControl;
+    }
+public:
+    Token t_;
 };
 
 }

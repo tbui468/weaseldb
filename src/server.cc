@@ -26,6 +26,8 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
     int conn_fd = args->conn_fd;
     free(args);
 
+    Txn* txn = nullptr;
+
     while (true) {
         std::vector<Token> tokens = std::vector<Token>();
         {
@@ -55,10 +57,10 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             if (tokenizer_failed) continue;
         }
 
-        std::vector<Block> blocks;
+        std::vector<Stmt*> stmts;
         {
             Parser parser(tokens);
-            Status s = parser.ParseBlocks(blocks);
+            Status s = parser.ParseStmts(stmts);
             if (!s.Ok()) {
                 std::string buf = PreparePacket('E', s.Msg());
                 Send(conn_fd, buf);
@@ -68,53 +70,38 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
             }
         }
 
-        for (Block block: blocks) {
+        {
             Status s;
-            Txn* txn = storage->BeginTxn();
-            Analyzer a(txn);
-            Executor e(storage, txn);
-
-            for (Stmt* stmt: block.stmts) {
+            Analyzer a(storage, &txn);
+            Executor e(storage, &txn);
+            for (Stmt* stmt: stmts) {
                 std::vector<DatumType> types;
                 s = a.Verify(stmt, types);
-                if (!s.Ok())
-                    break;
+                if (s.Ok())
+                    s = e.Execute(stmt);
 
-                s = e.Execute(stmt);
-                if (!s.Ok())
-                    break;
-            }
-
-            if (s.Ok() && block.commit_on_success)
-                txn->Commit();
-            else
-                txn->Rollback();
-
-            delete txn;
-
-            //TODO: if error, send 'E' + message and continue loop
-            if (!s.Ok()) {
-                std::string buf = PreparePacket('E', s.Msg());
-                Send(conn_fd, buf);
-                continue;
-            }
-
-            if (s.Ok()) {
-                for (RowSet* rs: s.Tuples()) {
-                    std::string row_description = rs->SerializeRowDescription();
-                    std::string buf = PreparePacket('T', row_description);
+                if (!s.Ok()) {
+                    std::cout << s.Msg() << std::endl;
+                    std::string buf = PreparePacket('E', s.Msg());
                     Send(conn_fd, buf);
-
-                    std::vector<std::string> data_rows = rs->SerializeDataRows();
-                    for (const std::string& r: data_rows) {
-                        std::string buf = PreparePacket('D', r);
+                } else {
+                    for (RowSet* rs: s.Tuples()) {
+                        std::string row_description = rs->SerializeRowDescription();
+                        std::string buf = PreparePacket('T', row_description);
                         Send(conn_fd, buf);
+
+                        std::vector<std::string> data_rows = rs->SerializeDataRows();
+                        for (const std::string& r: data_rows) {
+                            std::string buf = PreparePacket('D', r);
+                            Send(conn_fd, buf);
+                        }
                     }
+
+                    std::string buf = PreparePacket('C', s.Msg());
+                    Send(conn_fd, buf);
                 }
             }
 
-            std::string buf = PreparePacket('C', s.Msg());
-            Send(conn_fd, buf);
         }
 
         {

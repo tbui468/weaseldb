@@ -9,7 +9,7 @@ namespace wsldb {
 
 class Analyzer {
 public:
-    Analyzer(Txn* txn): txn_(txn) {}
+    Analyzer(Storage* storage, Txn** txn): storage_(storage), txn_(txn) {}
     Status Verify(Stmt* stmt, std::vector<DatumType>& types);
 private:
     //statements
@@ -20,6 +20,7 @@ private:
     Status SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types);
     Status DescribeTableVerifier(DescribeTableStmt* stmt);
     Status DropTableVerifier(DropTableStmt* stmt);
+    Status TxnControlVerifier(TxnControlStmt* stmt);
 
     //expressions
     Status Verify(Expr* expr, DatumType* type);
@@ -47,7 +48,7 @@ private:
         *schema = nullptr;
 
         std::string serialized_schema;
-        bool ok = txn_->Get(Storage::Catalog(), table_name, &serialized_schema).Ok();
+        bool ok = storage_->GetSchema(table_name, &serialized_schema).Ok();
 
         if (!ok)
             return Status(false, "Analysis Error: Table with name '" + table_name + "' doesn't exist");
@@ -96,7 +97,8 @@ private:
         return Status();
     }
 private:
-    Txn* txn_;
+    Storage* storage_;
+    Txn** txn_;
     std::vector<AttributeSet*> scopes_;
 };
 

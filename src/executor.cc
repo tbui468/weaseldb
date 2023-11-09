@@ -4,24 +4,56 @@
 namespace wsldb {
 
 Status Executor::Execute(Stmt* stmt) {
+    bool auto_txn = false;
+    if ((*txn_) == nullptr && stmt->Type() != StmtType::TxnControl) {
+        *txn_ = storage_->BeginTxn();
+        auto_txn = true;
+    }
+
+    Status s;
+
     switch (stmt->Type()) {
         case StmtType::Create:
-            return CreateExecutor((CreateStmt*)stmt);
+            s = CreateExecutor((CreateStmt*)stmt);
+            break;
         case StmtType::Insert:
-            return InsertExecutor((InsertStmt*)stmt);
+            s = InsertExecutor((InsertStmt*)stmt);
+            break;
         case StmtType::Update:
-            return UpdateExecutor((UpdateStmt*)stmt);
+            s = UpdateExecutor((UpdateStmt*)stmt);
+            break;
         case StmtType::Delete:
-            return DeleteExecutor((DeleteStmt*)stmt);
+            s = DeleteExecutor((DeleteStmt*)stmt);
+            break;
         case StmtType::Select:
-            return SelectExecutor((SelectStmt*)stmt);
+            s = SelectExecutor((SelectStmt*)stmt);
+            break;
         case StmtType::DescribeTable:
-            return DescribeTableExecutor((DescribeTableStmt*)stmt);
+            s = DescribeTableExecutor((DescribeTableStmt*)stmt);
+            break;
         case StmtType::DropTable:
-            return DropTableExecutor((DropTableStmt*)stmt);
+            s = DropTableExecutor((DropTableStmt*)stmt);
+            break;
+        case StmtType::TxnControl:
+            s = TxnControlExecutor((TxnControlStmt*)stmt);
+            break;
         default:
-            return Status(false, "Execution Error: Invalid statement type");
+            s = Status(false, "Execution Error: Invalid statement type");
+            break;
     }
+
+    if (auto_txn) {
+        if (s.Ok()) {
+            (*txn_)->Commit();
+        } else {
+            (*txn_)->Rollback();
+        }
+
+        delete *txn_;
+        *txn_ = nullptr;
+    }
+
+    return s;
 }
 
 Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
@@ -49,7 +81,7 @@ Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
 
 Status Executor::CreateExecutor(CreateStmt* stmt) { 
     Schema schema(stmt->target_.lexeme, stmt->names_, stmt->types_, stmt->not_null_constraints_, stmt->uniques_);
-    storage_->CreateTable(&schema, txn_);
+    storage_->CreateTable(&schema, *txn_);
 
     return Status(); 
 }
@@ -88,10 +120,10 @@ Status Executor::InsertExecutor(InsertStmt* stmt) {
             std::string value = Datum::SerializeData(row.data_);
             primary_key = primary_idx->GetKeyFromFields(row.data_);
             std::string test_value;
-            if (txn_->Get(primary_idx->name_, primary_key, &test_value).Ok())
+            if ((*txn_)->Get(primary_idx->name_, primary_key, &test_value).Ok())
                 return Status(false, "Error: A record with the same primary key already exists");
 
-            txn_->Put(primary_idx->name_, primary_key, value);
+            (*txn_)->Put(primary_idx->name_, primary_key, value);
         }
 
         //insert into secondary indexes
@@ -100,13 +132,13 @@ Status Executor::InsertExecutor(InsertStmt* stmt) {
             for (size_t i = 1; i < stmt->schema_->idxs_.size(); i++) {
                 Index* idx = &stmt->schema_->idxs_.at(i);
                 std::string secondary_key = idx->GetKeyFromFields(row.data_);
-                if (txn_->Get(idx->name_, secondary_key, &test_value).Ok())
+                if ((*txn_)->Get(idx->name_, secondary_key, &test_value).Ok())
                     return Status(false, "Error: A record with the same secondary key already exists");
 
-                txn_->Put(idx->name_, secondary_key, primary_key);
+                (*txn_)->Put(idx->name_, secondary_key, primary_key);
             }
 
-            txn_->Put(Storage::Catalog(), stmt->target_.lexeme, stmt->schema_->Serialize());
+            (*txn_)->Put(Storage::Catalog(), stmt->target_.lexeme, stmt->schema_->Serialize());
         }
 
     }
@@ -151,13 +183,13 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
 
             if (old_key.compare(updated_primary_key) != 0) {
                 std::string dummy_value;
-                if (txn_->Get(primary_idx->name_, updated_primary_key, &dummy_value).Ok())
+                if ((*txn_)->Get(primary_idx->name_, updated_primary_key, &dummy_value).Ok())
                     return Status(false, "Error: A record with the same primary key already exists");
 
-                txn_->Delete(primary_idx->name_, old_key);
+                (*txn_)->Delete(primary_idx->name_, old_key);
             }
 
-            txn_->Put(primary_idx->name_, updated_primary_key, Datum::SerializeData(updated_row.data_));
+            (*txn_)->Put(primary_idx->name_, updated_primary_key, Datum::SerializeData(updated_row.data_));
         }
 
         //update secondary indexes
@@ -170,13 +202,13 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
 
                 if (old_key.compare(updated_key) != 0) {
                     std::string tmp_value;
-                    if (txn_->Get(secondary_idx->name_, updated_key, &dummy_value).Ok())
+                    if ((*txn_)->Get(secondary_idx->name_, updated_key, &dummy_value).Ok())
                         return Status(false, "Error: A record with the same secondary key already exists");
 
-                    txn_->Delete(secondary_idx->name_, old_key);
+                    (*txn_)->Delete(secondary_idx->name_, old_key);
                 }
 
-                txn_->Put(secondary_idx->name_, updated_key, updated_primary_key);
+                (*txn_)->Put(secondary_idx->name_, updated_key, updated_primary_key);
             }
 
         }
@@ -208,14 +240,14 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
         //delete from primary index
         {
             Index* primary_idx = &stmt->schema_->idxs_.at(0);
-            txn_->Delete(primary_idx->name_, primary_idx->GetKeyFromFields(r->data_));
+            (*txn_)->Delete(primary_idx->name_, primary_idx->GetKeyFromFields(r->data_));
         }
 
         //delete key/value in all secondary indexes 
         {
             for (size_t i = 1; i < stmt->schema_->idxs_.size(); i++) {
                 Index* secondary_idx = &stmt->schema_->idxs_.at(i);
-                txn_->Delete(secondary_idx->name_, secondary_idx->GetKeyFromFields(r->data_));
+                (*txn_)->Delete(secondary_idx->name_, secondary_idx->GetKeyFromFields(r->data_));
             }
         }
         delete_count++;
@@ -397,10 +429,35 @@ Status Executor::DropTableExecutor(DropTableStmt* stmt) {
         return Status(true, "(table '" + stmt->target_relation_.lexeme + "' doesn't exist and not dropped)");
     }
 
-    storage_->DropTable(stmt->schema_, txn_);
+    storage_->DropTable(stmt->schema_, *txn_);
 
     return Status(true, "(table '" + stmt->target_relation_.lexeme + "' dropped)");
 }
+
+
+Status Executor::TxnControlExecutor(TxnControlStmt* stmt) {
+    switch (stmt->t_.type) {
+        case TokenType::Begin: {
+            *txn_ = storage_->BeginTxn();
+            return Status();
+        }
+        case TokenType::Commit: {
+            (*txn_)->Commit();
+            delete *txn_;
+            *txn_ = nullptr;
+            return Status();
+        }
+        case TokenType::Rollback: {
+            (*txn_)->Rollback();
+            delete *txn_;
+            *txn_ = nullptr;
+            return Status();
+        }
+        default:
+            return Status(false, "Execution Error: Invalid token");
+    }
+}
+
 
 Status Executor::EvalLiteral(Literal* expr, Row* row, Datum* result) {
     is_agg_ = false;
@@ -921,7 +978,7 @@ Status Executor::NextRowTable(PrimaryTable* scan, Row** r) {
         std::string primary_key = value;
         //handle.db->Get(rocksdb::ReadOptions(), handle.cfs.at(primary_cf), primary_key, &value);
 
-        txn_->Get(scan->schema_->idxs_.at(0).name_, primary_key, &value);
+        (*txn_)->Get(scan->schema_->idxs_.at(0).name_, primary_key, &value);
     }
 
     *r = new Row(scan->schema_->DeserializeData(value));

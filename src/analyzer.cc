@@ -19,6 +19,8 @@ Status Analyzer::Verify(Stmt* stmt, std::vector<DatumType>& types) {
             return DescribeTableVerifier((DescribeTableStmt*)stmt);
         case StmtType::DropTable:
             return DropTableVerifier((DropTableStmt*)stmt);
+        case StmtType::TxnControl:
+            return TxnControlVerifier((TxnControlStmt*)stmt);
         default:
             return Status(false, "Execution Error: Invalid statement type");
     }
@@ -266,6 +268,26 @@ Status Analyzer::DropTableVerifier(DropTableStmt* stmt) {
         return s;
 
     return Status(); 
+}
+
+Status Analyzer::TxnControlVerifier(TxnControlStmt* stmt) {
+    switch (stmt->t_.type) {
+        case TokenType::Begin: {
+            if (*txn_)
+                return Status(false, "Analysis Error: Cannot use 'begin' when already inside a transaction");
+            break;
+        }
+        case TokenType::Commit:
+        case TokenType::Rollback: {
+            if (!(*txn_))
+                return Status(false, "Analysis Error: Cannot use 'commit'/'rollback' outside of a transaction");
+            break;
+        }
+        default:
+            return Status(false, "Analysis Error: Invalid token");
+    }
+    
+    return Status();
 }
 
 Status Analyzer::VerifyLiteral(Literal* expr, DatumType* type) { 
@@ -624,7 +646,7 @@ Status Analyzer::VerifyConstant(ConstantTable* scan, AttributeSet** working_attr
 
 Status Analyzer::VerifyTable(PrimaryTable* scan, AttributeSet** working_attrs) {
     std::string serialized_schema;
-    bool ok = txn_->Get(Storage::Catalog(), scan->tab_name_, &serialized_schema).Ok();
+    bool ok = storage_->GetSchema(scan->tab_name_, &serialized_schema).Ok();
 
     if (!ok) {
         return Status(false, "Error: Table '" + scan->tab_name_ + "' does not exist");
