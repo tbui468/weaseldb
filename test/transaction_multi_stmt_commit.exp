@@ -1,4 +1,5 @@
 Error: A record with the same primary key already exists
+Execution Error: Transaction has aborted and will ignore all statements until ended
 Error: A record with the same primary key already exists
 1,Earth,
 2,Mars,

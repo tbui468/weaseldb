@@ -4,10 +4,14 @@
 namespace wsldb {
 
 Status Executor::Execute(Stmt* stmt) {
-    bool auto_txn = false;
+    bool auto_commit = false;
     if ((*txn_) == nullptr && stmt->Type() != StmtType::TxnControl) {
         *txn_ = storage_->BeginTxn();
-        auto_txn = true;
+        auto_commit = true;
+    }
+
+    if (*txn_ && (*txn_)->has_aborted_ && stmt->Type() != StmtType::TxnControl) {
+        return Status(false, "Execution Error: Transaction has aborted and will ignore all statements until ended");
     }
 
     Status s;
@@ -42,11 +46,14 @@ Status Executor::Execute(Stmt* stmt) {
             break;
     }
 
-    if (auto_txn) {
-        if (s.Ok()) {
-            (*txn_)->Commit();
-        } else {
+    if (*txn_ && !s.Ok())
+        (*txn_)->has_aborted_ = true;
+
+    if (auto_commit) {
+        if ((*txn_)->has_aborted_) {
             (*txn_)->Rollback();
+        } else {
+            (*txn_)->Commit();
         }
 
         delete *txn_;
@@ -434,7 +441,7 @@ Status Executor::DropTableExecutor(DropTableStmt* stmt) {
     return Status(true, "(table '" + stmt->target_relation_.lexeme + "' dropped)");
 }
 
-
+//TODO: should move this all to main Executor method so that all txn stuff can be kept together
 Status Executor::TxnControlExecutor(TxnControlStmt* stmt) {
     switch (stmt->t_.type) {
         case TokenType::Begin: {
@@ -442,7 +449,11 @@ Status Executor::TxnControlExecutor(TxnControlStmt* stmt) {
             return Status();
         }
         case TokenType::Commit: {
-            (*txn_)->Commit();
+            if ((*txn_)->has_aborted_) {
+                (*txn_)->Rollback();
+            } else {
+                (*txn_)->Commit();
+            }
             delete *txn_;
             *txn_ = nullptr;
             return Status();

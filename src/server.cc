@@ -81,7 +81,6 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
                     s = e.Execute(stmt);
 
                 if (!s.Ok()) {
-                    std::cout << s.Msg() << std::endl;
                     std::string buf = PreparePacket('E', s.Msg());
                     Send(conn_fd, buf);
                 } else {

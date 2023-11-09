@@ -45,7 +45,8 @@ public:
            std::vector<rocksdb::ColumnFamilyHandle*>* col_fam_handles): 
                 rocksdb_txn_(rocksdb_txn),
                 col_fam_descriptors_(col_fam_descriptors),
-                col_fam_handles_(col_fam_handles) {}
+                col_fam_handles_(col_fam_handles),
+                has_aborted_(false) {}
 
     virtual ~Txn() { delete rocksdb_txn_; }
 
@@ -108,6 +109,8 @@ private:
     rocksdb::Transaction* rocksdb_txn_;
     std::vector<rocksdb::ColumnFamilyDescriptor>* col_fam_descriptors_;
     std::vector<rocksdb::ColumnFamilyHandle*>* col_fam_handles_;
+public:
+    bool has_aborted_;
 };
 
 class Storage {
