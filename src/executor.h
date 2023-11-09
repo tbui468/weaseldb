@@ -13,8 +13,9 @@ public:
     Executor(Storage* storage, Txn** txn): storage_(storage), txn_(txn) {
         ResetAggState();
     }
-    Status Execute(Stmt* stmt);
+    std::vector<Status> ExecuteQuery(const std::string& query);
 private:
+    Status Execute(Stmt* stmt);
     //statements
     Status CreateExecutor(CreateStmt* stmt);
     Status InsertExecutor(InsertStmt* stmt);

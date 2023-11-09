@@ -1,7 +1,49 @@
 #include "executor.h"
 #include "schema.h"
+#include "tokenizer.h"
+#include "parser.h"
+#include "analyzer.h"
 
 namespace wsldb {
+
+std::vector<Status> Executor::ExecuteQuery(const std::string& query) {
+    std::vector<Token> tokens = std::vector<Token>();
+    {
+        Tokenizer tokenizer(query);
+        do {
+            Token t;
+            Status s = tokenizer.NextToken(&t);
+            if (!s.Ok())
+                return {s};
+
+            tokens.push_back(t);
+        } while (tokens.back().type != TokenType::Eof);
+    }
+
+    std::vector<Stmt*> stmts;
+    {
+        Parser parser(tokens);
+        Status s = parser.ParseStmts(stmts);
+        if (!s.Ok())
+            return {s};
+    }
+
+    std::vector<Status> statuses;
+    {
+        Analyzer a(storage_, txn_);
+        for (Stmt* stmt: stmts) {
+            std::vector<DatumType> types;
+            Status s = a.Verify(stmt, types);
+            if (s.Ok())
+                s = Execute(stmt);
+
+            statuses.push_back(s);
+        }
+
+    }
+
+    return statuses;
+}
 
 Status Executor::Execute(Stmt* stmt) {
     bool auto_commit = false;

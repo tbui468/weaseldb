@@ -2,11 +2,7 @@
 #include <thread>
 
 #include "server.h"
-#include "tokenizer.h"
-#include "parser.h"
-#include "rocksdb/db.h"
 #include "executor.h"
-#include "analyzer.h"
 
 namespace wsldb {
 
@@ -29,86 +25,43 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
     Txn* txn = nullptr;
 
     while (true) {
-        std::vector<Token> tokens = std::vector<Token>();
-        {
-            std::string msg;
-            if (!Recv(conn_fd, msg)) {
-                break;
-            }
-
-            int len = *((int*)(msg.data() + sizeof(char)));
-            std::string query = msg.substr(sizeof(char) + sizeof(int), len - sizeof(int));
-
-            Tokenizer tokenizer(query);
-            bool tokenizer_failed = false;
-            do {
-                Token t;
-                Status s = tokenizer.NextToken(&t);
-                if (!s.Ok()) {
-                    std::string buf = PreparePacket('E', s.Msg());
-                    Send(conn_fd, buf);
-                    std::string buf2 = PreparePacket('Z', ""); //ready for query
-                    Send(conn_fd, buf2);
-                    tokenizer_failed = true;
-                    break;
-                }
-                tokens.push_back(t);
-            } while (tokens.back().type != TokenType::Eof);
-            if (tokenizer_failed) continue;
+        std::string msg;
+        if (!Recv(conn_fd, msg)) {
+            break;
         }
 
-        std::vector<Stmt*> stmts;
-        {
-            Parser parser(tokens);
-            Status s = parser.ParseStmts(stmts);
+        int len = *((int*)(msg.data() + sizeof(char)));
+        std::string query = msg.substr(sizeof(char) + sizeof(int), len - sizeof(int));
+
+        Executor e(storage, &txn);
+
+        std::vector<Status> ss = e.ExecuteQuery(query);
+
+        for (Status s: ss) {
             if (!s.Ok()) {
                 std::string buf = PreparePacket('E', s.Msg());
                 Send(conn_fd, buf);
-                std::string buf2 = PreparePacket('Z', "");
-                Send(conn_fd, buf2);
-                continue;
-            }
-        }
-
-        {
-            Status s;
-            Analyzer a(storage, &txn);
-            Executor e(storage, &txn);
-            for (Stmt* stmt: stmts) {
-                std::vector<DatumType> types;
-                s = a.Verify(stmt, types);
-                if (s.Ok())
-                    s = e.Execute(stmt);
-
-                if (!s.Ok()) {
-                    std::string buf = PreparePacket('E', s.Msg());
+            } else {
+                for (RowSet* rs: s.Tuples()) {
+                    std::string row_description = rs->SerializeRowDescription();
+                    std::string buf = PreparePacket('T', row_description);
                     Send(conn_fd, buf);
-                } else {
-                    for (RowSet* rs: s.Tuples()) {
-                        std::string row_description = rs->SerializeRowDescription();
-                        std::string buf = PreparePacket('T', row_description);
+
+                    std::vector<std::string> data_rows = rs->SerializeDataRows();
+                    for (const std::string& r: data_rows) {
+                        std::string buf = PreparePacket('D', r);
                         Send(conn_fd, buf);
-
-                        std::vector<std::string> data_rows = rs->SerializeDataRows();
-                        for (const std::string& r: data_rows) {
-                            std::string buf = PreparePacket('D', r);
-                            Send(conn_fd, buf);
-                        }
                     }
-
-                    std::string buf = PreparePacket('C', s.Msg());
-                    Send(conn_fd, buf);
                 }
+
+                std::string buf = PreparePacket('C', s.Msg());
+                Send(conn_fd, buf);
             }
-
         }
 
-        {
-            std::string buf = PreparePacket('Z', ""); //ready for query
-            Send(conn_fd, buf);
-        }
+        std::string buf = PreparePacket('Z', ""); //ready for query
+        Send(conn_fd, buf);
 
-        
     }
 
     close(conn_fd);
