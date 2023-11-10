@@ -39,8 +39,8 @@ public:
             return false;
         }
 
-        char type = *((char*)(header)); //Not used now
-        type = type; //keeping compiler warnings quiet for now
+        //char type = *((char*)(header)); //Not used now
+        //type = type; //keeping compiler warnings quiet for now
         int size = *((int*)(header + sizeof(char)));
         int remaining_size = size - sizeof(int);
 

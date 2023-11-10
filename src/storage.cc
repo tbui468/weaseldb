@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "storage.h"
+#include "index.h"
 
 namespace wsldb {
 

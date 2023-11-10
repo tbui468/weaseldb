@@ -6,7 +6,7 @@
 namespace wsldb {
 
 void Server::SigChildHandler(int s) {
-    s = s; //silence warning
+    (void)s; //silence warning
 
     int saved_errno = errno;
 
