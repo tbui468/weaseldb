@@ -1,15 +1,13 @@
 #pragma once
 
 #include <string>
-#include <iostream>
-#include <algorithm>
 
 #include "token.h"
 #include "datum.h"
 #include "row.h"
 #include "schema.h"
 #include "status.h"
-#include "storage.h"
+#include "iterator.h"
 
 namespace wsldb {
 

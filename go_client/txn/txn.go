@@ -48,15 +48,16 @@ func main() {
     conn1 := wsldb.ConnectToServer("localhost:3000")
     defer conn1.Close()
 
-    //conn2 := wsldb.ConnectToServer("localhost:3000")
-    //defer conn2.Close()
+    conn2 := wsldb.ConnectToServer("localhost:3000")
+    defer conn2.Close()
 
     PrintResult(wsldb.ExecuteQuery(conn1, "create table planets (name text, moons int8);"))
     PrintResult(wsldb.ExecuteQuery(conn1, "insert into planets (name, moons) values ('Earth', 1);"))
-//    PrintResult(wsldb.ExecuteQuery(conn1, "begin;"))
-    PrintResult(wsldb.ExecuteQuery(conn1, "begin; insert into planets (name, moons) values ('Mars', 2); commit;"))
-    //PrintResult(wsldb.ExecuteQuery(conn2, "select name, moons from planets order by name asc;")) //should NOT see Mars, 2 since conn1 didn't commit yet
-//    PrintResult(wsldb.ExecuteQuery(conn1, "commit;"))
+    PrintResult(wsldb.ExecuteQuery(conn1, "begin;"))
+    PrintResult(wsldb.ExecuteQuery(conn1, "insert into planets (name, moons) values ('Mars', 2);"))
+    PrintResult(wsldb.ExecuteQuery(conn2, "select name, moons from planets order by name asc;")) //should NOT see Mars, 2 since conn1 didn't commit yet
+    PrintResult(wsldb.ExecuteQuery(conn1, "commit;"))
+    PrintResult(wsldb.ExecuteQuery(conn2, "select name, moons from planets order by name asc;")) //should NOT see Mars, 2 since conn1 didn't commit yet
     PrintResult(wsldb.ExecuteQuery(conn1, "drop table planets;"))
     //testing read-committed isolation - cannot overwrite non-committed write.  cannot read non-commited writes
 

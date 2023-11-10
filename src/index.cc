@@ -26,4 +26,13 @@ std::string Index::Serialize() const {
     return result;
 }
 
+
+std::string Index::GetKeyFromFields(const std::vector<Datum>& data) const {
+    std::string primary_key;
+    for (int i: key_idxs_) {
+        primary_key += data.at(i).Serialize();
+    }
+    return primary_key;
+}
+
 }

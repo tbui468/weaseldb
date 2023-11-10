@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "token.h"
 
 
@@ -174,7 +172,6 @@ DatumType LiteralTokenToDatumType(TokenType type) {
         case TokenType::Null:
             return DatumType::Null;
         default:
-            std::cout << "Unrecognized token: " << TokenTypeToString(type) << std::endl;
             return DatumType::Null;
     }
 }
@@ -192,7 +189,6 @@ DatumType TypeTokenToDatumType(TokenType type) {
         case TokenType::Bytea:
             return DatumType::Bytea;
         default:
-            std::cout << "Unrecognized token: " << TokenTypeToString(type) << std::endl;
             return DatumType::Null;
     }
 }

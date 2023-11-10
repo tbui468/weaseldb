@@ -1,14 +1,9 @@
 #pragma once
 
-#include <iostream>
-#include <unordered_map>
-#include <limits>
-
 #include "expr.h"
 #include "token.h"
 #include "schema.h"
 #include "status.h"
-#include "rocksdb/db.h"
 
 namespace wsldb {
 
