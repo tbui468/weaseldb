@@ -9,8 +9,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include <iostream>
-
 namespace wsldb {
 
 class TCPEndPoint {

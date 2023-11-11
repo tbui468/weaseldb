@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include <vector>
 
 #include "datum.h"
@@ -21,6 +20,7 @@ public:
 
         return ret;
     }
+    /*
     void Print() {
         for (Datum d: data_) {
             if (d.IsType(DatumType::Int8)) {
@@ -41,7 +41,7 @@ public:
                 std::cout << "unsupported data type,";
             }
         }
-    }
+    }*/
 public:
     std::vector<Datum> data_;
 };
@@ -49,12 +49,13 @@ public:
 class RowSet {
 public:
     RowSet(std::vector<Attribute> attrs): attrs_(attrs) {}
+    /*
     void Print() {
         for (Row* r: rows_) {
             r->Print();
             std::cout << std::endl;
         }
-    }
+    }*/
     std::string SerializeRowDescription() {
         std::string ret;
 

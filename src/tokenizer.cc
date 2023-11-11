@@ -1,5 +1,4 @@
 #include "tokenizer.h"
-#include <iostream>
 #include <cstring>
 
 namespace wsldb {
@@ -143,7 +142,8 @@ Status Tokenizer::NextToken(Token* t) {
 
 }
 
-void Tokenizer::DebugPrintTokens(const std::vector<Token>& tokens) {
+std::string Tokenizer::DebugTokensToString(const std::vector<Token>& tokens) {
+    std::string result = "";
     for (const Token& t: tokens) {
         switch (t.type) {
             case TokenType::Identifier:
@@ -151,13 +151,15 @@ void Tokenizer::DebugPrintTokens(const std::vector<Token>& tokens) {
             case TokenType::FloatLiteral:
             case TokenType::StringLiteral:
             case TokenType::ByteaLiteral:
-                std::cout << TokenTypeToString(t.type) << " " << t.lexeme << std::endl;
+                result += TokenTypeToString(t.type) + " " + t.lexeme + "\n";
                 break;
             default:
-                std::cout << TokenTypeToString(t.type) << std::endl;
+                result += TokenTypeToString(t.type) + "\n";
                 break;
         }
     }
+
+    return result;
 }
 
 Status Tokenizer::MakeIdentifier(Token* t) {

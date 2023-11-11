@@ -1,8 +1,6 @@
 #pragma once
 
 #include <string>
-#include <iostream>
-#include <limits>
 #include <vector>
 
 namespace wsldb {
@@ -59,7 +57,6 @@ public:
             default:
                 //TODO: this should report and error rather than printing 
                 //std::cout << "invalid token type for initializing datum: " << TokenTypeToString(t.type) << std::endl;
-                std::cout << "invalid token type for initializing datum: " << std::endl;
                 break;
         }
     }
@@ -102,7 +99,6 @@ public:
             }
             default:
                 //std::cout << "invalid buffer data for initializing datum: " << TokenTypeToString(type) << std::endl;
-                std::cout << "invalid buffer data for initializing datum: " << std::endl;
                 break;
         } 
     }
@@ -248,7 +244,6 @@ public:
                 return AsString().compare(d.AsString()) == 0;
             default:
                 //std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
-                std::cout << "invalid type for comparing data: " << std::endl;
                 break;
         }        
         return false;
@@ -269,7 +264,6 @@ public:
                 return AsString().compare(d.AsString()) < 0;
             default:
                 //std::cout << "invalid type for comparing data: " << TokenTypeToString(type_) << std::endl;
-                std::cout << "invalid type for comparing data: " << std::endl;
                 break;
         }        
         return false;

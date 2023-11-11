@@ -11,7 +11,7 @@ class Tokenizer {
 public:
     Tokenizer(const std::string& query): query_(query), idx_(0) {}
     Status NextToken(Token* t);
-    static void DebugPrintTokens(const std::vector<Token>& tokens);
+    static std::string DebugTokensToString(const std::vector<Token>& tokens);
     static void ReplaceAll(std::string& s, const std::string& from, const std::string& to) {
         size_t start_pos = 0;
         while ((start_pos = s.find(from, start_pos)) != std::string::npos) {
