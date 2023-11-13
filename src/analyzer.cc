@@ -21,6 +21,8 @@ Status Analyzer::Verify(Stmt* stmt, std::vector<DatumType>& types) {
             return DropTableVerifier((DropTableStmt*)stmt);
         case StmtType::TxnControl:
             return TxnControlVerifier((TxnControlStmt*)stmt);
+        case StmtType::CreateModel:
+            return CreateModelVerifier((CreateModelStmt*)stmt);
         default:
             return Status(false, "Execution Error: Invalid statement type");
     }
@@ -44,6 +46,8 @@ Status Analyzer::Verify(Expr* expr, DatumType* type) {
             return VerifyIsNull((IsNull*)expr, type);
         case ExprType::ScalarSubquery:
             return VerifyScalarSubquery((ScalarSubquery*)expr, type);
+        case ExprType::Predict:
+            return VerifyPredict((Predict*)expr, type);
         default:
             return Status(false, "Execution Error: Invalid expression type");
     }
@@ -290,6 +294,18 @@ Status Analyzer::TxnControlVerifier(TxnControlStmt* stmt) {
     return Status();
 }
 
+Status Analyzer::CreateModelVerifier(CreateModelStmt* stmt) {
+    //TODO: check if model name is in model catalog
+    Model * model;
+    Status s = inference_->GetModel(stmt->name_.lexeme, &model);
+
+    if (s.Ok()) {
+        return Status(false, "Analysis Error: Model with the name '" + stmt->name_.lexeme + "' already exists");
+    }
+
+    return Status();
+}
+
 Status Analyzer::VerifyLiteral(Literal* expr, DatumType* type) { 
     *type = LiteralTokenToDatumType(expr->t_.type);
     return Status(); 
@@ -481,6 +497,15 @@ Status Analyzer::VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type) {
     return Status();
 }
 
+Status Analyzer::VerifyPredict(Predict* expr, DatumType* type) {
+    DatumType arg_type;
+    Status s = Verify(expr->arg_, &arg_type);
+    if (!s.Ok())
+        return s;
+
+    *type = DatumType::Int8; //TODO: temp to test mnist
+    return Status();
+}
 
 Status Analyzer::Verify(WorkTable* scan, AttributeSet** working_attrs) {
     switch (scan->Type()) {

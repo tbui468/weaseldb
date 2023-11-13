@@ -30,7 +30,7 @@ std::vector<Status> Executor::ExecuteQuery(const std::string& query) {
 
     std::vector<Status> statuses;
     {
-        Analyzer a(storage_, txn_);
+        Analyzer a(storage_, inference_, txn_);
         for (Stmt* stmt: stmts) {
             std::vector<DatumType> types;
             Status s = a.Verify(stmt, types);
@@ -83,6 +83,9 @@ Status Executor::Execute(Stmt* stmt) {
         case StmtType::TxnControl:
             s = TxnControlExecutor((TxnControlStmt*)stmt);
             break;
+        case StmtType::CreateModel:
+            s = CreateModelExecutor((CreateModelStmt*)stmt);
+            break;
         default:
             s = Status(false, "Execution Error: Invalid statement type");
             break;
@@ -123,6 +126,8 @@ Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
             return EvalIsNull((IsNull*)expr, row, result);
         case ExprType::ScalarSubquery:
             return EvalScalarSubquery((ScalarSubquery*)expr, row, result);
+        case ExprType::Predict:
+            return EvalPredict((Predict*)expr, row, result);
         default:
             return Status(false, "Execution Error: Invalid expression type");
     }
@@ -511,6 +516,11 @@ Status Executor::TxnControlExecutor(TxnControlStmt* stmt) {
     }
 }
 
+Status Executor::CreateModelExecutor(CreateModelStmt* stmt) {
+    //TODO: add model name to model catalog
+    Status s = inference_->CreateModel(stmt->name_.lexeme, stmt->path_.lexeme);
+    return s;
+}
 
 Status Executor::EvalLiteral(Literal* expr, Row* row, Datum* result) {
     is_agg_ = false;
@@ -687,6 +697,37 @@ Status Executor::EvalScalarSubquery(ScalarSubquery* expr, Row* row, Datum* resul
     return Status();
 }
 
+Status Executor::EvalPredict(Predict* expr, Row* row, Datum* result) {
+    is_agg_ = false;
+
+    Datum d;
+    {
+        Status s = Eval(expr->arg_, row, &d);
+        if (!s.Ok())
+            return s;
+    }
+
+    //convert byte data to floats since model expects 
+    std::string buf;
+    Model* model;
+    {
+        Model::ByteToFloat(d.Data(), buf);
+
+        Status s = inference_->GetModel(expr->model_name_.lexeme, &model);
+        if (!s.Ok())
+            return s;
+    }
+
+    {
+        std::vector<int> results;
+        Status s = model->Predict(buf, results);
+        if (!s.Ok())
+            return s;
+        *result = results.at(0); //just getting first result
+    }
+   
+    return Status();
+}
 
 Status Executor::BeginScan(WorkTable* scan) {
     switch (scan->Type()) {

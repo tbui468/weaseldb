@@ -1,6 +1,7 @@
 #pragma once
 
 #include "storage.h"
+#include "inference.h"
 #include "status.h"
 #include "stmt.h"
 #include "expr.h"
@@ -9,7 +10,7 @@ namespace wsldb {
 
 class Analyzer {
 public:
-    Analyzer(Storage* storage, Txn** txn): storage_(storage), txn_(txn) {}
+    Analyzer(Storage* storage, Inference* inference, Txn** txn): storage_(storage), inference_(inference), txn_(txn) {}
     Status Verify(Stmt* stmt, std::vector<DatumType>& types);
 private:
     //statements
@@ -21,6 +22,7 @@ private:
     Status DescribeTableVerifier(DescribeTableStmt* stmt);
     Status DropTableVerifier(DropTableStmt* stmt);
     Status TxnControlVerifier(TxnControlStmt* stmt);
+    Status CreateModelVerifier(CreateModelStmt* stmt);
 
     //expressions
     Status Verify(Expr* expr, DatumType* type);
@@ -33,6 +35,7 @@ private:
     Status VerifyCall(Call* expr, DatumType* type);
     Status VerifyIsNull(IsNull* expr, DatumType* type);
     Status VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type);
+    Status VerifyPredict(Predict* expr, DatumType* type);
 
     //TODO: rename WorkTable to scan
     Status Verify(WorkTable* scan, AttributeSet** working_attrs);
@@ -98,6 +101,7 @@ private:
     }
 private:
     Storage* storage_;
+    Inference* inference_;
     Txn** txn_;
     std::vector<AttributeSet*> scopes_;
 };

@@ -62,6 +62,7 @@ enum class TokenType {
     Begin,
     Commit,
     Rollback,
+    Model,
 
     /* user-defined identifier */
     Identifier,

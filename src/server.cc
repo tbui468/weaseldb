@@ -18,6 +18,7 @@ void Server::SigChildHandler(int s) {
 void Server::ConnHandler(ConnHandlerArgs* args) {
     std::cout << "handling connection\n";
     Storage* storage = args->storage;
+    Inference* inference = args->inference;
     int conn_fd = args->conn_fd;
     free(args);
 
@@ -32,7 +33,7 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
         int len = *((int*)(msg.data() + sizeof(char)));
         std::string query = msg.substr(sizeof(char) + sizeof(int), len - sizeof(int));
 
-        Executor e(storage, &txn);
+        Executor e(storage, inference, &txn);
 
         std::vector<Status> ss = e.ExecuteQuery(query);
 
@@ -133,7 +134,8 @@ void Server::Listen(const char* port) {
             continue;
 
         ConnHandlerArgs* args = new ConnHandlerArgs();
-        args->storage = &storage_;
+        args->storage = storage_;
+        args->inference = inference_;
         args->conn_fd = conn_fd;
 
         std::thread thrd(ConnHandler, args);

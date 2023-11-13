@@ -22,7 +22,8 @@ enum class ExprType {
     ColAssign,
     Call,
     IsNull,
-    ScalarSubquery
+    ScalarSubquery,
+    Predict
 };
 
 class Expr {
@@ -156,6 +157,20 @@ public:
     }
 public:
     Stmt* stmt_;
+};
+
+class Predict: public Expr {
+public:
+    Predict(Token model_name, Expr* arg): model_name_(model_name), arg_(arg) {}
+    std::string ToString() override {
+        return "predict";
+    }
+    ExprType Type() const override {
+        return ExprType::Predict;
+    }
+public:
+    Token model_name_;
+    Expr* arg_;
 };
 
 enum class ScanType {

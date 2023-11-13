@@ -4,13 +4,14 @@
 #include "expr.h"
 #include "stmt.h"
 #include "storage.h"
+#include "inference.h"
 
 namespace wsldb {
 
 
 class Executor {
 public:
-    Executor(Storage* storage, Txn** txn): storage_(storage), txn_(txn) {
+    Executor(Storage* storage, Inference* inference, Txn** txn): storage_(storage), inference_(inference), txn_(txn) {
         ResetAggState();
     }
     std::vector<Status> ExecuteQuery(const std::string& query);
@@ -25,6 +26,7 @@ private:
     Status DescribeTableExecutor(DescribeTableStmt* stmt);
     Status DropTableExecutor(DropTableStmt* stmt);
     Status TxnControlExecutor(TxnControlStmt* stmt);
+    Status CreateModelExecutor(CreateModelStmt* stmt);
 
     //expressions
     Status Eval(Expr* expr, Row* row, Datum* result);
@@ -37,6 +39,7 @@ private:
     Status EvalCall(Call* expr, Row* row, Datum* result);
     Status EvalIsNull(IsNull* expr, Row* row, Datum* result);
     Status EvalScalarSubquery(ScalarSubquery* expr, Row* row, Datum* result);
+    Status EvalPredict(Predict* expr, Row* row, Datum* result);
 
     //TODO: make this Scan wrapper - this it the function SelectStmt should call rather than calling BeginScan/NextRow directly
 //    Status Scan(WorkTable* scan, RowSet* result);
@@ -66,6 +69,7 @@ private:
 
 private:
     Storage* storage_;
+    Inference* inference_;
     Txn** txn_;
     std::vector<Row*> scopes_;
 

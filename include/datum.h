@@ -165,6 +165,10 @@ public:
         return data_;
     }
 
+    std::string Data() const {
+        return data_;
+    }
+
     int64_t AsInt8() const {
         return *((int64_t*)(data_.data()));
     }

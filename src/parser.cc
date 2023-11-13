@@ -55,13 +55,21 @@ Status Parser::Primary(Expr** expr) {
             return Status();
         case TokenType::Identifier: {
             Token ref = NextToken();
-            if (AdvanceIf(TokenType::Dot)) {
-                Token col = NextToken();
-                *expr = new ColRef(col, ref);
+            if (PeekToken().type == TokenType::LParen) { //custom function call (possibly ML model)
+                NextToken();
+                Expr* arg = ParseExpr(Base);
+                EatToken(TokenType::RParen, "Parse Error: Expected ')' after function argument"); 
+                *expr = new Predict(ref, arg);
+                return Status();
+            } else { //column reference
+                if (AdvanceIf(TokenType::Dot)) {
+                    Token col = NextToken();
+                    *expr = new ColRef(col, ref);
+                    return Status();
+                }
+                *expr = new ColRef(ref);
                 return Status();
             }
-            *expr = new ColRef(ref);
-            return Status();
         }
         case TokenType::LParen: {
             NextToken(); //(
@@ -285,67 +293,79 @@ Status Parser::ParseStmt(Stmt** stmt) {
     Token next = NextToken();
     switch (next.type) {
         case TokenType::Create: {
-            EatToken(TokenType::Table, "Parse Error: Expected 'table' keyword after 'create' keyword");
-            Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name after 'table' keyword");
-            EatToken(TokenType::LParen, "Parse Error: Expected '(' after table name");
+            if (PeekToken().type == TokenType::Table) {
+                EatToken(TokenType::Table, "Parse Error: Expected 'table' keyword after 'create' keyword");
+                Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name after 'table' keyword");
+                EatToken(TokenType::LParen, "Parse Error: Expected '(' after table name");
 
-            std::vector<Token> names;
-            std::vector<Token> types;
-            std::vector<bool> not_null_constraints;
-            std::vector<Token> pks;
-            std::vector<std::vector<Token>> uniques;
-            std::vector<bool> nulls_distinct;
+                std::vector<Token> names;
+                std::vector<Token> types;
+                std::vector<bool> not_null_constraints;
+                std::vector<Token> pks;
+                std::vector<std::vector<Token>> uniques;
+                std::vector<bool> nulls_distinct;
 
-            while (!AdvanceIf(TokenType::RParen)) {
-                if (AdvanceIf(TokenType::Primary)) {
-                    if (!pks.empty())
-                        return Status(false, "Parse Error: Only one primary key constraint is allowed");
+                while (!AdvanceIf(TokenType::RParen)) {
+                    if (AdvanceIf(TokenType::Primary)) {
+                        if (!pks.empty())
+                            return Status(false, "Parse Error: Only one primary key constraint is allowed");
 
-                    EatToken(TokenType::Key, "Parse Error: Expected keyword 'key' after keyword 'primary'");
-                    EatToken(TokenType::LParen, "Parse Error: Expected '(' before primary key columns");
+                        EatToken(TokenType::Key, "Parse Error: Expected keyword 'key' after keyword 'primary'");
+                        EatToken(TokenType::LParen, "Parse Error: Expected '(' before primary key columns");
 
-                    while (!AdvanceIf(TokenType::RParen)) {
-                        Token col = EatToken(TokenType::Identifier, "Parse Error: Expected column name as primary key");
-                        pks.push_back(col);
-                        AdvanceIf(TokenType::Comma);
-                    }
+                        while (!AdvanceIf(TokenType::RParen)) {
+                            Token col = EatToken(TokenType::Identifier, "Parse Error: Expected column name as primary key");
+                            pks.push_back(col);
+                            AdvanceIf(TokenType::Comma);
+                        }
 
-                } else if (AdvanceIf(TokenType::Unique)) {
-                    EatToken(TokenType::LParen, "Parse Error: Expected '(' before unqiue columns");
+                    } else if (AdvanceIf(TokenType::Unique)) {
+                        EatToken(TokenType::LParen, "Parse Error: Expected '(' before unqiue columns");
 
-                    std::vector<Token> cols;
-                    while (!AdvanceIf(TokenType::RParen)) {
-                        Token col = EatToken(TokenType::Identifier, "Parse Error: Expected column name as unique column");
-                        cols.push_back(col);
-                        AdvanceIf(TokenType::Comma);
-                    }
+                        std::vector<Token> cols;
+                        while (!AdvanceIf(TokenType::RParen)) {
+                            Token col = EatToken(TokenType::Identifier, "Parse Error: Expected column name as unique column");
+                            cols.push_back(col);
+                            AdvanceIf(TokenType::Comma);
+                        }
 
-                    EatToken(TokenType::Nulls, "Parse Error: 'nulls distinct' or 'nulls not distinct' must be included");
-                    Token distinct_clause_token = EatTokenIn(std::vector<TokenType>({TokenType::Not, TokenType::Distinct}), 
-                                                             "Parse Error: Expected 'nulls distinct' or 'nulls not distinct'");
-                    if (distinct_clause_token.type == TokenType::Not)
-                        EatToken(TokenType::Distinct, "Parse Error: Expected keyword 'distinct' after 'not'");
+                        EatToken(TokenType::Nulls, "Parse Error: 'nulls distinct' or 'nulls not distinct' must be included");
+                        Token distinct_clause_token = EatTokenIn(std::vector<TokenType>({TokenType::Not, TokenType::Distinct}), 
+                                                                 "Parse Error: Expected 'nulls distinct' or 'nulls not distinct'");
+                        if (distinct_clause_token.type == TokenType::Not)
+                            EatToken(TokenType::Distinct, "Parse Error: Expected keyword 'distinct' after 'not'");
 
-                    uniques.push_back(cols);
-                    nulls_distinct.push_back(distinct_clause_token.type == TokenType::Distinct);
-                } else {
-                    names.push_back(EatToken(TokenType::Identifier, "Parse Error: Expected column name"));
-                    types.push_back(EatTokenIn(TokenTypeSQLDataTypes(), "Parse Error: Expected valid SQL data type"));
-
-                    if (AdvanceIf(TokenType::Not)) {
-                        EatToken(TokenType::Null, "Parse Error: 'not' keyword must be followed by 'null'");
-                        not_null_constraints.push_back(true);
+                        uniques.push_back(cols);
+                        nulls_distinct.push_back(distinct_clause_token.type == TokenType::Distinct);
                     } else {
-                        not_null_constraints.push_back(false);
+                        names.push_back(EatToken(TokenType::Identifier, "Parse Error: Expected column name"));
+                        types.push_back(EatTokenIn(TokenTypeSQLDataTypes(), "Parse Error: Expected valid SQL data type"));
+
+                        if (AdvanceIf(TokenType::Not)) {
+                            EatToken(TokenType::Null, "Parse Error: 'not' keyword must be followed by 'null'");
+                            not_null_constraints.push_back(true);
+                        } else {
+                            not_null_constraints.push_back(false);
+                        }
                     }
+
+
+                    AdvanceIf(TokenType::Comma);
                 }
 
-
-                AdvanceIf(TokenType::Comma);
+                EatToken(TokenType::SemiColon, "Parse Error: Expected ';' after query");
+                *stmt = new CreateStmt(target, names, types, not_null_constraints, pks, uniques, nulls_distinct);
+                return Status();
             }
 
+            //Creating a model
+            EatToken(TokenType::Model, "Parse Error: Expected 'model' or 'table' after 'create' keyword");
+            Token name = EatToken(TokenType::Identifier, "Parse Error: Expected model name after 'model' keyword");
+            EatToken(TokenType::LParen, "Parse Error: Expected '(' before model path");
+            Token path = NextToken();
+            EatToken(TokenType::RParen, "Parse Error: Expected ')' after model path");
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' after query");
-            *stmt = new CreateStmt(target, names, types, not_null_constraints, pks, uniques, nulls_distinct);
+            *stmt = new CreateModelStmt(name, path);
             return Status();
         }
         case TokenType::Insert: {

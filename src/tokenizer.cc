@@ -59,7 +59,8 @@ static std::vector<Keyword> keywords[] = {
         {"inner", TokenType::Inner},
         {"right", TokenType::Right},
         {"nulls", TokenType::Nulls},
-        {"begin", TokenType::Begin}
+        {"begin", TokenType::Begin},
+        {"model", TokenType::Model}
     },
     {   //6
         {"create", TokenType::Create},
