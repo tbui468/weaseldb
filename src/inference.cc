@@ -1,5 +1,7 @@
 #include "inference.h"
 
+#ifdef ML
+
 namespace wsldb {
 
 int32_t nextint32(std::fstream& f) {
@@ -116,3 +118,5 @@ std::vector<int> Inference::Predict() {
 }
 
 }
+
+#endif

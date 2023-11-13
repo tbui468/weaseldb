@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef ML
+
 #include <torch/torch.h>
 #include <torch/script.h>
 
@@ -44,4 +46,30 @@ private:
     std::string buf_;
 };
 
+
 }
+
+#else
+
+#include <string>
+#include <vector>
+#include "status.h"
+
+//This is empty functions for when compiled without pytorch
+namespace wsldb {
+class Model {
+public:
+    Status Predict(const std::string& buf, std::vector<int>& results) { return Status(); }
+    static Status ByteToFloat(const std::string& src, std::string& dst) { return Status(); }
+};
+
+class Inference {
+public:
+    Inference(const std::string& path) {}
+    Status GetModel(const std::string& name, Model** model) { return Status(); }
+    Status CreateModel(const std::string& name, const std::string& filename) { return Status(); }
+    std::vector<int> Predict() { return {}; }
+};
+}
+
+#endif
