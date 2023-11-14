@@ -51,7 +51,7 @@ func main() {
     conn := wsldb.ConnectToServer("localhost:3000")
     defer conn.Close()
     wsldb.ExecuteQuery(conn, "create table mnist (label int8, data bytea);")
-    wsldb.ExecuteQuery(conn, "create model my_model ('traced_mnist_model.pt');")
+    wsldb.ExecuteQuery(conn, "create model my_model ('mnist_model.pt', 'mnist_input.pt', 'mnist_output.pt');")
 
     f1, _ := os.Open("test.labels")
     magic := make([]byte, 4)

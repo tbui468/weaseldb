@@ -363,9 +363,13 @@ Status Parser::ParseStmt(Stmt** stmt) {
             Token name = EatToken(TokenType::Identifier, "Parse Error: Expected model name after 'model' keyword");
             EatToken(TokenType::LParen, "Parse Error: Expected '(' before model path");
             Token path = NextToken();
-            EatToken(TokenType::RParen, "Parse Error: Expected ')' after model path");
+            EatToken(TokenType::Comma, "Parse Error: Expected ',' after model pathname");
+            Token input_path = NextToken();
+            EatToken(TokenType::Comma, "Parse Error: Expected ',' after model input transformation pathname");
+            Token output_path = NextToken();
+            EatToken(TokenType::RParen, "Parse Error: Expected ')' after model output transformation pathname");
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' after query");
-            *stmt = new CreateModelStmt(name, path);
+            *stmt = new CreateModelStmt(name, path, input_path, output_path);
             return Status();
         }
         case TokenType::Insert: {

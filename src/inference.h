@@ -17,7 +17,10 @@ uint8_t nextuint8(std::fstream& f);
 
 class Model {
 public:
-    Model(torch::jit::script::Module module);
+    Model(torch::jit::script::Module model, 
+          torch::jit::script::Module input_transform_fcn, 
+          torch::jit::script::Module output_transform_fcn);
+
     Status Predict(const std::string& buf, std::vector<int>& results);
     static Status ByteToFloat(const std::string& src, std::string& dst);
         
@@ -31,15 +34,16 @@ public:
 
 private:
     torch::Tensor value_;
-    torch::jit::script::Module module_;
+    torch::jit::script::Module model_;
+    torch::jit::script::Module input_transform_fcn_;
+    torch::jit::script::Module output_transform_fcn_;
 };
 
 class Inference {
 public:
     Inference(const std::string& path);
     Status GetModel(const std::string& name, Model** model);
-    Status CreateModel(const std::string& name, const std::string& filename);
-    std::vector<int> Predict(); //TODO: debug function
+    Status CreateModel(const std::string& name, const std::string& filename, const std::string& input_filename, const std::string&output_filename);
 private:
     std::string path_;
     std::unordered_map<std::string, Model*> models_;
@@ -60,7 +64,6 @@ namespace wsldb {
 class Model {
 public:
     Status Predict(const std::string& buf, std::vector<int>& results) { return Status(); }
-    static Status ByteToFloat(const std::string& src, std::string& dst) { return Status(); }
 };
 
 class Inference {

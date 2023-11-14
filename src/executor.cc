@@ -518,7 +518,7 @@ Status Executor::TxnControlExecutor(TxnControlStmt* stmt) {
 
 Status Executor::CreateModelExecutor(CreateModelStmt* stmt) {
     //TODO: add model name to model catalog
-    Status s = inference_->CreateModel(stmt->name_.lexeme, stmt->path_.lexeme);
+    Status s = inference_->CreateModel(stmt->name_.lexeme, stmt->path_.lexeme, stmt->input_path_.lexeme, stmt->output_path_.lexeme);
     return s;
 }
 
@@ -707,24 +707,19 @@ Status Executor::EvalPredict(Predict* expr, Row* row, Datum* result) {
             return s;
     }
 
-    //convert byte data to floats since model expects 
-    std::string buf;
     Model* model;
     {
-        Model::ByteToFloat(d.Data(), buf);
 
         Status s = inference_->GetModel(expr->model_name_.lexeme, &model);
         if (!s.Ok())
             return s;
     }
 
-    {
-        std::vector<int> results;
-        Status s = model->Predict(buf, results);
-        if (!s.Ok())
-            return s;
-        *result = results.at(0); //just getting first result
-    }
+    std::vector<int> results;
+    Status s = model->Predict(d.Data(), results);
+    if (!s.Ok())
+        return s;
+    *result = results.at(0); //just getting first result for now
    
     return Status();
 }
