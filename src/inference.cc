@@ -4,26 +4,7 @@
 
 namespace wsldb {
 
-int32_t nextint32(std::fstream& f) {
-    int32_t i;
-    f.read((char*)&i, sizeof(int32_t));
-    i = __builtin_bswap32(i);
-    return i;
-}
-
-uint8_t nextuint8(std::fstream& f) {
-    uint8_t i;
-    f.read((char*)&i, sizeof(uint8_t));
-    return i;
-}
-
-Model::Model(torch::jit::script::Module model, 
-             torch::jit::script::Module input_transform_fcn, 
-             torch::jit::script::Module output_transform_fcn):
-                    model_(model),
-                    input_transform_fcn_(input_transform_fcn),
-                    output_transform_fcn_(output_transform_fcn) {
-                
+Model::Model(torch::jit::script::Module model): model_(model) {
     for (auto m: model_.named_modules()) {
         if (m.name == "") { //The first named parameters in the first module contains the input dimensions
             for (auto p: m.value.named_parameters()) {
@@ -58,6 +39,7 @@ Status Model::Predict(const std::string& buf, std::vector<int>& results) {
 
     return Status();*/
 
+    /*
     //read buf to Tensor of kByte
     //change Tensor to std::vector<IValue>
     torch::Tensor data = torch::empty({ 1, int64_t(buf.size()) }, torch::kByte);
@@ -79,34 +61,31 @@ Status Model::Predict(const std::string& buf, std::vector<int>& results) {
         results.push_back(output[i].item<int64_t>());
     }
 
-    return Status();
-}
+    return Status();*/
 
+    torch::Tensor data = torch::empty({ int64_t(buf.size()) }, torch::kByte);
+    memcpy(data.data_ptr(), buf.data(), buf.size());
 
-Inference::Inference(const std::string& path): path_(path) {
-}
+    torch::Tensor output = model_.run_method("wsldb_input", data).toTensor();
+    output = model_.run_method("forward", output).toTensor();
+    output = model_.run_method("wsldb_output", output).toTensor();
 
-Status Inference::GetModel(const std::string& name, Model** model) {
-    if (models_.find(name) == models_.end()) {
-        return Status(false, "Inference Error: Model not found");
+    for (size_t i = 0; i < output.size(0); i++) {
+        results.push_back(output[i].item<int64_t>());
     }
 
-    *model = models_.at(name);
     return Status();
 }
 
-Status Inference::CreateModel(const std::string& name, const std::string& filename, const std::string& input_filename, const std::string&output_filename) {
+Status Inference::DeserializeModel(const std::string& serialized_model, Model** model) {
     try {
-        torch::jit::script::Module model_module = torch::jit::load(path_ + "/" + filename);
-        torch::jit::script::Module input_module = torch::jit::load(path_ + "/" + input_filename);
-        torch::jit::script::Module output_module = torch::jit::load(path_ + "/" + output_filename);
-        Model* model =  new Model(std::move(model_module), std::move(input_module), std::move(output_module));
-        models_.insert({name, model});
+        std::stringstream ss(serialized_model);
+        torch::jit::script::Module module = torch::jit::load(ss);
+        *model = new Model(std::move(module));
+        return Status();
     } catch(const c10::Error& e) {
         return Status(false, "Inference Error: Error loading model");
     }
-
-    return Status();
 }
 
 }

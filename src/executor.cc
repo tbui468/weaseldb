@@ -135,7 +135,7 @@ Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
 
 Status Executor::CreateExecutor(CreateStmt* stmt) { 
     Schema schema(stmt->target_.lexeme, stmt->names_, stmt->types_, stmt->not_null_constraints_, stmt->uniques_);
-    storage_->CreateTable(&schema, *txn_);
+    storage_->CreateTable(&schema, *txn_); //TODO: should use a txn to serialize schema here rather than using specialized function in Storage class
 
     return Status(); 
 }
@@ -517,9 +517,18 @@ Status Executor::TxnControlExecutor(TxnControlStmt* stmt) {
 }
 
 Status Executor::CreateModelExecutor(CreateModelStmt* stmt) {
-    //TODO: add model name to model catalog
-    Status s = inference_->CreateModel(stmt->name_.lexeme, stmt->path_.lexeme, stmt->input_path_.lexeme, stmt->output_path_.lexeme);
-    return s;
+    std::string serialized_model;
+    {
+        std::ifstream in(inference_->CreateFullModelPath(stmt->path_.lexeme));
+        std::stringstream buffer;
+        if (buffer << in.rdbuf()) {
+            serialized_model = buffer.str();
+        } else {
+            return Status(false, "Execution Error: Invalid path for model");
+        }
+    }
+
+    return (*txn_)->Put(Storage::Models(), stmt->name_.lexeme, serialized_model);
 }
 
 Status Executor::EvalLiteral(Literal* expr, Row* row, Datum* result) {
@@ -707,10 +716,16 @@ Status Executor::EvalPredict(Predict* expr, Row* row, Datum* result) {
             return s;
     }
 
+    std::string serialized_model;
+    {
+        Status s = (*txn_)->Get(Storage::Models(), expr->model_name_.lexeme, &serialized_model);
+        if (!s.Ok())
+            return Status(false, "Analysis Error: Model with the name '" + expr->model_name_.lexeme + "' does not exist");
+    }
+
     Model* model;
     {
-
-        Status s = inference_->GetModel(expr->model_name_.lexeme, &model);
+        Status s = inference_->DeserializeModel(serialized_model, &model);
         if (!s.Ok())
             return s;
     }
@@ -719,6 +734,7 @@ Status Executor::EvalPredict(Predict* expr, Row* row, Datum* result) {
     Status s = model->Predict(d.Data(), results);
     if (!s.Ok())
         return s;
+
     *result = results.at(0); //just getting first result for now
    
     return Status();

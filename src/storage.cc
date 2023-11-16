@@ -46,6 +46,7 @@ void Storage::LoadColFamDescriptors() {
     }
 
     col_fam_descriptors_.emplace_back(Catalog(), rocksdb::ColumnFamilyOptions());
+    col_fam_descriptors_.emplace_back(Models(), rocksdb::ColumnFamilyOptions());
 
     rocksdb::Iterator* it = db->NewIterator(rocksdb::ReadOptions());
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
@@ -75,6 +76,10 @@ void Storage::DropDatabase(const std::string& path) {
 
 std::string Storage::Catalog() {
     return rocksdb::kDefaultColumnFamilyName;
+}
+
+std::string Storage::Models() {
+    return "models";
 }
 
 Status Storage::CreateTable(Schema* schema, Txn* txn) {
@@ -170,6 +175,5 @@ Status Storage::GetSchema(const std::string& tab_name, std::string* serialized_s
 
     return Status();
 }
-
 
 }

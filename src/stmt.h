@@ -196,15 +196,13 @@ public:
 
 class CreateModelStmt: public Stmt {
 public:
-    CreateModelStmt(Token name, Token path, Token input_path, Token output_path): name_(name), path_(path), input_path_(input_path), output_path_(output_path) {}
+    CreateModelStmt(Token name, Token path): name_(name), path_(path) {}
     StmtType Type() const override {
         return StmtType::CreateModel;
     }
 public:
     Token name_;
     Token path_;
-    Token input_path_;
-    Token output_path_;
 };
 
 }

@@ -51,7 +51,7 @@ func main() {
     conn := wsldb.ConnectToServer("localhost:3000")
     defer conn.Close()
     wsldb.ExecuteQuery(conn, "create table mnist (label int8, data bytea);")
-    wsldb.ExecuteQuery(conn, "create model my_model ('mnist_model.pt', 'mnist_input.pt', 'mnist_output.pt');")
+    wsldb.ExecuteQuery(conn, "begin; create model my_model ('mnist_model.pt'); commit;")
 
     f1, _ := os.Open("test.labels")
     magic := make([]byte, 4)
@@ -87,7 +87,7 @@ func main() {
 
     wsldb.ExecuteQuery(conn, query)
     //PrintResult(wsldb.ExecuteQuery(conn, "select label, data from mnist where _rowid < 10;"))
-    PrintResult(wsldb.ExecuteQuery(conn, "select label, my_model(data) from mnist where _rowid < 10;"))
-    PrintResult(wsldb.ExecuteQuery(conn, "select label = my_model(data) from mnist where _rowid < 10;"))
+    PrintResult(wsldb.ExecuteQuery(conn, "begin; select label, my_model(data) from mnist where _rowid < 10; commit;"))
+    //PrintResult(wsldb.ExecuteQuery(conn, "select label = my_model(data) from mnist where _rowid < 10;"))
     wsldb.ExecuteQuery(conn, "drop table mnist;")
 }

@@ -295,13 +295,10 @@ Status Analyzer::TxnControlVerifier(TxnControlStmt* stmt) {
 }
 
 Status Analyzer::CreateModelVerifier(CreateModelStmt* stmt) {
-    //TODO: check if model name is in model catalog
-    Model * model;
-    Status s = inference_->GetModel(stmt->name_.lexeme, &model);
-
-    if (s.Ok()) {
+    std::string serialized_model;
+    Status s = (*txn_)->Get(Storage::Models(), stmt->name_.lexeme, &serialized_model);
+    if (s.Ok())
         return Status(false, "Analysis Error: Model with the name '" + stmt->name_.lexeme + "' already exists");
-    }
 
     return Status();
 }
@@ -498,12 +495,22 @@ Status Analyzer::VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type) {
 }
 
 Status Analyzer::VerifyPredict(Predict* expr, DatumType* type) {
-    DatumType arg_type;
-    Status s = Verify(expr->arg_, &arg_type);
-    if (!s.Ok())
-        return s;
+    {
+        DatumType arg_type;
+        Status s = Verify(expr->arg_, &arg_type);
+        if (!s.Ok())
+            return s;
 
-    *type = DatumType::Int8; //TODO: temp to test mnist
+        *type = DatumType::Int8; //TODO: temp to test mnist
+    }
+
+    {
+        std::string serialized_model;
+        Status s = (*txn_)->Get(Storage::Models(), expr->model_name_.lexeme, &serialized_model);
+        if (!s.Ok())
+            return Status(false, "Analysis Error: Model with the name '" + expr->model_name_.lexeme + "' does not exist");
+    }
+
     return Status();
 }
 

@@ -12,17 +12,10 @@
 
 namespace wsldb {
 
-int32_t nextint32(std::fstream& f);
-uint8_t nextuint8(std::fstream& f);
-
 class Model {
 public:
-    Model(torch::jit::script::Module model, 
-          torch::jit::script::Module input_transform_fcn, 
-          torch::jit::script::Module output_transform_fcn);
-
+    Model(torch::jit::script::Module model);
     Status Predict(const std::string& buf, std::vector<int>& results);
-    static Status ByteToFloat(const std::string& src, std::string& dst);
         
     inline caffe2::TypeMeta GetInputType() {
         return value_.dtype();
@@ -33,21 +26,18 @@ public:
     }
 
 private:
+    //caching value_ so that input types and sizes can be computed
     torch::Tensor value_;
     torch::jit::script::Module model_;
-    torch::jit::script::Module input_transform_fcn_;
-    torch::jit::script::Module output_transform_fcn_;
 };
 
 class Inference {
 public:
-    Inference(const std::string& path);
-    Status GetModel(const std::string& name, Model** model);
-    Status CreateModel(const std::string& name, const std::string& filename, const std::string& input_filename, const std::string&output_filename);
+    Inference(const std::string& path): path_(path) {}
+    Status DeserializeModel(const std::string& deserialized_model, Model** model);
+    inline std::string CreateFullModelPath(const std::string& filename) const { return path_ + "/" + filename; }
 private:
     std::string path_;
-    std::unordered_map<std::string, Model*> models_;
-    std::string buf_;
 };
 
 
@@ -69,9 +59,8 @@ public:
 class Inference {
 public:
     Inference(const std::string& path) {}
-    Status GetModel(const std::string& name, Model** model) { return Status(); }
-    Status CreateModel(const std::string& name, const std::string& filename) { return Status(); }
-    std::vector<int> Predict() { return {}; }
+    Status DeserializeModel(const std::string& serialized_model, Model** model) { return Status(); }
+    inline std::string CreateFullModelPath(const std::string& filename) const { return ""; }
 };
 }
 

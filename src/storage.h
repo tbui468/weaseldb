@@ -22,6 +22,7 @@ public:
     static void CreateDatabase(const std::string& path);
     static void DropDatabase(const std::string& path);
     static std::string Catalog();
+    static std::string Models();
     Status CreateTable(Schema* schema, Txn* txn);
     Status DropTable(Schema* schema, Txn* txn);
     Txn* BeginTxn();

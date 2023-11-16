@@ -101,7 +101,7 @@ private:
     }
 private:
     Storage* storage_;
-    Inference* inference_;
+    Inference* inference_; //TODO: not currently being used
     Txn** txn_;
     std::vector<AttributeSet*> scopes_;
 };
