@@ -24,6 +24,7 @@ private:
     Status DropTableVerifier(DropTableStmt* stmt);
     Status TxnControlVerifier(TxnControlStmt* stmt);
     Status CreateModelVerifier(CreateModelStmt* stmt);
+    Status DropModelVerifier(DropModelStmt* stmt);
 
     //expressions
     Status Verify(Expr* expr, DatumType* type);

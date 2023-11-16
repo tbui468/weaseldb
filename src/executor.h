@@ -27,6 +27,7 @@ private:
     Status DropTableExecutor(DropTableStmt* stmt);
     Status TxnControlExecutor(TxnControlStmt* stmt);
     Status CreateModelExecutor(CreateModelStmt* stmt);
+    Status DropModelExecutor(DropModelStmt* stmt);
 
     //expressions
     Status Eval(Expr* expr, Row* row, Datum* result);

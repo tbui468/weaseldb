@@ -462,17 +462,32 @@ Status Parser::ParseStmt(Stmt** stmt) {
             return Status();
         }
         case TokenType::Drop: {
-            EatToken(TokenType::Table, "Parse Error: Expected keyword 'table' after 'drop'");
-            bool has_if_exists = false;
-            if (AdvanceIf(TokenType::If)) {
-                has_if_exists = true;
-                EatToken(TokenType::Exists, "Parse Error: Expected keyword 'exists' after 'if'");
-            }
-            Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name");
-            EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of drop statement");
+            Token t = EatTokenIn(std::vector<TokenType>({TokenType::Null, TokenType::Not}), 
+                                 "Parse Error: Expected keyword 'table' or 'model' after 'drop'");
 
-            *stmt = new DropTableStmt(target, has_if_exists);
-            return Status();
+            if (t.type == TokenType::Table) {
+                bool has_if_exists = false;
+                if (AdvanceIf(TokenType::If)) {
+                    has_if_exists = true;
+                    EatToken(TokenType::Exists, "Parse Error: Expected keyword 'exists' after 'if'");
+                }
+                Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name");
+                EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of drop table statement");
+
+                *stmt = new DropTableStmt(target, has_if_exists);
+                return Status();
+            } else if (t.type == TokenType::Model) {
+                bool has_if_exists = false;
+                if (AdvanceIf(TokenType::If)) {
+                    has_if_exists = true;
+                    EatToken(TokenType::Exists, "Parse Error: Expected keyword 'exists' after 'if'");
+                }
+                Token target = EatToken(TokenType::Identifier, "Parse Error: Expected model name");
+                EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of drop model statement");
+
+                *stmt = new DropModelStmt(target, has_if_exists);
+                return Status();
+            }
         }
         case TokenType::Describe: {
             EatToken(TokenType::Table, "Parse Error: Expected keyword 'table' after 'describe'");

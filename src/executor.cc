@@ -1,3 +1,6 @@
+#include <fstream>
+#include <sstream>
+
 #include "executor.h"
 #include "schema.h"
 #include "tokenizer.h"
@@ -100,6 +103,9 @@ Status Executor::Execute(Stmt* stmt) {
             break;
         case StmtType::CreateModel:
             s = CreateModelExecutor((CreateModelStmt*)stmt);
+            break;
+        case StmtType::DropModel:
+            s = DropModelExecutor((DropModelStmt*)stmt);
             break;
         default:
             s = Status(false, "Execution Error: Invalid statement type");
@@ -534,6 +540,23 @@ Status Executor::CreateModelExecutor(CreateModelStmt* stmt) {
 
     return (*txn_)->Put(Storage::Models(), stmt->name_.lexeme, serialized_model);
 }
+
+//Analyzer should have returned error if table doesn't exist and 'if exists' not used
+//drop model if it exists, otherwise just ignore error
+Status Executor::DropModelExecutor(DropModelStmt* stmt) {
+    std::string serialized_model;
+    Status s = (*txn_)->Get(Storage::Models(), stmt->name_.lexeme, &serialized_model);
+
+    if (s.Ok()) {
+        return (*txn_)->Delete(Storage::Models(), stmt->name_.lexeme);
+    }
+
+    return Status();
+}
+
+/*
+ * Expression Evaluators
+ */
 
 Status Executor::EvalLiteral(Literal* expr, Row* row, Datum* result) {
     is_agg_ = false;

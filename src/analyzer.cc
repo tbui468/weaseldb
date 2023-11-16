@@ -23,6 +23,8 @@ Status Analyzer::Verify(Stmt* stmt, std::vector<DatumType>& types) {
             return TxnControlVerifier((TxnControlStmt*)stmt);
         case StmtType::CreateModel:
             return CreateModelVerifier((CreateModelStmt*)stmt);
+        case StmtType::DropModel:
+            return DropModelVerifier((DropModelStmt*)stmt);
         default:
             return Status(false, "Execution Error: Invalid statement type");
     }
@@ -302,6 +304,19 @@ Status Analyzer::CreateModelVerifier(CreateModelStmt* stmt) {
 
     return Status();
 }
+
+Status Analyzer::DropModelVerifier(DropModelStmt* stmt) {
+    std::string serialized_model;
+    Status s = (*txn_)->Get(Storage::Models(), stmt->name_.lexeme, &serialized_model);
+    if (!s.Ok() && !stmt->has_if_exists_)
+        return s;
+
+    return Status(); 
+}
+
+/*
+ * Expression Verifiers
+ */
 
 Status Analyzer::VerifyLiteral(Literal* expr, DatumType* type) { 
     *type = LiteralTokenToDatumType(expr->t_.type);

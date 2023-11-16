@@ -18,7 +18,8 @@ enum class StmtType {
     DescribeTable,
     DropTable,
     TxnControl,
-    CreateModel
+    CreateModel,
+    DropModel
 };
 
 //Putting class Stmt here since we need it in Expr,
@@ -203,6 +204,17 @@ public:
 public:
     Token name_;
     Token path_;
+};
+
+class DropModelStmt: public Stmt {
+public:
+    DropModelStmt(Token name, bool has_if_exists): name_(name), has_if_exists_(has_if_exists) {}
+    StmtType Type() const override {
+        return StmtType::DropModel;
+    }
+public:
+    Token name_;
+    bool has_if_exists_;
 };
 
 }

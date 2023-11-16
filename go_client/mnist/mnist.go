@@ -89,5 +89,6 @@ func main() {
     //PrintResult(wsldb.ExecuteQuery(conn, "select label, data from mnist where _rowid < 10;"))
     PrintResult(wsldb.ExecuteQuery(conn, "select label, my_model(data) from mnist where _rowid < 10;"))
     //PrintResult(wsldb.ExecuteQuery(conn, "select label = my_model(data) from mnist where _rowid < 10;"))
+    wsldb.ExecuteQuery(conn, "drop model my_model;")
     wsldb.ExecuteQuery(conn, "drop table mnist;")
 }
