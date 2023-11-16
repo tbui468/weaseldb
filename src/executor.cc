@@ -32,10 +32,30 @@ std::vector<Status> Executor::ExecuteQuery(const std::string& query) {
     {
         Analyzer a(storage_, inference_, txn_);
         for (Stmt* stmt: stmts) {
+
+            //creating a transaction if not explicitly created
+            bool auto_commit = false;
+            if ((*txn_) == nullptr && stmt->Type() != StmtType::TxnControl) {
+                *txn_ = storage_->BeginTxn();
+                auto_commit = true;
+            }
+
             std::vector<DatumType> types;
             Status s = a.Verify(stmt, types);
             if (s.Ok())
                 s = Execute(stmt);
+
+            //ending automatically created txn
+            if (auto_commit) {
+                if ((*txn_)->has_aborted_) {
+                    (*txn_)->Rollback();
+                } else {
+                    (*txn_)->Commit();
+                }
+
+                delete *txn_;
+                *txn_ = nullptr;
+            }
 
             statuses.push_back(s);
         }
@@ -46,11 +66,6 @@ std::vector<Status> Executor::ExecuteQuery(const std::string& query) {
 }
 
 Status Executor::Execute(Stmt* stmt) {
-    bool auto_commit = false;
-    if ((*txn_) == nullptr && stmt->Type() != StmtType::TxnControl) {
-        *txn_ = storage_->BeginTxn();
-        auto_commit = true;
-    }
 
     if (*txn_ && (*txn_)->has_aborted_ && stmt->Type() != StmtType::TxnControl) {
         return Status(false, "Execution Error: Transaction has aborted and will ignore all statements until ended");
@@ -93,17 +108,6 @@ Status Executor::Execute(Stmt* stmt) {
 
     if (*txn_ && !s.Ok())
         (*txn_)->has_aborted_ = true;
-
-    if (auto_commit) {
-        if ((*txn_)->has_aborted_) {
-            (*txn_)->Rollback();
-        } else {
-            (*txn_)->Commit();
-        }
-
-        delete *txn_;
-        *txn_ = nullptr;
-    }
 
     return s;
 }
