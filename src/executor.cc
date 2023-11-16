@@ -30,7 +30,7 @@ std::vector<Status> Executor::ExecuteQuery(const std::string& query) {
 
     std::vector<Status> statuses;
     {
-        Analyzer a(storage_, inference_, txn_);
+        Analyzer a(txn_);
         for (Stmt* stmt: stmts) {
 
             //creating a transaction if not explicitly created

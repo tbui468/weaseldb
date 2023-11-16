@@ -1,16 +1,17 @@
 #pragma once
 
-#include "storage.h"
 #include "inference.h"
 #include "status.h"
 #include "stmt.h"
 #include "expr.h"
+#include "storage.h"
+#include "txn.h"
 
 namespace wsldb {
 
 class Analyzer {
 public:
-    Analyzer(Storage* storage, Inference* inference, Txn** txn): storage_(storage), inference_(inference), txn_(txn) {}
+    Analyzer(Txn** txn): txn_(txn) {}
     Status Verify(Stmt* stmt, std::vector<DatumType>& types);
 private:
     //statements
@@ -51,7 +52,7 @@ private:
         *schema = nullptr;
 
         std::string serialized_schema;
-        bool ok = storage_->GetSchema(table_name, &serialized_schema).Ok();
+        bool ok = (*txn_)->Get(Storage::Catalog(), table_name, &serialized_schema).Ok();
 
         if (!ok)
             return Status(false, "Analysis Error: Table with name '" + table_name + "' doesn't exist");
@@ -100,8 +101,6 @@ private:
         return Status();
     }
 private:
-    Storage* storage_;
-    Inference* inference_; //TODO: not currently being used
     Txn** txn_;
     std::vector<AttributeSet*> scopes_;
 };

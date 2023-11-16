@@ -166,6 +166,7 @@ rocksdb::ColumnFamilyHandle* Storage::GetColFamHandle(const std::string& col_fam
     std::exit(1);
 }
 
+/*
 Status Storage::GetSchema(const std::string& tab_name, std::string* serialized_schema) {
     rocksdb::ReadOptions read_options;
     rocksdb::Status s = db_->Get(read_options, tab_name, serialized_schema);
@@ -174,6 +175,6 @@ Status Storage::GetSchema(const std::string& tab_name, std::string* serialized_s
     }
 
     return Status();
-}
+}*/
 
 }

@@ -677,14 +677,11 @@ Status Analyzer::VerifyConstant(ConstantTable* scan, AttributeSet** working_attr
 }
 
 Status Analyzer::VerifyTable(PrimaryTable* scan, AttributeSet** working_attrs) {
-    std::string serialized_schema;
-    bool ok = storage_->GetSchema(scan->tab_name_, &serialized_schema).Ok();
+    bool ok = GetSchema(scan->tab_name_, &scan->schema_).Ok();
 
     if (!ok) {
         return Status(false, "Error: Table '" + scan->tab_name_ + "' does not exist");
     }
-
-    scan->schema_ = new Schema(scan->tab_name_, serialized_schema);
 
     *working_attrs = scan->schema_->MakeAttributeSet(scan->ref_name_);
     scan->attrs_ = *working_attrs;

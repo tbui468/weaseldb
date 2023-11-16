@@ -29,7 +29,7 @@ public:
     Iterator* NewIterator(const std::string& col_fam);
     int GetColFamIdx(const std::string& col_fam);
     rocksdb::ColumnFamilyHandle* GetColFamHandle(const std::string& col_fam);
-    Status GetSchema(const std::string& tab_name, std::string* serialized_schema);
+//    Status GetSchema(const std::string& tab_name, std::string* serialized_schema); //TODO: replace with txn Get
 private:
     std::string path_;
     rocksdb::TransactionDB* db_;
