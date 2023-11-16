@@ -53,6 +53,16 @@ Status Parser::Primary(Expr** expr) {
         case TokenType::ByteaLiteral:
             *expr = new Literal(NextToken());
             return Status();
+        case TokenType::Cast: {
+            NextToken();
+            EatToken(TokenType::LParen, "Parse Error: Expected '(' after 'cast'");
+            Expr* value = ParseExpr(Base);
+            EatToken(TokenType::As, "Parse Error: Expected keyword 'as' after expression to cast");
+            Token type = EatTokenIn(TokenTypeSQLDataTypes(), "Parse Error: Expected valid SQL data type");
+            EatToken(TokenType::RParen, "Parse Error: Expected ')' after cast type"); 
+            *expr = new Cast(value, type);
+            return Status();
+        }
         case TokenType::Identifier: {
             Token ref = NextToken();
             if (PeekToken().type == TokenType::LParen) { //custom function call (possibly ML model)

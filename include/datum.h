@@ -13,7 +13,8 @@ enum class DatumType {
     Text,
     Bool,
     Null,
-    Bytea
+    Bytea,
+    Timestamp
 };
 
 class Datum {
@@ -161,7 +162,11 @@ public:
         return result;
     }
 
-    std::string AsString() const {
+    std::string AsString() const { //TODO: should remove this since AsText is used now
+        return data_;
+    }
+
+    std::string AsText() const {
         return data_;
     }
 
@@ -316,6 +321,8 @@ static std::string TypeToString(DatumType type) {
             return "null";
         case DatumType::Bytea:
             return "bytea";
+        case DatumType::Timestamp:
+            return "timestamp";
         default:
             return "invalid datum type";
     }
@@ -326,6 +333,120 @@ static bool TypeIsNumeric(DatumType type) {
            type == DatumType::Float4;
 }
 
+static bool CastInt8(Datum d, DatumType to, Datum* result) {
+    switch (to) {
+        case DatumType::Int8:
+            *result = Datum(d.AsInt8());
+            return true;
+        case DatumType::Float4:
+            *result = Datum(float(d.AsInt8()));
+            return true;
+        case DatumType::Text:
+            *result = Datum(std::to_string(d.AsInt8()));
+            return true;
+        case DatumType::Bool:
+            *result = Datum(d.AsInt8() != 0);
+            return true;
+        case DatumType::Bytea: //TODO: is int8->bytea allowed in postgresql?
+        case DatumType::Null:
+        case DatumType::Timestamp:
+        default:
+            return false;
+    }
+}
+
+static bool CastFloat4(Datum d, DatumType to, Datum* result) {
+    switch (to) {
+        case DatumType::Int8:
+            *result = Datum(int(d.AsFloat4()));
+            return true;
+        case DatumType::Float4:
+            *result = Datum(d.AsFloat4());
+            return true;
+        case DatumType::Text:
+            *result = Datum(std::to_string(d.AsFloat4()));
+            return true;
+        case DatumType::Bytea: //TODO: is float4->bytea allowed in postgresql?
+        case DatumType::Bool:
+        case DatumType::Null:
+        case DatumType::Timestamp:
+        default:
+            return false;
+    }
+}
+
+static bool CastText(Datum d, DatumType to, Datum* result) {
+    switch (to) {
+        case DatumType::Text:
+            *result = Datum(d.AsText());
+            return true;
+        case DatumType::Timestamp:
+            //TODO: convert '2012-12-31 12:00:00' to timestamp type
+            return true;
+        case DatumType::Bytea: //TODO: is text->bytea allowed in postgresql
+        case DatumType::Int8:
+        case DatumType::Float4:
+        case DatumType::Bool:
+        case DatumType::Null:
+        default:
+            return false;
+    }
+}
+
+static bool CastBool(Datum d, DatumType to, Datum* result) {
+    switch (to) {
+        case DatumType::Int8:
+            *result = Datum(int(d.AsBool()));
+            return true;
+        case DatumType::Bool:
+            *result = Datum(d.AsBool());
+            return true;
+        case DatumType::Bytea: //TODO: is bool->bytea allowed in postgresql
+        case DatumType::Text:
+        case DatumType::Timestamp:
+        case DatumType::Float4:
+        case DatumType::Null:
+        default:
+            return false;
+    }
+}
+
+static bool CanCast(DatumType from, DatumType to) {
+    Datum d;
+    switch (from) {
+        case DatumType::Int8:
+            return Cast(Datum(DatumType::Int8, "0"), to, &d);
+        case DatumType::Float4:
+            return Cast(Datum(DatumType::Float4, "0.0"), to, &d);
+        case DatumType::Text:
+            return Cast(Datum(DatumType::Text, "x"), to, &d);
+        case DatumType::Bool:
+            return Cast(Datum(DatumType::Bool, "true"), to, &d);
+        case DatumType::Timestamp:
+        case DatumType::Null:
+        case DatumType::Bytea:
+        default:
+            return false;
+    }
+}
+
+static bool Cast(Datum d, DatumType to, Datum* result) {
+    switch (d.type_) {
+        case DatumType::Int8:
+            return CastInt8(d, to, result);
+        case DatumType::Float4:
+            return CastFloat4(d, to, result);
+        case DatumType::Text:
+            return CastText(d, to, result);
+        case DatumType::Bool:
+            return CastBool(d, to, result);
+        case DatumType::Timestamp:
+        case DatumType::Null:
+        case DatumType::Bytea:
+        default:
+            return false;
+    }
+}
 
 static bool TypeIsInteger(DatumType type) {
     return type == DatumType::Int8;

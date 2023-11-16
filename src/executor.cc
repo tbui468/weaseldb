@@ -138,6 +138,8 @@ Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
             return EvalScalarSubquery((ScalarSubquery*)expr, row, result);
         case ExprType::Predict:
             return EvalPredict((Predict*)expr, row, result);
+        case ExprType::Cast:
+            return EvalCast((Cast*)expr, row, result);
         default:
             return Status(false, "Execution Error: Invalid expression type");
     }
@@ -766,6 +768,27 @@ Status Executor::EvalPredict(Predict* expr, Row* row, Datum* result) {
    
     return Status();
 }
+
+Status Executor::EvalCast(Cast* expr, Row* row, Datum* result) {
+    is_agg_ = false;
+
+    Datum d;
+    {
+        Status s = Eval(expr->value_, row, &d);
+        if (!s.Ok())
+            return s;
+    }
+
+    if (!Datum::Cast(d, TypeTokenToDatumType(expr->type_.type), result)) {
+        return Status(false, "Execution Error: Casting of value failed");
+    }
+
+    return Status();
+}
+
+/*
+ * Scans
+ */
 
 Status Executor::BeginScan(WorkTable* scan) {
     switch (scan->Type()) {

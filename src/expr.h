@@ -23,7 +23,8 @@ enum class ExprType {
     Call,
     IsNull,
     ScalarSubquery,
-    Predict
+    Predict,
+    Cast
 };
 
 class Expr {
@@ -171,6 +172,20 @@ public:
 public:
     Token model_name_;
     Expr* arg_;
+};
+
+class Cast: public Expr {
+public:
+    Cast(Expr* value, Token type): value_(value), type_(type) {}
+    std::string ToString() override {
+        return "cast";
+    }
+    ExprType Type() const override {
+        return ExprType::Cast;
+    }
+public:
+    Expr* value_;
+    Token type_;
 };
 
 enum class ScanType {

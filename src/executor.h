@@ -41,6 +41,7 @@ private:
     Status EvalIsNull(IsNull* expr, Row* row, Datum* result);
     Status EvalScalarSubquery(ScalarSubquery* expr, Row* row, Datum* result);
     Status EvalPredict(Predict* expr, Row* row, Datum* result);
+    Status EvalCast(Cast* expr, Row* row, Datum* result);
 
     //TODO: make this Scan wrapper - this it the function SelectStmt should call rather than calling BeginScan/NextRow directly
 //    Status Scan(WorkTable* scan, RowSet* result);

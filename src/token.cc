@@ -188,6 +188,8 @@ DatumType TypeTokenToDatumType(TokenType type) {
             return DatumType::Bool;
         case TokenType::Bytea:
             return DatumType::Bytea;
+        case TokenType::Timestamp:
+            return DatumType::Timestamp;
         default:
             return DatumType::Null;
     }
@@ -198,7 +200,8 @@ bool TokenTypeValidDataType(TokenType type) {
            type == TokenType::Float4 ||
            type == TokenType::Text ||
            type == TokenType::Bool ||
-           type == TokenType::Bytea;
+           type == TokenType::Bytea ||
+           type == TokenType::Timestamp;
 }
 
 std::vector<TokenType> TokenTypeSQLDataTypes() {
@@ -206,7 +209,8 @@ std::vector<TokenType> TokenTypeSQLDataTypes() {
              TokenType::Float4,
              TokenType::Text,
              TokenType::Bool,
-             TokenType::Bytea };
+             TokenType::Bytea,
+             TokenType::Timestamp };
 }
 
 bool TokenTypeIsAggregateFunction(TokenType type) {

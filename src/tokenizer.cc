@@ -44,7 +44,8 @@ static std::vector<Keyword> keywords[] = {
         {"join", TokenType::Join},
         {"left", TokenType::Left},
         {"full", TokenType::Full},
-        {"int8", TokenType::Int8}
+        {"int8", TokenType::Int8},
+        {"cast", TokenType::Cast}
     },
     {   //5
         {"table", TokenType::Table},
@@ -83,7 +84,9 @@ static std::vector<Keyword> keywords[] = {
         {"distinct", TokenType::Distinct},
         {"rollback", TokenType::Rollback}
     },
-    {}, //9
+    {   //9
+        {"timestamp", TokenType::Timestamp}
+    },
     {   //10
         {"references", TokenType::References}
     }

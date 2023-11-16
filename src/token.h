@@ -63,6 +63,8 @@ enum class TokenType {
     Commit,
     Rollback,
     Model,
+    Timestamp,
+    Cast,
 
     /* user-defined identifier */
     Identifier,

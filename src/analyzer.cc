@@ -50,6 +50,8 @@ Status Analyzer::Verify(Expr* expr, DatumType* type) {
             return VerifyScalarSubquery((ScalarSubquery*)expr, type);
         case ExprType::Predict:
             return VerifyPredict((Predict*)expr, type);
+        case ExprType::Cast:
+            return VerifyCast((Cast*)expr, type);
         default:
             return Status(false, "Execution Error: Invalid expression type");
     }
@@ -528,6 +530,28 @@ Status Analyzer::VerifyPredict(Predict* expr, DatumType* type) {
 
     return Status();
 }
+
+Status Analyzer::VerifyCast(Cast* expr, DatumType* type) {
+    DatumType value_type;
+    {
+        Status s = Verify(expr->value_, &value_type);
+        if (!s.Ok())
+            return s;
+    }
+
+    DatumType target_type = TypeTokenToDatumType(expr->type_.type);
+
+    if (Datum::CanCast(value_type, target_type)) {
+        *type = target_type;
+        return Status();
+    }
+
+    return Status(false, "Analysis Error: Attempting to cast to an invalid type");
+}
+
+/*
+ * Verify WorkTables
+ */
 
 Status Analyzer::Verify(WorkTable* scan, AttributeSet** working_attrs) {
     switch (scan->Type()) {
