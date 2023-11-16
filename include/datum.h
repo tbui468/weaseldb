@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <cstring>
 
 namespace wsldb {
 
@@ -52,6 +53,15 @@ public:
                 data_.append((char*)&value, sizeof(bool));
                 break;
             }
+            case DatumType::Timestamp: {
+                struct tm tm;
+                memset(&tm, 0, sizeof(struct tm));
+                if (strptime(lexeme.c_str(), "%Y-%m-%d %H:%M:%S", &tm)) {
+                    time_t t = mktime(&tm);
+                    data_.append((char*)&t, sizeof(time_t));
+                } //TODO: how to retport error???
+                break;
+            }
             case DatumType::Null: {
                 break;
             }
@@ -96,6 +106,11 @@ public:
             case DatumType::Bool: {
                 data_.append((char*)(buf.data() + *off), sizeof(bool));
                 *off += sizeof(bool);
+                break;
+            }
+            case DatumType::Timestamp: {
+                data_.append((char*)(buf.data() + *off), sizeof(time_t));
+                *off += sizeof(time_t);
                 break;
             }
             default:
@@ -381,7 +396,7 @@ static bool CastText(Datum d, DatumType to, Datum* result) {
             *result = Datum(d.AsText());
             return true;
         case DatumType::Timestamp:
-            //TODO: convert '2012-12-31 12:00:00' to timestamp type
+            *result = Datum(DatumType::Timestamp, d.AsText());
             return true;
         case DatumType::Bytea: //TODO: is text->bytea allowed in postgresql
         case DatumType::Int8:
@@ -419,7 +434,7 @@ static bool CanCast(DatumType from, DatumType to) {
         case DatumType::Float4:
             return Cast(Datum(DatumType::Float4, "0.0"), to, &d);
         case DatumType::Text:
-            return Cast(Datum(DatumType::Text, "x"), to, &d);
+            return Cast(Datum(DatumType::Text, "2000-1-1 00:00:00"), to, &d);
         case DatumType::Bool:
             return Cast(Datum(DatumType::Bool, "true"), to, &d);
         case DatumType::Timestamp:

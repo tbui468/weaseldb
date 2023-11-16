@@ -16,6 +16,7 @@ const (
    Bool     = 3
    Null     = 4
    Bytea    = 5
+   Timestamp = 6
 )
 
 type RowDescription struct {
@@ -43,6 +44,12 @@ func NextType(reader *Reader) int {
 
 
 func NextInt8(reader *Reader) int64 {
+    result := binary.LittleEndian.Uint64(reader.buf[reader.idx: reader.idx + 8])
+    reader.idx += 8
+    return int64(result)
+}
+
+func NextTimestamp(reader *Reader) int64 {
     result := binary.LittleEndian.Uint64(reader.buf[reader.idx: reader.idx + 8])
     reader.idx += 8
     return int64(result)
@@ -94,6 +101,8 @@ func DatumTypeToString(dt int) string {
             return "Null"
         case Bytea:
             return "Bytea"
+        case Timestamp:
+            return "Timestamp"
         default:
             return "Invalid type"
     }
@@ -238,6 +247,9 @@ func ProcessResponse(conn *net.TCPConn, buf []byte, rd RowDescription, reader Re
                     size := 4 + string_size
                     reader.buf = append(reader.buf, msg[off: off + size]...)
                     off += size
+                case Timestamp:
+                    reader.buf = append(reader.buf, msg[off: off + 8]...)
+                    off += 8
                 case Null:
                     print("[Error],")
                 default:

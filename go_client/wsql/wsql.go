@@ -34,6 +34,9 @@ func PrintResult(readers []wsldb.Reader) {
                     }
                 case wsldb.Null:
                     fmt.Printf("null,")
+                case wsldb.Timestamp:
+                    d := wsldb.NextTimestamp(&reader)
+                    fmt.Printf("%d,", d)
                 default:
                     print("Invalid datum type")
                 }
