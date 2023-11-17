@@ -1,7 +1,7 @@
-
 #include "server.h"
 #include "storage.h"
 #include "inference.h"
+
 
 int main(int argc, char** argv) {
     wsldb::Inference inference("/tmp/models");
