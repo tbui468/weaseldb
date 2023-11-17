@@ -132,8 +132,15 @@ Status Tokenizer::NextToken(Token* t) {
         }
         case '+':
             return MakeToken(t, TokenType::Plus, 1);
-        case '-':
+        case '-': {
+            char c = query_.at(idx_ + 1);
+            if (c == '-') {
+                while (!AtEnd() && query_.at(idx_) != '\n')
+                    idx_++;
+                return NextToken(t);
+            }
             return MakeToken(t, TokenType::Minus, 1);
+        }
         case '*':
             return MakeToken(t, TokenType::Star, 1);
         case '/':
@@ -141,7 +148,7 @@ Status Tokenizer::NextToken(Token* t) {
         case '.':
             return MakeToken(t, TokenType::Dot, 1);
         default:
-            return Status(false, "Error: Invalid token");
+            return Status(false, "Error: Invalid token '" + std::string(1, query_.at(idx_)) + "'");
     }
 
 }
