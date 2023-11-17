@@ -113,6 +113,7 @@ public:
     Expr* right_;
     int scope_;
     int idx_;
+    DatumType field_type_ {DatumType::Null};
 };
 
 struct OrderCol {

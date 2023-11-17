@@ -93,7 +93,7 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
 
     for (Token t: stmt->attrs_) {
         if (!working_attrs->Contains(stmt->target_.lexeme, t.lexeme)) {
-            return Status(false, ("Error: Table does not have a matching column name"));
+            return Status(false, ("Error: Table does not have a matching column '" + t.lexeme + "'"));
         }
     }
 
@@ -442,6 +442,7 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
     }
 
     *type = a.type;
+    expr->field_type_ = a.type;
 
     return Status(); 
 }

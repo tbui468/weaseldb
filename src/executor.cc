@@ -641,10 +641,20 @@ Status Executor::EvalColAssign(ColAssign* expr, Row* row, Datum* result) {
     is_agg_ = false;
 
     Datum right;
-    Status s = Eval(expr->right_, row, &right);
-    if (!s.Ok()) return s;
+    {
+        Status s = Eval(expr->right_, row, &right);
+        if (!s.Ok()) return s;
+    }
 
-    row->data_.at(expr->idx_) = right;
+    if (right.Type() != DatumType::Null && expr->field_type_ != right.Type()) {
+        Datum casted_datum;
+        if (!Datum::Cast(right, expr->field_type_, &casted_datum))
+            return Status(false, "Execution Error: Invalid cast");
+
+        row->data_.at(expr->idx_) = casted_datum;
+    } else {
+        row->data_.at(expr->idx_) = right;
+    }
 
     *result = right; //result not used
     return Status();

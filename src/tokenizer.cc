@@ -191,9 +191,11 @@ Status Tokenizer::MakeIdentifier(Token* t) {
 
     TokenType type = TokenType::Identifier;
 
-    for (const Keyword& kw: keywords[len]) {
-        if (strncmp(&query_.at(idx), kw.string, len) == 0)
-            type = kw.type;
+    if (len < std::size(keywords)) {
+        for (const Keyword& kw: keywords[len]) {
+            if (strncmp(&query_.at(idx), kw.string, len) == 0)
+                type = kw.type;
+        }
     }
 
     *t = Token(query_.substr(idx, len), type);

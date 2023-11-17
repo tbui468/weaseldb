@@ -17,7 +17,7 @@ Status Attribute::CheckConstraints(DatumType type) const {
         return Status(false, "Error: Value violates column 'not null' constraint");
     }
 
-    if (type != DatumType::Null && type != this->type) {
+    if (type != DatumType::Null && this->type != type && !Datum::CanCast(type, this->type)) {
         return Status(false, "Error: Value type does not match column type in table");
     }
 

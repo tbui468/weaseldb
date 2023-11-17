@@ -19,10 +19,10 @@ def test(filename):
                 output_matches = True
 
     if (return_code == 0 and output_matches):
-        print(filename.ljust(40, " "), GREEN + "passed" + ENDC)
+        print(filename.ljust(45, " "), GREEN + "passed" + ENDC)
         return True
     else:
-        print(filename.ljust(40, " "), RED + "failed" + ENDC)
+        print(filename.ljust(45, " "), RED + "failed" + ENDC)
         return False
 
 files = os.listdir('./')
