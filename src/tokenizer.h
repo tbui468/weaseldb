@@ -39,6 +39,15 @@ private:
         }
     }
 
+    inline void SkipUntil(const std::string& substr) {
+        int len = query_.length() - substr.length();
+        while (!AtEnd() && idx_ <= len && substr.compare(query_.substr(idx_, substr.length())) != 0)
+            idx_++;
+
+        //skip the matching substring
+        idx_ += substr.length();
+    }
+
     inline bool IsAlpha(char c) {
         return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '_';
     }

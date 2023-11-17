@@ -1,5 +1,6 @@
 #include "tokenizer.h"
 #include <cstring>
+#include <iostream>
 
 namespace wsldb {
 
@@ -143,8 +144,14 @@ Status Tokenizer::NextToken(Token* t) {
         }
         case '*':
             return MakeToken(t, TokenType::Star, 1);
-        case '/':
+        case '/': {
+            char c = query_.at(idx_ + 1);
+            if (c == '*') {
+                SkipUntil("*/");
+                return NextToken(t);
+            }
             return MakeToken(t, TokenType::Slash, 1);
+        }
         case '.':
             return MakeToken(t, TokenType::Dot, 1);
         default:
