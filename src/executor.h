@@ -32,14 +32,14 @@ private:
     //expressions
     Status Eval(Expr* expr, Row* row, Datum* result);
 
-    Status EvalLiteral(Literal* expr, Row* row, Datum* result);
+    Status EvalLiteral(Literal* expr, Datum* result);
     Status EvalBinary(Binary* expr, Row* row, Datum* result);
     Status EvalUnary(Unary* expr, Row* row, Datum* result);
-    Status EvalColRef(ColRef* expr, Row* row, Datum* result);
+    Status EvalColRef(ColRef* expr, Datum* result);
     Status EvalColAssign(ColAssign* expr, Row* row, Datum* result);
     Status EvalCall(Call* expr, Row* row, Datum* result);
     Status EvalIsNull(IsNull* expr, Row* row, Datum* result);
-    Status EvalScalarSubquery(ScalarSubquery* expr, Row* row, Datum* result);
+    Status EvalScalarSubquery(ScalarSubquery* expr, Datum* result);
     Status EvalPredict(Predict* expr, Row* row, Datum* result);
     Status EvalCast(Cast* expr, Row* row, Datum* result);
 

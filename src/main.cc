@@ -3,7 +3,7 @@
 #include "inference.h"
 
 
-int main(int argc, char** argv) {
+int main() {
     wsldb::Inference inference("/tmp/models");
 
     /*

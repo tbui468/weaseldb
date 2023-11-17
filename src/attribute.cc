@@ -12,12 +12,12 @@ std::string Attribute::ToString() const {
     return ret;
 }
 
-Status Attribute::CheckConstraints(DatumType type) const {
-    if (not_null_constraint && type == DatumType::Null) {
+Status Attribute::CheckConstraints(DatumType value_type) const {
+    if (not_null_constraint && value_type == DatumType::Null) {
         return Status(false, "Error: Value violates column 'not null' constraint");
     }
 
-    if (type != DatumType::Null && this->type != type && !Datum::CanCast(type, this->type)) {
+    if (value_type != DatumType::Null && this->type != value_type && !Datum::CanCast(value_type, this->type)) {
         return Status(false, "Error: Value type does not match column type in table");
     }
 

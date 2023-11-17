@@ -54,14 +54,27 @@ private:
 namespace wsldb {
 class Model {
 public:
-    Status Predict(const std::string& buf, std::vector<int>& results) { return Status(); }
+    Status Predict(const std::string& buf, std::vector<int>& results) { 
+        (void)buf;
+        (void)results;
+        return Status(); 
+    }
 };
 
 class Inference {
 public:
-    Inference(const std::string& path) {}
-    Status DeserializeModel(const std::string& serialized_model, Model** model) { return Status(); }
-    inline std::string CreateFullModelPath(const std::string& filename) const { return ""; }
+    Inference(const std::string& path) { 
+        (void)path; 
+    }
+    Status DeserializeModel(const std::string& serialized_model, Model** model) {
+        (void)serialized_model;
+        (void)model;
+        return Status(); 
+    }
+    inline std::string CreateFullModelPath(const std::string& filename) const { 
+        (void)filename;
+        return "";
+    }
 };
 }
 

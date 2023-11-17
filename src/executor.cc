@@ -121,13 +121,13 @@ Status Executor::Execute(Stmt* stmt) {
 Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
     switch (expr->Type()) {
         case ExprType::Literal:
-            return EvalLiteral((Literal*)expr, row, result);
+            return EvalLiteral((Literal*)expr, result);
         case ExprType::Binary:
             return EvalBinary((Binary*)expr, row, result);
         case ExprType::Unary:
             return EvalUnary((Unary*)expr, row, result);
         case ExprType::ColRef:
-            return EvalColRef((ColRef*)expr, row, result);
+            return EvalColRef((ColRef*)expr, result);
         case ExprType::ColAssign:
             return EvalColAssign((ColAssign*)expr, row, result);
         case ExprType::Call:
@@ -135,7 +135,7 @@ Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
         case ExprType::IsNull:
             return EvalIsNull((IsNull*)expr, row, result);
         case ExprType::ScalarSubquery:
-            return EvalScalarSubquery((ScalarSubquery*)expr, row, result);
+            return EvalScalarSubquery((ScalarSubquery*)expr, result);
         case ExprType::Predict:
             return EvalPredict((Predict*)expr, row, result);
         case ExprType::Cast:
@@ -219,15 +219,17 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
     int update_count = 0;
     Datum d;
     while (NextRow(stmt->scan_, &r).Ok()) {
-        scopes_.push_back(r);
-        Status s = Eval(stmt->where_clause_, r, &d);
-        scopes_.pop_back();
+        {
+            scopes_.push_back(r);
+            Status s = Eval(stmt->where_clause_, r, &d);
+            scopes_.pop_back();
 
-        if (!s.Ok()) 
-            return s;
+            if (!s.Ok()) 
+                return s;
 
-        if (!d.AsBool())
-            continue;
+            if (!d.AsBool())
+                continue;
+        }
 
         Row updated_row = *r;
 
@@ -324,23 +326,25 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
 Status Executor::SelectExecutor(SelectStmt* stmt) { 
     //scan table(s) and filter using 'where' clause
     RowSet* rs = new RowSet(stmt->row_description_);
-    BeginScan(stmt->target_);
 
-    Row* r;
-    while (NextRow(stmt->target_, &r).Ok()) {
-        Datum d;
+    {
+        BeginScan(stmt->target_);
+        Row* r;
+        while (NextRow(stmt->target_, &r).Ok()) {
+            Datum d;
 
-        scopes_.push_back(r);
-        Status s = Eval(stmt->where_clause_, r, &d);
-        scopes_.pop_back();
+            scopes_.push_back(r);
+            Status s = Eval(stmt->where_clause_, r, &d);
+            scopes_.pop_back();
 
-        if (!s.Ok()) 
-            return s;
+            if (!s.Ok()) 
+                return s;
 
-        if (!d.AsBool())
-            continue;
+            if (!d.AsBool())
+                continue;
 
-        rs->rows_.push_back(r);
+            rs->rows_.push_back(r);
+        }
     }
 
     //sort filtered rows in-place
@@ -560,7 +564,7 @@ Status Executor::DropModelExecutor(DropModelStmt* stmt) {
  * Expression Evaluators
  */
 
-Status Executor::EvalLiteral(Literal* expr, Row* row, Datum* result) {
+Status Executor::EvalLiteral(Literal* expr, Datum* result) {
     is_agg_ = false;
     *result = Datum(LiteralTokenToDatumType(expr->t_.type), expr->t_.lexeme);
     return Status();
@@ -631,7 +635,7 @@ Status Executor::EvalUnary(Unary* expr, Row* row, Datum* result) {
     return Status();
 }
 
-Status Executor::EvalColRef(ColRef* expr, Row* row, Datum* result) {
+Status Executor::EvalColRef(ColRef* expr, Datum* result) {
     is_agg_ = false;
     *result = scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_);
     return Status();
@@ -723,7 +727,7 @@ Status Executor::EvalIsNull(IsNull* expr, Row* row, Datum* result) {
     return Status();
 }
 
-Status Executor::EvalScalarSubquery(ScalarSubquery* expr, Row* row, Datum* result) {
+Status Executor::EvalScalarSubquery(ScalarSubquery* expr, Datum* result) {
     is_agg_ = false;
 
     Status s = Execute(expr->stmt_);
@@ -909,8 +913,7 @@ Status Executor::NextRowLeft(LeftJoin* scan, Row** r) {
     Row* right_row;
 
     while (true) {
-        Status s = NextRow(scan->right_, &right_row);
-        if (!s.Ok()) {
+        if (!NextRow(scan->right_, &right_row).Ok()) {
             //get new left
             {
                 if (scan->lefts_inserted_ == 0) {
@@ -965,9 +968,8 @@ Status Executor::NextRowFull(FullJoin* scan, Row** r) {
     //attempt grabbing row from right_join_
     //if none left, initialize left_ and right_, and start processing left join but only use values with nulled right sides
     if (scan->do_right_) {
-        Status s = NextRow(scan->right_join_, r);
-        if (s.Ok()) {
-            return s;
+        if (NextRow(scan->right_join_, r).Ok()) {
+            return Status();
         } else {
             //reset to begin augmented left outer join scan
             scan->do_right_ = false;
@@ -985,8 +987,7 @@ Status Executor::NextRowFull(FullJoin* scan, Row** r) {
     Row* right_row;
 
     while (true) {
-        Status s = NextRow(scan->right_, &right_row);
-        if (!s.Ok()) {
+        if (!NextRow(scan->right_, &right_row).Ok()) {
             //get new left
             if (scan->lefts_inserted_ == 0) {
                 std::vector<Datum> result;
@@ -1051,8 +1052,7 @@ Status Executor::NextRowInner(InnerJoin* scan, Row** r) {
     Row* right_row;
 
     while (true) {
-        Status s = NextRow(scan->right_, &right_row);
-        if (!s.Ok()) {
+        if (!NextRow(scan->right_, &right_row).Ok()) {
             //get new left
             {
                 Status s = NextRow(scan->left_, &scan->left_row_);
@@ -1093,8 +1093,7 @@ Status Executor::NextRowInner(InnerJoin* scan, Row** r) {
 
 Status Executor::NextRowCross(CrossJoin* scan, Row** r) {
     Row* right_row;
-    Status s = NextRow(scan->right_, &right_row);
-    if (!s.Ok()) {
+    if (!NextRow(scan->right_, &right_row).Ok()) {
         {
             Status s = NextRow(scan->left_, &scan->left_row_);
             if (!s.Ok())

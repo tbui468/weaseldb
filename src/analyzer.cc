@@ -85,9 +85,11 @@ Status Analyzer::CreateVerifier(CreateStmt* stmt) {
 }
 
 Status Analyzer::InsertVerifier(InsertStmt* stmt) { 
-    Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
-    if (!s.Ok())
-        return s;
+    {
+        Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
+        if (!s.Ok())
+            return s;
+    }
    
     AttributeSet* working_attrs = stmt->schema_->MakeAttributeSet(stmt->target_.lexeme);
 
@@ -126,9 +128,11 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
 
 
 Status Analyzer::UpdateVerifier(UpdateStmt* stmt) { 
-    Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
-    if (!s.Ok())
-        return s;
+    {
+        Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
+        if (!s.Ok())
+            return s;
+    }
    
     AttributeSet* working_attrs;
     {
@@ -161,9 +165,11 @@ Status Analyzer::UpdateVerifier(UpdateStmt* stmt) {
 
 
 Status Analyzer::DeleteVerifier(DeleteStmt* stmt) { 
-    Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
-    if (!s.Ok())
-        return s;
+    {
+        Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
+        if (!s.Ok())
+            return s;
+    }
 
     AttributeSet* working_attrs;
     {

@@ -40,7 +40,7 @@ private:
     }
 
     inline void SkipUntil(const std::string& substr) {
-        int len = query_.length() - substr.length();
+        size_t len = query_.length() - substr.length();
         while (!AtEnd() && idx_ <= len && substr.compare(query_.substr(idx_, substr.length())) != 0)
             idx_++;
 

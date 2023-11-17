@@ -70,7 +70,7 @@ Status Model::Predict(const std::string& buf, std::vector<int>& results) {
     output = model_.run_method("forward", output).toTensor();
     output = model_.run_method("wsldb_output", output).toTensor();
 
-    for (size_t i = 0; i < output.size(0); i++) {
+    for (int i = 0; i < output.size(0); i++) {
         results.push_back(output[i].item<int64_t>());
     }
 
