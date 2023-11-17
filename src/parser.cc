@@ -6,28 +6,28 @@
 namespace wsldb {
 
 #define ParseExpr(fcn) \
-    ({ Expr* expr; \
-       Status s = fcn(&expr); \
+    ({ Expr* expr_; \
+       Status s = fcn(&expr_); \
        if (!s.Ok()) return s; \
-       expr; \
+       expr_; \
     })
 
 #define ParseScan(fcn) \
-    ({ WorkTable* scan; \
-       Status s = fcn(&scan); \
+    ({ WorkTable* scan_; \
+       Status s = fcn(&scan_); \
        if (!s.Ok()) return s; \
-       scan; \
+       scan_; \
     })
 
 #define EatToken(expected_type, err_msg) \
-    ({ Token t = NextToken(); \
-       if (t.type != expected_type) return Status(false, err_msg); \
-       t; })
+    ({ Token t_ = NextToken(); \
+       if (t_.type != expected_type) return Status(false, err_msg); \
+       t_; })
 
 #define EatTokenIn(tv, err_msg) \
-    ({ Token t = NextToken(); \
-       if (std::find(tv.begin(), tv.end(), t.type) == tv.end()) return Status(false, err_msg); \
-       t; })
+    ({ Token t_ = NextToken(); \
+       if (std::find(tv.begin(), tv.end(), t_.type) == tv.end()) return Status(false, err_msg); \
+       t_; })
 
 Status Parser::ParseStmts(std::vector<Stmt*>& stmts) {
     while (!AdvanceIf(TokenType::Eof)) {

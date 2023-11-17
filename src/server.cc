@@ -39,28 +39,23 @@ void Server::ConnHandler(ConnHandlerArgs* args) {
 
         for (Status s: ss) {
             if (!s.Ok()) {
-                std::string buf = PreparePacket('E', s.Msg());
-                Send(conn_fd, buf);
+                Send(conn_fd, PreparePacket('E', s.Msg()));
             } else {
                 for (RowSet* rs: s.Tuples()) {
                     std::string row_description = rs->SerializeRowDescription();
-                    std::string buf = PreparePacket('T', row_description);
-                    Send(conn_fd, buf);
+                    Send(conn_fd, PreparePacket('T', row_description));
 
                     std::vector<std::string> data_rows = rs->SerializeDataRows();
                     for (const std::string& r: data_rows) {
-                        std::string buf = PreparePacket('D', r);
-                        Send(conn_fd, buf);
+                        Send(conn_fd, PreparePacket('D', r));
                     }
                 }
 
-                std::string buf = PreparePacket('C', s.Msg());
-                Send(conn_fd, buf);
+                Send(conn_fd, PreparePacket('C', s.Msg()));
             }
         }
 
-        std::string buf = PreparePacket('Z', ""); //ready for query
-        Send(conn_fd, buf);
+        Send(conn_fd, PreparePacket('Z', ""));
 
     }
 
@@ -123,7 +118,7 @@ int Server::GetListenerFD(const char* port) {
 }
 
 void Server::Listen(const char* port) {
-    int listener_fd_ = GetListenerFD(port);
+    listener_fd_ = GetListenerFD(port);
 
     while (true) {
         socklen_t sin_size = sizeof(struct sockaddr_storage);
