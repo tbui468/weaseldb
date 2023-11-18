@@ -204,6 +204,28 @@ Status Analyzer::SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types)
 
     scopes_.push_back(working_attrs);
 
+    //replace wildcards with actual attribute names
+    while (true) { //looping since multiple wildcards may be used
+        int idx = -1;
+        for (size_t i = 0; i < stmt->projs_.size(); i++) {
+            Expr* e = stmt->projs_.at(i);
+            if (e->Type() == ExprType::Literal && ((Literal*)e)->t_.type == TokenType::Star) {
+                idx = i;
+                break; 
+            }
+        }
+
+        if (idx == -1)
+            break;
+
+        stmt->projs_.erase(stmt->projs_.begin() + idx);
+        std::vector<Expr*> attr;
+        for (const Attribute& a: working_attrs->GetAttributes()) {
+            attr.push_back(new ColRef(Token(a.name, TokenType::Identifier), Token(a.rel_ref, TokenType::Identifier)));
+        }
+        stmt->projs_.insert(stmt->projs_.begin() + idx, attr.begin(), attr.end());
+    }
+
     //projection
     for (Expr* e: stmt->projs_) {
         DatumType type;

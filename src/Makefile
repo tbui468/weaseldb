@@ -29,6 +29,7 @@ LDFLAGS="-Wl,-rpath,../../libtorch/lib"
 CXXFLAGS += -Wall
 CXXFLAGS += -Wextra
 CXXFLAGS += -Wshadow
+CXXFLAGS += -Wpedantic
 
 .PHONY: clean librocksdb
 

@@ -51,6 +51,7 @@ Status Parser::Primary(Expr** expr) {
         case TokenType::FalseLiteral:
         case TokenType::Null:
         case TokenType::ByteaLiteral:
+        case TokenType::Star: //column wildcard
             *expr = new Literal(NextToken());
             return Status();
         case TokenType::Cast: {

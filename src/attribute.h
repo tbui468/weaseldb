@@ -32,7 +32,7 @@ public:
     std::vector<std::string> TableNames() const;
     std::vector<Attribute>* TableAttributes(const std::string& table) const;
 
-    inline int AttributeCount() const {
+    inline size_t AttributeCount() const {
         return attrs_.size();
     }
 
