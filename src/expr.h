@@ -195,7 +195,8 @@ enum class ScanType {
     Inner,
     Cross,
     Constant,
-    Table
+    Table,
+    Select
 };
 
 class WorkTable {
@@ -297,8 +298,20 @@ public:
     std::string tab_name_;
     std::string ref_name_;
     Iterator* it_;
-    int scan_idx_;
+    int scan_idx_; //index to scan (default is 0, which is the primary index)
     Schema* schema_;
 };
+
+class SelectScan: public WorkTable {
+public:
+    SelectScan(WorkTable* scan, Expr* expr): scan_(scan), expr_(expr) {}
+    ScanType Type() const override {
+        return ScanType::Select;
+    }
+public:
+    WorkTable* scan_;
+    Expr* expr_;
+};
+
 
 }

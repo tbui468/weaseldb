@@ -49,6 +49,7 @@ private:
     Status VerifyCross(CrossJoin* scan, AttributeSet** working_attrs);
     Status VerifyConstant(ConstantTable* scan, AttributeSet** working_attrs);
     Status VerifyTable(PrimaryTable* scan, AttributeSet** working_attrs);
+    Status VerifySelectScan(SelectScan* scan, AttributeSet** working_attrs);
 
     Status GetSchema(const std::string& table_name, Schema** schema) {
         *schema = nullptr;
@@ -71,7 +72,7 @@ private:
                 return s;
         }
 
-        return Status(false, "should never reach this"); //keeping compiler quiet
+        return Status(false, "analyzer.h - should never reach this"); //keeping compiler quiet
     }
     Status GetAttributeAtScopeOffset(Attribute* attr, int* idx, int* scope, const std::string& table_ref_param, const std::string& col, int i) const {
         std::string table_ref = table_ref_param;

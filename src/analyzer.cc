@@ -142,16 +142,6 @@ Status Analyzer::UpdateVerifier(UpdateStmt* stmt) {
     }
 
     scopes_.push_back(working_attrs);
-
-    {
-        DatumType type;
-        Status s = Verify(stmt->where_clause_, &type);
-        if (!s.Ok())
-            return s;
-        if (type != DatumType::Bool)
-            return Status(false, "Error: 'where' clause must evaluated to a boolean value");
-    }
-
     for (Expr* e: stmt->assigns_) {
         DatumType type;
         Status s = Verify(e, &type);
@@ -177,19 +167,6 @@ Status Analyzer::DeleteVerifier(DeleteStmt* stmt) {
         if (!s.Ok())
             return s;
     }
-
-    scopes_.push_back(working_attrs);
-
-    {
-        DatumType type;
-        Status s = Verify(stmt->where_clause_, &type);
-        if (!s.Ok())
-            return s;
-        if (type != DatumType::Bool)
-            return Status(false, "Error: 'where' clause must evaluated to a boolean value");
-    }
-
-    scopes_.pop_back();
 
     return Status(); 
 }
@@ -596,6 +573,8 @@ Status Analyzer::Verify(WorkTable* scan, AttributeSet** working_attrs) {
             return VerifyConstant((ConstantTable*)scan, working_attrs);
         case ScanType::Table:
             return VerifyTable((PrimaryTable*)scan, working_attrs);
+        case ScanType::Select:
+            return VerifySelectScan((SelectScan*)scan, working_attrs);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
@@ -753,6 +732,31 @@ Status Analyzer::VerifyTable(PrimaryTable* scan, AttributeSet** working_attrs) {
 
     *working_attrs = scan->schema_->MakeAttributeSet(scan->ref_name_);
     scan->attrs_ = *working_attrs;
+
+    return Status();
+}
+
+Status Analyzer::VerifySelectScan(SelectScan* scan, AttributeSet** working_attrs) {
+    {
+        Status s = Verify(scan->scan_, working_attrs);
+        if (!s.Ok())
+           return s; 
+    }
+
+    scopes_.push_back(*working_attrs);
+
+    {
+        DatumType type;
+        Status s = Verify(scan->expr_, &type);
+        if (!s.Ok())
+           return s; 
+
+        if (type != DatumType::Bool) {
+            return Status(false, "Analysis Error: where clause expression must evaluate to true or false");
+        }
+    }
+
+    scopes_.pop_back();
 
     return Status();
 }

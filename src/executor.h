@@ -53,6 +53,7 @@ private:
     Status BeginScanCross(CrossJoin* scan);
     Status BeginScanConstant(ConstantTable* scan);
     Status BeginScanTable(PrimaryTable* scan);
+    Status BeginScan(SelectScan* scan);
     
     Status NextRow(WorkTable* scan, Row** r);
     Status NextRowLeft(LeftJoin* scan, Row** r);
@@ -61,6 +62,7 @@ private:
     Status NextRowCross(CrossJoin* scan, Row** r);
     Status NextRowConstant(ConstantTable* scan, Row** r);
     Status NextRowTable(PrimaryTable* scan, Row** r);
+    Status NextRow(SelectScan* scan, Row** r);
 
     inline void ResetAggState() {
         is_agg_ = false;

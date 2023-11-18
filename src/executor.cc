@@ -219,17 +219,6 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
     int update_count = 0;
     Datum d;
     while (NextRow(stmt->scan_, &r).Ok()) {
-        {
-            scopes_.push_back(r);
-            Status s = Eval(stmt->where_clause_, r, &d);
-            scopes_.pop_back();
-
-            if (!s.Ok()) 
-                return s;
-
-            if (!d.AsBool())
-                continue;
-        }
 
         Row updated_row = *r;
 
@@ -294,17 +283,6 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
     int delete_count = 0;
     Datum d;
     while (NextRow(stmt->scan_, &r).Ok()) {
-
-        scopes_.push_back(r);
-        Status s = Eval(stmt->where_clause_, r, &d);
-        scopes_.pop_back();
-
-        if (!s.Ok()) 
-            return s;
-
-        if (!d.AsBool())
-            continue;
-
         //delete from primary index
         {
             Index* primary_idx = &stmt->schema_->idxs_.at(0);
@@ -818,6 +796,8 @@ Status Executor::BeginScan(WorkTable* scan) {
             return BeginScanConstant((ConstantTable*)scan);
         case ScanType::Table:
             return BeginScanTable((PrimaryTable*)scan);
+        case ScanType::Select:
+            return BeginScan((SelectScan*)scan);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
@@ -890,6 +870,11 @@ Status Executor::BeginScanTable(PrimaryTable* scan) {
     return Status();
 }
 
+Status Executor::BeginScan(SelectScan* scan) {
+    Status s = BeginScan(scan->scan_);
+    return s;
+}
+
 Status Executor::NextRow(WorkTable* scan, Row** row) {
     switch (scan->Type()) {
         case ScanType::Left:
@@ -904,6 +889,8 @@ Status Executor::NextRow(WorkTable* scan, Row** row) {
             return NextRowConstant((ConstantTable*)scan, row);
         case ScanType::Table:
             return NextRowTable((PrimaryTable*)scan, row);
+        case ScanType::Select:
+            return NextRow((SelectScan*)scan, row);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
@@ -1149,6 +1136,32 @@ Status Executor::NextRowTable(PrimaryTable* scan, Row** r) {
     scan->it_->Next();
 
     return Status();
+}
+
+Status Executor::NextRow(SelectScan* scan, Row** r) {
+    while (true) {
+        {
+            Status s = NextRow(scan->scan_, r);
+            if (!s.Ok())
+                return s;
+        }
+
+        Datum result;
+        {
+            scopes_.push_back(*r);
+            Status s = Eval(scan->expr_, *r, &result);
+            scopes_.pop_back();
+
+            if (!s.Ok())
+                return s;
+        }
+
+        if (result.AsBool()) {
+            return Status();
+        }
+    }
+
+    return Status(false, "No more records");
 }
 
 

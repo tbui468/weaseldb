@@ -456,20 +456,32 @@ Status Parser::ParseStmt(Stmt** stmt) {
                 AdvanceIf(TokenType::Comma);
             }
 
-            Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : new Literal(true);
+            Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : nullptr;
+
+            if (where_clause) {
+                *stmt = new UpdateStmt(target, assigns, new SelectScan(new PrimaryTable(target), where_clause));
+            } else {
+                *stmt = new UpdateStmt(target, assigns, new PrimaryTable(target));
+            }
+
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of update statement");
 
-            *stmt = new UpdateStmt(target, assigns, where_clause);
             return Status();
         }
         case TokenType::Delete: {
             EatToken(TokenType::From, "Parse Error: Expected 'from' keyword after 'delete'");
             Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name after keyword 'from'");
 
-            Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : new Literal(true);
+            Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : nullptr;
+
+            if (where_clause) {
+                *stmt = new DeleteStmt(target, new SelectScan(new PrimaryTable(target), where_clause));
+            } else {
+                *stmt = new DeleteStmt(target, new PrimaryTable(target));
+            }
+
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of delete statement");
 
-            *stmt = new DeleteStmt(target, where_clause);
             return Status();
         }
         case TokenType::Drop: {
