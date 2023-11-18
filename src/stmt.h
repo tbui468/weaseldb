@@ -92,13 +92,11 @@ class SelectStmt: public Stmt {
 public:
     SelectStmt(WorkTable* target, 
                std::vector<Expr*> projs,
-               Expr* where_clause, 
                std::vector<OrderCol> order_cols,
                Expr* limit,
                bool remove_duplicates):
                     target_(target),
                     projs_(std::move(projs)),
-                    where_clause_(where_clause),
                     order_cols_(std::move(order_cols)),
                     limit_(limit),
                     remove_duplicates_(remove_duplicates),
@@ -110,7 +108,6 @@ public:
 public:
     WorkTable* target_;
     std::vector<Expr*> projs_;
-    Expr* where_clause_;
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
     bool remove_duplicates_;

@@ -419,7 +419,12 @@ Status Parser::ParseStmt(Stmt** stmt) {
             } while (AdvanceIf(TokenType::Comma));
 
             WorkTable* target = AdvanceIf(TokenType::From) ? ParseScan(ParseWorkTable) : new ConstantTable(target_cols);
-            Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : new Literal(true);
+
+            Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : nullptr;
+
+            if (where_clause) {
+                target = new SelectScan(target, where_clause);
+            }
 
             std::vector<OrderCol> order_cols;
             if (AdvanceIf(TokenType::Order)) {
@@ -438,7 +443,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
             //if the select statement is a subquery, it will not end with a semicolon
             AdvanceIf(TokenType::SemiColon);
 
-            *stmt = new SelectStmt(target, target_cols, where_clause, order_cols, limit, remove_duplicates);
+            *stmt = new SelectStmt(target, target_cols, order_cols, limit, remove_duplicates);
             return Status();
         }
 

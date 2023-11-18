@@ -302,25 +302,12 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
 }
 
 Status Executor::SelectExecutor(SelectStmt* stmt) { 
-    //scan table(s) and filter using 'where' clause
     RowSet* rs = new RowSet(stmt->row_description_);
 
     {
         BeginScan(stmt->target_);
         Row* r;
         while (NextRow(stmt->target_, &r).Ok()) {
-            Datum d;
-
-            scopes_.push_back(r);
-            Status s = Eval(stmt->where_clause_, r, &d);
-            scopes_.pop_back();
-
-            if (!s.Ok()) 
-                return s;
-
-            if (!d.AsBool())
-                continue;
-
             rs->rows_.push_back(r);
         }
     }

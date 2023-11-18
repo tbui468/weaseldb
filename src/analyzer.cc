@@ -216,19 +216,6 @@ Status Analyzer::SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types)
         stmt->row_description_.emplace_back("?rel_ref?", e->ToString(), type, false);
     }
 
-    //where clause
-    {
-        DatumType type;
-        Status s = Verify(stmt->where_clause_, &type);
-        if (!s.Ok()) {
-            return s;
-        }
-
-        if (type != DatumType::Bool) {
-            return Status(false, "Error: Where clause must be a boolean expression");
-        }
-    }
-
     //order cols
     for (OrderCol oc: stmt->order_cols_) {
         {
