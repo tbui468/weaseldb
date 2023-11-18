@@ -1,6 +1,7 @@
 #include "tokenizer.h"
 #include <cstring>
-#include <iostream>
+#include <cctype>
+#include <algorithm>
 
 namespace wsldb {
 
@@ -189,16 +190,18 @@ Status Tokenizer::MakeIdentifier(Token* t) {
         len++;
     }
 
+    std::string s = query_.substr(idx, len);
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+
     TokenType type = TokenType::Identifier;
 
     if (len < std::size(keywords)) {
         for (const Keyword& kw: keywords[len]) {
-            if (strncmp(&query_.at(idx), kw.string, len) == 0)
+            if (strncmp(s.data(), kw.string, len) == 0)
                 type = kw.type;
         }
     }
-
-    *t = Token(query_.substr(idx, len), type);
+    *t = Token(s, type);
     return Status();
 }
 
