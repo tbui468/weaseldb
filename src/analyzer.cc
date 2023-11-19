@@ -543,10 +543,10 @@ Status Analyzer::VerifyCast(Cast* expr, DatumType* type) {
 }
 
 /*
- * Verify WorkTables
+ * Verify Scan
  */
 
-Status Analyzer::Verify(WorkTable* scan, AttributeSet** working_attrs) {
+Status Analyzer::Verify(Scan* scan, AttributeSet** working_attrs) {
     switch (scan->Type()) {
         case ScanType::Left:
             return VerifyLeft((LeftJoin*)scan, working_attrs);

@@ -90,7 +90,7 @@ public:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(WorkTable* target, 
+    SelectStmt(Scan* target, 
                std::vector<Expr*> projs,
                std::vector<OrderCol> order_cols,
                Expr* limit,
@@ -106,7 +106,7 @@ public:
         return StmtType::Select;
     }
 public:
-    WorkTable* target_;
+    Scan* target_;
     std::vector<Expr*> projs_;
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
@@ -131,7 +131,7 @@ public:
 
 class UpdateStmt: public Stmt {
 public:
-    UpdateStmt(Token target, std::vector<Expr*> assigns, WorkTable* scan):
+    UpdateStmt(Token target, std::vector<Expr*> assigns, Scan* scan):
         target_(target), assigns_(std::move(assigns)), scan_(scan) {}
     StmtType Type() const override {
         return StmtType::Update;
@@ -139,20 +139,20 @@ public:
 public:
     Token target_;
     std::vector<Expr*> assigns_;
-    WorkTable* scan_;
+    Scan* scan_;
     Schema* schema_;
 };
 
 class DeleteStmt: public Stmt {
 public:
-    DeleteStmt(Token target, WorkTable* scan): target_(target), scan_(scan) {}
+    DeleteStmt(Token target, Scan* scan): target_(target), scan_(scan) {}
     StmtType Type() const override {
         return StmtType::Delete;
     }
 public:
     Token target_;
     Schema* schema_;
-    WorkTable* scan_;
+    Scan* scan_;
 };
 
 class DropTableStmt: public Stmt {

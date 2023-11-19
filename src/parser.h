@@ -23,9 +23,9 @@ private:
     Status Or(Expr**);
     Status Base(Expr**);
 
-    Status ParsePrimaryWorkTable(WorkTable** wt);
-    Status ParseBinaryWorkTable(WorkTable** wt);
-    Status ParseWorkTable(WorkTable** wt);
+    Status ParsePrimaryScan(Scan** wt);
+    Status ParseBinaryScan(Scan** wt);
+    Status ParseBaseScan(Scan** wt);
 
     inline Token PeekToken() {
         return tokens_.at(idx_);

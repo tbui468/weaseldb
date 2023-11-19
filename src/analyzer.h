@@ -40,8 +40,7 @@ private:
     Status VerifyPredict(Predict* expr, DatumType* type);
     Status VerifyCast(Cast* expr, DatumType* type);
 
-    //TODO: rename WorkTable to scan
-    Status Verify(WorkTable* scan, AttributeSet** working_attrs);
+    Status Verify(Scan* scan, AttributeSet** working_attrs);
 
     Status VerifyLeft(LeftJoin* scan, AttributeSet** working_attrs); 
     Status VerifyFull(FullJoin* scan, AttributeSet** working_attrs);

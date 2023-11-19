@@ -199,7 +199,7 @@ enum class ScanType {
     Select
 };
 
-class WorkTable {
+class Scan {
 public:
     std::vector<Attribute> GetAttributes() const {
         return attrs_->GetAttributes();
@@ -209,9 +209,9 @@ public:
     AttributeSet* attrs_ { nullptr };
 };
 
-class LeftJoin: public WorkTable {
+class LeftJoin: public Scan {
 public:
-    LeftJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
+    LeftJoin(Scan* left, Scan* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
     ScanType Type() const override {
         return ScanType::Left;
     }
@@ -221,16 +221,16 @@ public:
     int lefts_inserted_;
     int right_attr_count_;
     Row* left_row_;
-    WorkTable* left_;
-    WorkTable* right_;
+    Scan* left_;
+    Scan* right_;
     Expr* condition_;
 };
 
 //Idea: make a left join, run that to get left rows + rows in common
 //Then run the right join, but only include rights with left sides that are nulled out
-class FullJoin: public WorkTable {
+class FullJoin: public Scan {
 public:
-    FullJoin(WorkTable* left, WorkTable* right, Expr* condition): 
+    FullJoin(Scan* left, Scan* right, Expr* condition): 
         left_(left), right_(right), condition_(condition), right_join_(new LeftJoin(right, left, condition)) {}
     ScanType Type() const override {
         return ScanType::Full;
@@ -242,40 +242,40 @@ public:
     int attr_count_;
     bool do_right_;
     Row* left_row_;
-    WorkTable* left_;
-    WorkTable* right_;
+    Scan* left_;
+    Scan* right_;
     Expr* condition_;
     LeftJoin* right_join_;
 };
 
 
 
-class InnerJoin: public WorkTable {
+class InnerJoin: public Scan {
 public:
-    InnerJoin(WorkTable* left, WorkTable* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
+    InnerJoin(Scan* left, Scan* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
     ScanType Type() const override {
         return ScanType::Inner;
     }
 public:
     Row* left_row_;
-    WorkTable* left_;
-    WorkTable* right_;
+    Scan* left_;
+    Scan* right_;
     Expr* condition_;
 };
 
-class CrossJoin: public WorkTable {
+class CrossJoin: public Scan {
 public:
-    CrossJoin(WorkTable* left, WorkTable* right): left_(left), right_(right), left_row_(nullptr) {}
+    CrossJoin(Scan* left, Scan* right): left_(left), right_(right), left_row_(nullptr) {}
     ScanType Type() const override {
         return ScanType::Cross;
     }
 public:
-    WorkTable* left_;
-    WorkTable* right_;
+    Scan* left_;
+    Scan* right_;
     Row* left_row_;
 };
 
-class ConstantTable: public WorkTable {
+class ConstantTable: public Scan {
 public:
     ConstantTable(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
     ScanType Type() const override {
@@ -286,7 +286,7 @@ public:
     int cur_;
 };
 
-class PrimaryTable: public WorkTable {
+class PrimaryTable: public Scan {
 public:
     PrimaryTable(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
     //if an alias is not provided, the reference name is the same as the physical table name
@@ -302,14 +302,14 @@ public:
     Schema* schema_;
 };
 
-class SelectScan: public WorkTable {
+class SelectScan: public Scan {
 public:
-    SelectScan(WorkTable* scan, Expr* expr): scan_(scan), expr_(expr) {}
+    SelectScan(Scan* scan, Expr* expr): scan_(scan), expr_(expr) {}
     ScanType Type() const override {
         return ScanType::Select;
     }
 public:
-    WorkTable* scan_;
+    Scan* scan_;
     Expr* expr_;
 };
 

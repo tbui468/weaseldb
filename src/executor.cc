@@ -769,7 +769,7 @@ Status Executor::EvalCast(Cast* expr, Row* row, Datum* result) {
  * Scans
  */
 
-Status Executor::BeginScan(WorkTable* scan) {
+Status Executor::BeginScan(Scan* scan) {
     switch (scan->Type()) {
         case ScanType::Left:
             return BeginScanLeft((LeftJoin*)scan);
@@ -862,7 +862,7 @@ Status Executor::BeginScan(SelectScan* scan) {
     return s;
 }
 
-Status Executor::NextRow(WorkTable* scan, Row** row) {
+Status Executor::NextRow(Scan* scan, Row** row) {
     switch (scan->Type()) {
         case ScanType::Left:
             return NextRowLeft((LeftJoin*)scan, row);

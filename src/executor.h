@@ -46,7 +46,8 @@ private:
     //TODO: make this Scan wrapper - this it the function SelectStmt should call rather than calling BeginScan/NextRow directly
 //    Status Scan(WorkTable* scan, RowSet* result);
     
-    Status BeginScan(WorkTable* scan);
+    Status BeginScan(Scan* scan);
+    //TODO: these function names can be the same 'BeginScan' since the argument will overload it
     Status BeginScanLeft(LeftJoin* scan);
     Status BeginScanFull(FullJoin* scan);
     Status BeginScanInner(InnerJoin* scan);
@@ -55,7 +56,8 @@ private:
     Status BeginScanTable(PrimaryTable* scan);
     Status BeginScan(SelectScan* scan);
     
-    Status NextRow(WorkTable* scan, Row** r);
+    //TODO: these function names can be the same 'NextRow' since the argument will overload it
+    Status NextRow(Scan* scan, Row** r);
     Status NextRowLeft(LeftJoin* scan, Row** r);
     Status NextRowFull(FullJoin* scan, Row** r);
     Status NextRowInner(InnerJoin* scan, Row** r);

@@ -13,7 +13,7 @@ namespace wsldb {
     })
 
 #define ParseScan(fcn) \
-    ({ WorkTable* scan_; \
+    ({ Scan* scan_; \
        Status s = fcn(&scan_); \
        if (!s.Ok()) return s; \
        scan_; \
@@ -225,7 +225,7 @@ Status Parser::Base(Expr** expr) {
     return Status();
 }
 
-Status Parser::ParsePrimaryWorkTable(WorkTable** wt) {
+Status Parser::ParsePrimaryScan(Scan** wt) {
     Token t = NextToken();
     if (AdvanceIf(TokenType::As)) {
         Token alias = NextToken();
@@ -237,8 +237,8 @@ Status Parser::ParsePrimaryWorkTable(WorkTable** wt) {
     return Status();
 }
 
-Status Parser::ParseBinaryWorkTable(WorkTable** wt) {
-    WorkTable* left = ParseScan(ParsePrimaryWorkTable);
+Status Parser::ParseBinaryScan(Scan** wt) {
+    Scan* left = ParseScan(ParsePrimaryScan);
 
     while (PeekToken().type == TokenType::Cross || 
            PeekToken().type == TokenType::Inner ||
@@ -249,13 +249,13 @@ Status Parser::ParseBinaryWorkTable(WorkTable** wt) {
         switch (NextToken().type) {
             case TokenType::Cross: {
                 EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'cross'");
-                WorkTable* right = ParseScan(ParsePrimaryWorkTable);
+                Scan* right = ParseScan(ParsePrimaryScan);
                 *wt = new CrossJoin(left, right);
                 return Status();
             }
             case TokenType::Inner: {
                 EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'inner'");
-                WorkTable* right = ParseScan(ParsePrimaryWorkTable);
+                Scan* right = ParseScan(ParsePrimaryScan);
                 EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for inner joins");
                 Expr* on = ParseExpr(Base);
                 *wt = new InnerJoin(left, right, on);
@@ -263,7 +263,7 @@ Status Parser::ParseBinaryWorkTable(WorkTable** wt) {
             }
             case TokenType::Left: {
                 EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'left'");
-                WorkTable* right = ParseScan(ParsePrimaryWorkTable);
+                Scan* right = ParseScan(ParsePrimaryScan);
                 EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for left joins");
                 Expr* on = ParseExpr(Base);
                 *wt = new LeftJoin(left, right, on);
@@ -271,7 +271,7 @@ Status Parser::ParseBinaryWorkTable(WorkTable** wt) {
             }
             case TokenType::Right: {
                 EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'right'");
-                WorkTable* right = ParseScan(ParsePrimaryWorkTable);
+                Scan* right = ParseScan(ParsePrimaryScan);
                 EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for right joins");
                 Expr* on = ParseExpr(Base);
                 *wt = new LeftJoin(right, left, on);
@@ -279,7 +279,7 @@ Status Parser::ParseBinaryWorkTable(WorkTable** wt) {
             }
             case TokenType::Full: {
                 EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'full'");
-                WorkTable* right = ParseScan(ParsePrimaryWorkTable);
+                Scan* right = ParseScan(ParsePrimaryScan);
                 EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for full joins");
                 Expr* on = ParseExpr(Base);
                 *wt = new FullJoin(left, right, on);
@@ -294,8 +294,8 @@ Status Parser::ParseBinaryWorkTable(WorkTable** wt) {
     return Status();
 }
 
-Status Parser::ParseWorkTable(WorkTable** wt) {
-    *wt = ParseScan(ParseBinaryWorkTable);
+Status Parser::ParseBaseScan(Scan** wt) {
+    *wt = ParseScan(ParseBinaryScan);
     return Status();
 }
 
@@ -418,7 +418,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
                 target_cols.push_back(col);
             } while (AdvanceIf(TokenType::Comma));
 
-            WorkTable* target = AdvanceIf(TokenType::From) ? ParseScan(ParseWorkTable) : new ConstantTable(target_cols);
+            Scan* target = AdvanceIf(TokenType::From) ? ParseScan(ParseBaseScan) : new ConstantTable(target_cols);
 
             Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : nullptr;
 
