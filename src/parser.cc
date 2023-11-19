@@ -258,7 +258,7 @@ Status Parser::ParseBinaryScan(Scan** wt) {
                 Scan* right = ParseScan(ParsePrimaryScan);
                 EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for inner joins");
                 Expr* on = ParseExpr(Base);
-                *wt = new InnerJoin(left, right, on);
+                *wt = new SelectScan(new ProductScan(left, right), on);
                 return Status();
             }
             case TokenType::Left: {

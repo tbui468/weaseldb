@@ -552,8 +552,6 @@ Status Analyzer::Verify(Scan* scan, AttributeSet** working_attrs) {
             return VerifyLeft((LeftJoin*)scan, working_attrs);
         case ScanType::Full:
             return VerifyFull((FullJoin*)scan, working_attrs);
-        case ScanType::Inner:
-            return VerifyInner((InnerJoin*)scan, working_attrs);
         case ScanType::Constant:
             return VerifyConstant((ConstantTable*)scan, working_attrs);
         case ScanType::Table:
@@ -600,7 +598,7 @@ Status Analyzer::VerifyLeft(LeftJoin* scan, AttributeSet** working_attrs) {
             return s;
 
         if (type != DatumType::Bool) {
-            return Status(false, "Error: Inner join condition must evaluate to a boolean type");
+            return Status(false, "Error: Left join condition must evaluate to a boolean type");
         }
     }
     scopes_.pop_back();
@@ -620,49 +618,6 @@ Status Analyzer::VerifyFull(FullJoin* scan, AttributeSet** working_attrs) {
     return Status();
 }
 
-Status Analyzer::VerifyInner(InnerJoin* scan, AttributeSet** working_attrs) {
-    AttributeSet* left_attrs;
-    {
-        Status s = Verify(scan->left_, &left_attrs);
-        if (!s.Ok())
-            return s;
-    }
-
-    AttributeSet* right_attrs;
-    {
-        Status s = Verify(scan->right_, &right_attrs);
-        if (!s.Ok())
-            return s;
-    }
-
-    {
-        bool has_duplicate_tables;
-        *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
-        scan->attrs_ = *working_attrs;
-        if (has_duplicate_tables)
-            return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
-    }
-
-    //Need to put current attributeset into QueryState temporarily so that Expr::Analyze
-    //can use that data to perform semantic analysis for 'on' clause.  Normally Expr::Analyze is only
-    //called once entire WorkTable is Analyzed an at least a single AttributeSet is in QueryState,
-    //but InnerJoins have an Expr embedded as part of the WorkTable (the 'on' clause), so this is needed
-    //Something similar is done in InnerJoin::NextRow
-    scopes_.push_back(*working_attrs);
-    {
-        DatumType type;
-        Status s = Verify(scan->condition_, &type);
-        if (!s.Ok())
-            return s;
-
-        if (type != DatumType::Bool) {
-            return Status(false, "Error: Inner join condition must evaluate to a boolean type");
-        }
-    }
-    scopes_.pop_back();
-
-    return Status(true, "ok");
-}
 
 Status Analyzer::VerifyConstant(ConstantTable* scan, AttributeSet** working_attrs) {
     std::vector<std::string> names;

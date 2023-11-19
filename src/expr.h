@@ -192,7 +192,6 @@ public:
 enum class ScanType {
     Left, //right-join is just a left-join with the input scans swapped
     Full,
-    Inner,
     Constant,
     Table,
     Select,
@@ -248,20 +247,6 @@ public:
     LeftJoin* right_join_;
 };
 
-
-
-class InnerJoin: public Scan {
-public:
-    InnerJoin(Scan* left, Scan* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    ScanType Type() const override {
-        return ScanType::Inner;
-    }
-public:
-    Row* left_row_;
-    Scan* left_;
-    Scan* right_;
-    Expr* condition_;
-};
 
 class ConstantTable: public Scan {
 public:

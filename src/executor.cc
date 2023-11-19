@@ -775,8 +775,6 @@ Status Executor::BeginScan(Scan* scan) {
             return BeginScanLeft((LeftJoin*)scan);
         case ScanType::Full:
             return BeginScanFull((FullJoin*)scan);
-        case ScanType::Inner:
-            return BeginScanInner((InnerJoin*)scan);
         case ScanType::Constant:
             return BeginScanConstant((ConstantTable*)scan);
         case ScanType::Table:
@@ -813,18 +811,6 @@ Status Executor::BeginScanLeft(LeftJoin* scan) {
 Status Executor::BeginScanFull(FullJoin* scan) {
     BeginScan(scan->right_join_);
     scan->do_right_ = true;
-
-    return Status();
-}
-
-Status Executor::BeginScanInner(InnerJoin* scan) {
-    BeginScan(scan->left_);
-    BeginScan(scan->right_);
-
-    //initialize left row
-    Status s = NextRow(scan->left_, &scan->left_row_);
-    if (!s.Ok())
-        return Status(false, "No more rows");
 
     return Status();
 }
@@ -870,8 +856,6 @@ Status Executor::NextRow(Scan* scan, Row** row) {
             return NextRowLeft((LeftJoin*)scan, row);
         case ScanType::Full:
             return NextRowFull((FullJoin*)scan, row);
-        case ScanType::Inner:
-            return NextRowInner((InnerJoin*)scan, row);
         case ScanType::Constant:
             return NextRowConstant((ConstantTable*)scan, row);
         case ScanType::Table:
@@ -1022,49 +1006,6 @@ Status Executor::NextRowFull(FullJoin* scan, Row** r) {
     }
 
     return Status(false, "Debug Errpr: Should never see this message");
-}
-
-Status Executor::NextRowInner(InnerJoin* scan, Row** r) {
-    Row* right_row;
-
-    while (true) {
-        if (!NextRow(scan->right_, &right_row).Ok()) {
-            //get new left
-            {
-                Status s = NextRow(scan->left_, &scan->left_row_);
-                if (!s.Ok())
-                    return Status(false, "No more rows");
-            }
-
-            {
-                BeginScan(scan->right_);
-                Status s = NextRow(scan->right_, &right_row);
-                if (!s.Ok())
-                    return Status(false, "No more rows");
-            } 
-        }
-
-        //return concatenated row if condition is met - otherwise continue loop
-        {
-            std::vector<Datum> result = scan->left_row_->data_;
-            result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());
-
-            *r = new Row(result);
-            Datum d;
-
-            //this is ugly, we need to do this since Expr::Eval is needed to generate a working table
-            //something similar is done in InnerJoin::Analyze
-            scopes_.push_back(*r);
-            Status s = Eval(scan->condition_, *r, &d);
-            scopes_.pop_back();
-
-            if (d.AsBool())
-                return Status();
-
-        }
-    }
-
-    return Status(false, "Debug Error: Should never see this message");
 }
 
 Status Executor::NextRowConstant(ConstantTable* scan, Row** r) {
