@@ -554,14 +554,14 @@ Status Analyzer::Verify(Scan* scan, AttributeSet** working_attrs) {
             return VerifyFull((FullJoin*)scan, working_attrs);
         case ScanType::Inner:
             return VerifyInner((InnerJoin*)scan, working_attrs);
-        case ScanType::Cross:
-            return VerifyCross((CrossJoin*)scan, working_attrs);
         case ScanType::Constant:
             return VerifyConstant((ConstantTable*)scan, working_attrs);
         case ScanType::Table:
             return VerifyTable((PrimaryTable*)scan, working_attrs);
         case ScanType::Select:
             return VerifySelectScan((SelectScan*)scan, working_attrs);
+        case ScanType::Product:
+            return Verify((ProductScan*)scan, working_attrs);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
@@ -664,32 +664,6 @@ Status Analyzer::VerifyInner(InnerJoin* scan, AttributeSet** working_attrs) {
     return Status(true, "ok");
 }
 
-Status Analyzer::VerifyCross(CrossJoin* scan, AttributeSet** working_attrs) {
-    AttributeSet* left_attrs;
-    {
-        Status s = Verify(scan->left_, &left_attrs);
-        if (!s.Ok())
-            return s;
-    }
-
-    AttributeSet* right_attrs;
-    {
-        Status s = Verify(scan->right_, &right_attrs);
-        if (!s.Ok())
-            return s;
-    }
-
-    {
-        bool has_duplicate_tables;
-        *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
-        scan->attrs_ = *working_attrs;
-        if (has_duplicate_tables)
-            return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
-    }
-
-    return Status();
-}
-
 Status Analyzer::VerifyConstant(ConstantTable* scan, AttributeSet** working_attrs) {
     std::vector<std::string> names;
     std::vector<DatumType> types;
@@ -745,6 +719,29 @@ Status Analyzer::VerifySelectScan(SelectScan* scan, AttributeSet** working_attrs
 
     scopes_.pop_back();
 
+    return Status();
+}
+
+Status Analyzer::Verify(ProductScan* scan, AttributeSet** working_attrs) {
+    AttributeSet* left_attrs;
+    {
+        Status s = Verify(scan->left_, &left_attrs);
+        if (!s.Ok())
+            return s;
+    }
+    AttributeSet* right_attrs;
+    {
+        Status s = Verify(scan->right_, &right_attrs);
+        if (!s.Ok())
+            return s;
+    }
+    {
+        bool has_duplicate_tables;
+        *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
+        scan->attrs_ = *working_attrs;
+        if (has_duplicate_tables)
+            return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
+    }
     return Status();
 }
 

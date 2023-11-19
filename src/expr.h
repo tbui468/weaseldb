@@ -193,10 +193,10 @@ enum class ScanType {
     Left, //right-join is just a left-join with the input scans swapped
     Full,
     Inner,
-    Cross,
     Constant,
     Table,
-    Select
+    Select,
+    Product
 };
 
 class Scan {
@@ -263,18 +263,6 @@ public:
     Expr* condition_;
 };
 
-class CrossJoin: public Scan {
-public:
-    CrossJoin(Scan* left, Scan* right): left_(left), right_(right), left_row_(nullptr) {}
-    ScanType Type() const override {
-        return ScanType::Cross;
-    }
-public:
-    Scan* left_;
-    Scan* right_;
-    Row* left_row_;
-};
-
 class ConstantTable: public Scan {
 public:
     ConstantTable(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
@@ -313,5 +301,16 @@ public:
     Expr* expr_;
 };
 
+class ProductScan: public Scan {
+public:
+    ProductScan(Scan* left, Scan* right): left_(left), right_(right), left_row_(nullptr) {}
+    ScanType Type() const override {
+        return ScanType::Product;
+    }
+public:
+    Scan* left_;
+    Scan* right_;
+    Row* left_row_;
+};
 
 }

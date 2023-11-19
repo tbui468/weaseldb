@@ -1,5 +1,6 @@
 #include <fstream>
 #include <sstream>
+#include <iostream> //TODO: remove this later
 
 #include "executor.h"
 #include "schema.h"
@@ -42,7 +43,6 @@ std::vector<Status> Executor::ExecuteQuery(const std::string& query) {
                 *txn_ = storage_->BeginTxn();
                 auto_commit = true;
             }
-
             std::vector<DatumType> types;
             Status s = a.Verify(stmt, types);
             if (s.Ok())
@@ -777,14 +777,14 @@ Status Executor::BeginScan(Scan* scan) {
             return BeginScanFull((FullJoin*)scan);
         case ScanType::Inner:
             return BeginScanInner((InnerJoin*)scan);
-        case ScanType::Cross:
-            return BeginScanCross((CrossJoin*)scan);
         case ScanType::Constant:
             return BeginScanConstant((ConstantTable*)scan);
         case ScanType::Table:
             return BeginScanTable((PrimaryTable*)scan);
         case ScanType::Select:
             return BeginScan((SelectScan*)scan);
+        case ScanType::Product:
+            return BeginScan((ProductScan*)scan);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
@@ -829,18 +829,6 @@ Status Executor::BeginScanInner(InnerJoin* scan) {
     return Status();
 }
 
-Status Executor::BeginScanCross(CrossJoin* scan) {
-    BeginScan(scan->left_);
-    BeginScan(scan->right_);
-
-    //initialize left row
-    Status s = NextRow(scan->left_, &scan->left_row_);
-    if (!s.Ok())
-        return Status(false, "No more rows");
-
-    return Status();
-}
-
 Status Executor::BeginScanConstant(ConstantTable* scan) {
     scan->cur_ = 0;
     return Status();
@@ -862,6 +850,20 @@ Status Executor::BeginScan(SelectScan* scan) {
     return s;
 }
 
+Status Executor::BeginScan(ProductScan* scan) {
+    {
+        Status s = BeginScan(scan->left_);
+        if (!s.Ok()) return s;
+    }
+
+    {
+        Status s = BeginScan(scan->right_);
+        if (!s.Ok()) return s;
+    }
+
+    return Status();
+}
+
 Status Executor::NextRow(Scan* scan, Row** row) {
     switch (scan->Type()) {
         case ScanType::Left:
@@ -870,14 +872,14 @@ Status Executor::NextRow(Scan* scan, Row** row) {
             return NextRowFull((FullJoin*)scan, row);
         case ScanType::Inner:
             return NextRowInner((InnerJoin*)scan, row);
-        case ScanType::Cross:
-            return NextRowCross((CrossJoin*)scan, row);
         case ScanType::Constant:
             return NextRowConstant((ConstantTable*)scan, row);
         case ScanType::Table:
             return NextRowTable((PrimaryTable*)scan, row);
         case ScanType::Select:
             return NextRow((SelectScan*)scan, row);
+        case ScanType::Product:
+            return NextRow((ProductScan*)scan, row);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
@@ -1065,30 +1067,6 @@ Status Executor::NextRowInner(InnerJoin* scan, Row** r) {
     return Status(false, "Debug Error: Should never see this message");
 }
 
-Status Executor::NextRowCross(CrossJoin* scan, Row** r) {
-    Row* right_row;
-    if (!NextRow(scan->right_, &right_row).Ok()) {
-        {
-            Status s = NextRow(scan->left_, &scan->left_row_);
-            if (!s.Ok())
-                return Status(false, "No more rows");
-        }
-
-        {
-            BeginScan(scan->right_);
-            Status s = NextRow(scan->right_, &right_row);
-            if (!s.Ok())
-                return Status(false, "No more rows");
-        } 
-    }
-
-    std::vector<Datum> result = scan->left_row_->data_;
-    result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());
-    *r = new Row(result);
-
-    return Status();
-}
-
 Status Executor::NextRowConstant(ConstantTable* scan, Row** r) {
     if (scan->cur_ > 0)
         return Status(false, "No more rows");
@@ -1151,5 +1129,41 @@ Status Executor::NextRow(SelectScan* scan, Row** r) {
     return Status(false, "No more records");
 }
 
+Status Executor::NextRow(ProductScan* scan, Row** r) {
+    if (!scan->left_row_) {
+        Status s = NextRow(scan->left_, &scan->left_row_);
+        if (!s.Ok())
+            return Status(false, "No more records");
+    }
+
+    Row* right_row;
+    {
+        Status s = NextRow(scan->right_, &right_row);
+        if (!s.Ok()) {
+            {
+                Status s2 = BeginScan(scan->right_);
+                if (!s2.Ok())
+                    return s;
+            }
+            {
+                Status s2 = NextRow(scan->left_, &scan->left_row_);
+                if (!s2.Ok())
+                    return Status(false, "No more records");
+            }
+            {
+                Status s2 = NextRow(scan->right_, &right_row);
+                if (!s2.Ok())
+                    return Status(false, "No more records");
+            }
+        }
+    }    
+
+
+    std::vector<Datum> result = scan->left_row_->data_;
+    result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());
+    *r = new Row(result);
+
+    return Status();
+}
 
 }

@@ -51,20 +51,20 @@ private:
     Status BeginScanLeft(LeftJoin* scan);
     Status BeginScanFull(FullJoin* scan);
     Status BeginScanInner(InnerJoin* scan);
-    Status BeginScanCross(CrossJoin* scan);
     Status BeginScanConstant(ConstantTable* scan);
     Status BeginScanTable(PrimaryTable* scan);
     Status BeginScan(SelectScan* scan);
+    Status BeginScan(ProductScan* scan);
     
     //TODO: these function names can be the same 'NextRow' since the argument will overload it
     Status NextRow(Scan* scan, Row** r);
     Status NextRowLeft(LeftJoin* scan, Row** r);
     Status NextRowFull(FullJoin* scan, Row** r);
     Status NextRowInner(InnerJoin* scan, Row** r);
-    Status NextRowCross(CrossJoin* scan, Row** r);
     Status NextRowConstant(ConstantTable* scan, Row** r);
     Status NextRowTable(PrimaryTable* scan, Row** r);
     Status NextRow(SelectScan* scan, Row** r);
+    Status NextRow(ProductScan* scan, Row** r);
 
     inline void ResetAggState() {
         is_agg_ = false;

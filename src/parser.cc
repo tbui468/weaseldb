@@ -250,7 +250,7 @@ Status Parser::ParseBinaryScan(Scan** wt) {
             case TokenType::Cross: {
                 EatToken(TokenType::Join, "Parse Error: Expected keyword 'join' after keyword 'cross'");
                 Scan* right = ParseScan(ParsePrimaryScan);
-                *wt = new CrossJoin(left, right);
+                *wt = new ProductScan(left, right);
                 return Status();
             }
             case TokenType::Inner: {
