@@ -111,7 +111,7 @@ public:
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
     bool remove_duplicates_;
-    std::vector<Attribute> row_description_;
+    std::vector<Attribute> row_description_; //TODO: look at notes in Analyzer::SelectVerifier to see what to assign this to
 };
 
 class InsertStmt: public Stmt {

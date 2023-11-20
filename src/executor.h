@@ -53,6 +53,7 @@ private:
     Status BeginScan(SelectScan* scan);
     Status BeginScan(ProductScan* scan);
     Status BeginScan(OuterSelectScan* scan);
+    Status BeginScan(ProjectScan* scan);
     
     //TODO: these function names can be the same 'NextRow' since the argument will overload it
     Status NextRow(Scan* scan, Row** r);
@@ -61,6 +62,7 @@ private:
     Status NextRow(SelectScan* scan, Row** r);
     Status NextRow(ProductScan* scan, Row** r);
     Status NextRow(OuterSelectScan* scan, Row** r);
+    Status NextRow(ProjectScan* scan, Row** r);
 
     inline void ResetAggState() {
         is_agg_ = false;

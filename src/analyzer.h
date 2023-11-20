@@ -47,6 +47,7 @@ private:
     Status VerifySelectScan(SelectScan* scan, AttributeSet** working_attrs);
     Status Verify(ProductScan* scan, AttributeSet** working_attrs);
     Status Verify(OuterSelectScan* scan, AttributeSet** working_attrs);
+    Status Verify(ProjectScan* scan, AttributeSet** working_attrs);
 
     Status GetSchema(const std::string& table_name, Schema** schema) {
         *schema = nullptr;

@@ -194,7 +194,8 @@ enum class ScanType {
     Table,
     Select,
     Product,
-    OuterSelect
+    OuterSelect,
+    Project
 };
 
 class Scan {
@@ -275,6 +276,25 @@ public:
     std::unordered_map<std::string, bool>::iterator left_it_;
     std::unordered_map<std::string, bool>::iterator right_it_;
     bool scanning_rows_;
+};
+
+
+class ProjectScan: public Scan {
+public:
+    ProjectScan(Scan* input, std::vector<Expr*> projs, std::vector<OrderCol> order_cols, Expr* limit, bool distinct):
+        input_(input), projs_(std::move(projs)), order_cols_(std::move(order_cols)), limit_(limit), distinct_(distinct), attrs_({}) {}
+    ScanType Type() const override {
+        return ScanType::Project;
+    }
+public:
+    Scan* input_;
+    std::vector<Expr*> projs_;
+    std::vector<OrderCol> order_cols_;
+    Expr* limit_;
+    bool distinct_;
+    std::vector<Attribute> attrs_;
+    RowSet* output_;
+    size_t cursor_ {0};
 };
 
 }

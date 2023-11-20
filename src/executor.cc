@@ -781,6 +781,8 @@ Status Executor::BeginScan(Scan* scan) {
             return BeginScan((ProductScan*)scan);
         case ScanType::OuterSelect:
             return BeginScan((OuterSelectScan*)scan);
+        case ScanType::Project:
+            return BeginScan((ProjectScan*)scan);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
@@ -832,6 +834,142 @@ Status Executor::BeginScan(OuterSelectScan* scan) {
     return Status();
 }
 
+Status Executor::BeginScan(ProjectScan* scan) {
+    scan->cursor_ = 0;
+    RowSet* rs = new RowSet(scan->attrs_);
+    {
+        Status s = BeginScan(scan->input_);
+        if (!s.Ok()) return s;
+
+        Row* r;
+        while (NextRow(scan->input_, &r).Ok()) {
+            rs->rows_.push_back(r);
+        }
+    }
+
+    //sort filtered rows in-place
+    //TODO: should sort while populating output_ rather than sorting after the fact
+    if (!scan->order_cols_.empty()) {
+        //lambdas can only capture non-member variables
+        std::vector<OrderCol>& order_cols = scan->order_cols_;
+
+        std::sort(rs->rows_.begin(), rs->rows_.end(), 
+                //No error checking in lambda...
+                //do scope rows need to be pushed/popped of query state stack here???
+                [order_cols, this](Row* t1, Row* t2) -> bool { 
+                for (OrderCol oc: order_cols) {
+                Datum d1;
+                this->scopes_.push_back(t1);
+                this->Eval(oc.col, t1, &d1);
+                this->scopes_.pop_back();
+
+                Datum d2;
+                this->scopes_.push_back(t2);
+                this->Eval(oc.col, t2, &d2);
+                this->scopes_.pop_back();
+
+                if (d1 == d2)
+                continue;
+
+                Row* r = nullptr;
+                Datum d;
+                this->Eval(oc.asc, r, &d);
+                if (d.AsBool()) {
+                    return d1 < d2;
+                }
+                return d1 > d2;
+                }
+
+                return true;
+                });
+    }
+
+    //TODO: temporary to get program running and tests passing
+    //TODO: need to refactor a large chunk of this function (along with NextRow(ProjectScan*, ...))
+
+    //projection
+    RowSet* proj_rs = new RowSet(scan->attrs_);
+
+    for (size_t i = 0; i < rs->rows_.size(); i++) {
+        proj_rs->rows_.push_back(new Row({}));
+    }
+
+    int idx = 0;
+
+    for (Expr* e: scan->projs_) {
+        std::vector<Datum> col;
+        Datum result;
+
+        ResetAggState();
+
+        for (Row* r: rs->rows_) {
+            scopes_.push_back(r);
+            Status s = Eval(e, r, &result);
+            scopes_.pop_back();
+
+            if (!s.Ok())
+                return s;
+
+            if (!is_agg_)
+                col.push_back(result);
+        }
+
+        if (is_agg_) {
+            //put the result of the aggregate function onto column
+            col.push_back(result);
+
+            //if aggregate function, determine the DatumType here (DatumType::Null is used as placeholder in Analyze)
+            Attribute a = scan->attrs_.at(idx);
+            scan->attrs_.at(idx) = Attribute(a.rel_ref, a.name, result.Type(), a.not_null_constraint);
+
+            //TODO: Used to reset aggregate state here
+        }
+
+        if (col.size() < proj_rs->rows_.size()) {
+            proj_rs->rows_.resize(col.size());
+        } else if (col.size() > proj_rs->rows_.size()) {
+            return Status(false, "Error: Mixing column references with and without aggregation functions causes mismatched column sizes!");
+        }
+
+        for (size_t i = 0; i < col.size(); i++) {
+            proj_rs->rows_.at(i)->data_.push_back(col.at(i));
+        }
+
+        idx++;
+    }
+
+    scan->output_ = new RowSet(scan->attrs_);
+
+    //remove duplicates
+    if (scan->distinct_) {
+        std::unordered_map<std::string, bool> map;
+        for (Row* r: proj_rs->rows_) {
+            std::string key = Datum::SerializeData(r->data_);
+            if (map.find(key) == map.end()) {
+                map.insert({key, true});
+                scan->output_->rows_.push_back(r);
+            }
+        }
+    } else {
+        scan->output_->rows_ = proj_rs->rows_;
+    }
+
+    //limit in-place
+    Row dummy_row({});
+    Datum d;
+    //do rows need to be pushed/popped on query state row stack here?
+    //should scalar subqueries be allowed in the limit clause?
+    Status s = Eval(scan->limit_, &dummy_row, &d);
+    if (!s.Ok()) return s;
+
+    size_t limit = d == -1 ? std::numeric_limits<size_t>::max() : d.AsInt8();
+    if (limit < scan->output_->rows_.size()) {
+        scan->output_->rows_.resize(limit);
+    }
+
+    return Status();
+}
+
 Status Executor::NextRow(Scan* scan, Row** row) {
     switch (scan->Type()) {
         case ScanType::Constant:
@@ -844,6 +982,8 @@ Status Executor::NextRow(Scan* scan, Row** row) {
             return NextRow((ProductScan*)scan, row);
         case ScanType::OuterSelect:
             return NextRow((OuterSelectScan*)scan, row);
+        case ScanType::Project:
+            return NextRow((ProjectScan*)scan, row);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
@@ -948,22 +1088,6 @@ Status Executor::NextRow(ProductScan* scan, Row** r) {
     return Status();
 }
 
-/*
- * a1
- * a2
- * a3
- * b1 true
- * b2 
- * b3 true
- * c1
- * c2
- * c3
- */
-
-/*
- * right scan
- * a: false, b: true, 1: true, 2: false, 3: true
- */
 
 Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
     while (NextRow(scan->scan_, r).Ok()) {
@@ -1051,6 +1175,16 @@ Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
         }
 
         scan->right_it_++;
+    }
+
+    return Status(false, "No more records");
+}
+
+Status Executor::NextRow(ProjectScan* scan, Row** r) {
+    if (scan->cursor_ < scan->output_->rows_.size()) {
+        *r = scan->output_->rows_.at(scan->cursor_);
+        scan->cursor_++;
+        return Status();
     }
 
     return Status(false, "No more records");

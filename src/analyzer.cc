@@ -213,6 +213,7 @@ Status Analyzer::SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types)
         types.push_back(type);
 
         //fill in row description for usage during execution stage
+        //TODO: stmt row_description_ should be replaced with the working_attrs returned by calling Verify on input_scan_
         stmt->row_description_.emplace_back("?rel_ref?", e->ToString(), type, false);
     }
 
@@ -558,6 +559,8 @@ Status Analyzer::Verify(Scan* scan, AttributeSet** working_attrs) {
             return Verify((ProductScan*)scan, working_attrs);
         case ScanType::OuterSelect:
             return Verify((OuterSelectScan*)scan, working_attrs);
+        case ScanType::Project:
+            return Verify((ProjectScan*)scan, working_attrs);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
@@ -668,6 +671,95 @@ Status Analyzer::Verify(OuterSelectScan* scan, AttributeSet** working_attrs) {
     scopes_.pop_back();
 
     return Status();
+}
+
+Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
+    AttributeSet* input_attrs;
+    {
+        Status s = Verify(scan->input_, &input_attrs);
+        if (!s.Ok())
+            return s;
+    }
+
+    scopes_.push_back(input_attrs);
+
+    //replace wildcards with actual attribute names
+    while (true) { //looping since multiple wildcards may be used, eg 'select *, * from [table];'
+        int idx = -1;
+        for (size_t i = 0; i < scan->projs_.size(); i++) {
+            Expr* e = scan->projs_.at(i);
+            if (e->Type() == ExprType::Literal && ((Literal*)e)->t_.type == TokenType::Star) {
+                idx = i;
+                break; 
+            }
+        }
+
+        if (idx == -1)
+            break;
+
+        scan->projs_.erase(scan->projs_.begin() + idx);
+        std::vector<Expr*> attr;
+        for (const Attribute& a: input_attrs->GetAttributes()) {
+            attr.push_back(new ColRef(Token(a.name, TokenType::Identifier), Token(a.rel_ref, TokenType::Identifier)));
+        }
+        scan->projs_.insert(scan->projs_.begin() + idx, attr.begin(), attr.end());
+    }
+
+    //projection
+    {
+        std::vector<std::string> names;
+        std::vector<DatumType> types;
+        std::vector<bool> not_nulls;
+        for (Expr* e: scan->projs_) {
+            DatumType type;
+            Status s = Verify(e, &type);
+            if (!s.Ok()) {
+                return s;
+            }
+
+            names.push_back(e->ToString());
+            types.push_back(type);
+            not_nulls.push_back(false); //dummy value that is not used
+        }
+
+        *working_attrs = new AttributeSet("?rel_ref?", names, types, not_nulls);
+        scan->attrs_ = (*working_attrs)->GetAttributes();
+    }
+
+    //order cols
+    for (OrderCol oc: scan->order_cols_) {
+        {
+            DatumType type;
+            Status s = Verify(oc.col, &type);
+            if (!s.Ok())
+                return s;
+        }
+
+        {
+            DatumType type;
+            Status s = Verify(oc.asc, &type);
+            if (!s.Ok()) {
+                return s;
+            }
+        }
+    }
+
+    //limit
+    {
+        DatumType type;
+        Status s = Verify(scan->limit_, &type);
+        if (!s.Ok()) {
+            return s;
+        }
+
+        if (!Datum::TypeIsInteger(type)) {
+            return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
+        }
+    }
+
+    scopes_.pop_back();
+
+    return Status(); 
 }
 
 }
