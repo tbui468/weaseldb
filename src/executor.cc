@@ -771,10 +771,6 @@ Status Executor::EvalCast(Cast* expr, Row* row, Datum* result) {
 
 Status Executor::BeginScan(Scan* scan) {
     switch (scan->Type()) {
-        case ScanType::Left:
-            return BeginScanLeft((LeftJoin*)scan);
-        case ScanType::Full:
-            return BeginScanFull((FullJoin*)scan);
         case ScanType::Constant:
             return BeginScanConstant((ConstantTable*)scan);
         case ScanType::Table:
@@ -783,36 +779,11 @@ Status Executor::BeginScan(Scan* scan) {
             return BeginScan((SelectScan*)scan);
         case ScanType::Product:
             return BeginScan((ProductScan*)scan);
+        case ScanType::OuterSelect:
+            return BeginScan((OuterSelectScan*)scan);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
-}
-
-Status Executor::BeginScanLeft(LeftJoin* scan) {
-    {
-        Status s = BeginScan(scan->left_);
-        //should we return if there's an error?
-    }
-
-    { 
-        Status s = BeginScan(scan->right_);
-        //should we return if there's an error?
-    }
-
-    //initialize left row
-    Status s = NextRow(scan->left_, &scan->left_row_);
-    scan->lefts_inserted_ = 0;
-    if (!s.Ok())
-        return Status(false, "No more rows");
-
-    return Status();
-}
-
-Status Executor::BeginScanFull(FullJoin* scan) {
-    BeginScan(scan->right_join_);
-    scan->do_right_ = true;
-
-    return Status();
 }
 
 Status Executor::BeginScanConstant(ConstantTable* scan) {
@@ -850,12 +821,19 @@ Status Executor::BeginScan(ProductScan* scan) {
     return Status();
 }
 
+Status Executor::BeginScan(OuterSelectScan* scan) {
+    {
+        Status s = BeginScan(scan->scan_);
+        if (!s.Ok()) return s;
+    }
+
+    scan->scanning_rows_ = true;
+
+    return Status();
+}
+
 Status Executor::NextRow(Scan* scan, Row** row) {
     switch (scan->Type()) {
-        case ScanType::Left:
-            return NextRowLeft((LeftJoin*)scan, row);
-        case ScanType::Full:
-            return NextRowFull((FullJoin*)scan, row);
         case ScanType::Constant:
             return NextRowConstant((ConstantTable*)scan, row);
         case ScanType::Table:
@@ -864,148 +842,11 @@ Status Executor::NextRow(Scan* scan, Row** row) {
             return NextRow((SelectScan*)scan, row);
         case ScanType::Product:
             return NextRow((ProductScan*)scan, row);
+        case ScanType::OuterSelect:
+            return NextRow((OuterSelectScan*)scan, row);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
-}
-
-Status Executor::NextRowLeft(LeftJoin* scan, Row** r) {
-    Row* right_row;
-
-    while (true) {
-        if (!NextRow(scan->right_, &right_row).Ok()) {
-            //get new left
-            {
-                if (scan->lefts_inserted_ == 0) {
-                    std::vector<Datum> result = scan->left_row_->data_;
-                    for (int i = 0; i < scan->right_attr_count_; i++) {
-                        result.push_back(Datum());
-                    }
-
-                    *r = new Row(result);
-                    scan->lefts_inserted_++;
-
-                    return Status();
-                }
-
-                Status s = NextRow(scan->left_, &scan->left_row_);
-                scan->lefts_inserted_ = 0;
-                if (!s.Ok())
-                    return Status(false, "No more rows");
-            }
-
-            {
-                BeginScan(scan->right_);
-                Status s = NextRow(scan->right_, &right_row);
-                if (!s.Ok())
-                    return Status(false, "No more rows");
-            } 
-        }
-
-        {
-            std::vector<Datum> result = scan->left_row_->data_;
-            result.insert(result.end(), right_row->data_.begin(), right_row->data_.end());
-
-            *r = new Row(result);
-            Datum d;
-
-            scopes_.push_back(*r);
-            Status s = Eval(scan->condition_, *r, &d);
-            scopes_.pop_back();
-
-            if (d.AsBool()) {
-                scan->lefts_inserted_++;
-                return Status();
-            }
-
-        }
-    }
-
-    return Status(false, "Debug Error: Should never see this message");
-}
-
-Status Executor::NextRowFull(FullJoin* scan, Row** r) {
-    //attempt grabbing row from right_join_
-    //if none left, initialize left_ and right_, and start processing left join but only use values with nulled right sides
-    if (scan->do_right_) {
-        if (NextRow(scan->right_join_, r).Ok()) {
-            return Status();
-        } else {
-            //reset to begin augmented left outer join scan
-            scan->do_right_ = false;
-            BeginScan(scan->left_);
-            BeginScan(scan->right_);
-            Status s = NextRow(scan->left_, &scan->left_row_);
-            scan->lefts_inserted_ = 0;
-            if (!s.Ok())
-                return Status(false, "No more rows");
-        }
-    }
-
-
-    //right join is done, so grabbing left join rows where the right side has no match, and will be nulled
-    Row* right_row;
-
-    while (true) {
-        if (!NextRow(scan->right_, &right_row).Ok()) {
-            //get new left
-            if (scan->lefts_inserted_ == 0) {
-                std::vector<Datum> result;
-                int right_attr_count = scan->attr_count_ - scan->left_row_->data_.size();
-                for (int i = 0; i < right_attr_count; i++) {
-                    result.push_back(Datum());
-                }
-
-                result.insert(result.end(), scan->left_row_->data_.begin(), scan->left_row_->data_.end());
-
-                *r = new Row(result);
-                scan->lefts_inserted_++;
-
-                return Status();
-            }
-
-            {
-                Status s = NextRow(scan->left_, &scan->left_row_);
-                scan->lefts_inserted_ = 0;
-                if (!s.Ok())
-                    return Status(false, "No more rows");
-            }
-
-            {
-                BeginScan(scan->right_);
-                Status s = NextRow(scan->right_, &right_row);
-                if (!s.Ok())
-                    return Status(false, "No more rows");
-            } 
-        }
-
-        //checking 'on' condition, but not adding row if true since
-        //that was already taken care of with the right outer join
-        //only checking if condition is met or not so that we know
-        //whether the current left row needs to be concatenated with a nulled right row 
-        {
-            std::vector<Datum> result = right_row->data_;
-            result.insert(result.end(), scan->left_row_->data_.begin(), scan->left_row_->data_.end());
-
-            Row temp(result);
-            Datum d;
-
-            scopes_.push_back(&temp);
-            Status s = Eval(scan->condition_, &temp, &d);
-            scopes_.pop_back();
-
-            //TODO: optimization opportunity here
-            //if a left join row has a matching right side here, no need to check the
-            //rest of the right rows to determine if a left + nulled-right is necessary
-            //can go straight to the next left row immediately
-            if (d.AsBool()) {
-                scan->lefts_inserted_++;
-            }
-
-        }
-    }
-
-    return Status(false, "Debug Errpr: Should never see this message");
 }
 
 Status Executor::NextRowConstant(ConstantTable* scan, Row** r) {
@@ -1105,6 +946,114 @@ Status Executor::NextRow(ProductScan* scan, Row** r) {
     *r = new Row(result);
 
     return Status();
+}
+
+/*
+ * a1
+ * a2
+ * a3
+ * b1 true
+ * b2 
+ * b3 true
+ * c1
+ * c2
+ * c3
+ */
+
+/*
+ * right scan
+ * a: false, b: true, 1: true, 2: false, 3: true
+ */
+
+Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
+    while (NextRow(scan->scan_, r).Ok()) {
+        std::string left_key;
+        std::string right_key;
+        for (size_t i = 0; i < (*r)->data_.size(); i++) {
+            Datum& d = (*r)->data_.at(i);
+            if (i < scan->scan_->left_->attrs_->AttributeCount()) {
+                left_key += d.Serialize();
+            } else {
+                right_key += d.Serialize();
+            } 
+        }
+
+        if (scan->left_pass_table_.find(left_key) == scan->left_pass_table_.end()) {
+            scan->left_pass_table_.insert({left_key, false});
+        }
+
+        if (scan->right_pass_table_.find(right_key) == scan->right_pass_table_.end()) {
+            scan->right_pass_table_.insert({right_key, false});
+        }
+
+        Datum result;
+        {
+            scopes_.push_back(*r);
+            Status s = Eval(scan->expr_, *r, &result);
+            scopes_.pop_back();
+
+            if (!s.Ok())
+                return s;
+        }
+
+        if (result.AsBool()) {
+            scan->left_pass_table_.at(left_key) = true;
+            scan->right_pass_table_.at(right_key) = true;
+            return Status();
+        }
+    }
+
+    if (scan->scanning_rows_) {
+        scan->scanning_rows_ = false;
+        scan->left_it_ = scan->include_left_ ? scan->left_pass_table_.begin() : scan->left_pass_table_.end();
+        scan->right_it_ = scan->include_right_ ? scan->right_pass_table_.begin() : scan->right_pass_table_.end();
+    }
+
+   while (scan->left_it_ != scan->left_pass_table_.end()) {
+        if (!scan->left_it_->second) {
+            int off = 0;
+            std::vector<Datum> data;
+            for (const Attribute& a: scan->scan_->left_->attrs_->GetAttributes()) {
+                Datum d(scan->left_it_->first, &off, a.type);
+                data.push_back(d); 
+            }
+
+            for (size_t i = 0; i < scan->scan_->right_->attrs_->AttributeCount(); i++) {
+                data.emplace_back();
+            }
+
+            *r = new Row(data);
+            scan->left_it_++;
+
+            return Status();
+        }
+
+        scan->left_it_++;
+    }
+
+    while (scan->right_it_ != scan->right_pass_table_.end()) {
+        if (!scan->right_it_->second) {
+            std::vector<Datum> data;
+            for (size_t i = 0; i < scan->scan_->left_->attrs_->AttributeCount(); i++) {
+                data.emplace_back();
+            }
+
+            int off = 0;
+            for (const Attribute& a: scan->scan_->right_->attrs_->GetAttributes()) {
+                Datum d(scan->right_it_->first, &off, a.type);
+                data.push_back(d); 
+            }
+
+            *r = new Row(data);
+            scan->right_it_++;
+
+            return Status();
+        }
+
+        scan->right_it_++;
+    }
+
+    return Status(false, "No more records");
 }
 
 }

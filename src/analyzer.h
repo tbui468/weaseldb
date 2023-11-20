@@ -42,12 +42,11 @@ private:
 
     Status Verify(Scan* scan, AttributeSet** working_attrs);
 
-    Status VerifyLeft(LeftJoin* scan, AttributeSet** working_attrs); 
-    Status VerifyFull(FullJoin* scan, AttributeSet** working_attrs);
     Status VerifyConstant(ConstantTable* scan, AttributeSet** working_attrs);
     Status VerifyTable(PrimaryTable* scan, AttributeSet** working_attrs);
     Status VerifySelectScan(SelectScan* scan, AttributeSet** working_attrs);
     Status Verify(ProductScan* scan, AttributeSet** working_attrs);
+    Status Verify(OuterSelectScan* scan, AttributeSet** working_attrs);
 
     Status GetSchema(const std::string& table_name, Schema** schema) {
         *schema = nullptr;

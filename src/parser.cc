@@ -266,7 +266,7 @@ Status Parser::ParseBinaryScan(Scan** wt) {
                 Scan* right = ParseScan(ParsePrimaryScan);
                 EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for left joins");
                 Expr* on = ParseExpr(Base);
-                *wt = new LeftJoin(left, right, on);
+                *wt = new OuterSelectScan(new ProductScan(left, right), on, true, false);
                 return Status();
             }
             case TokenType::Right: {
@@ -274,7 +274,7 @@ Status Parser::ParseBinaryScan(Scan** wt) {
                 Scan* right = ParseScan(ParsePrimaryScan);
                 EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for right joins");
                 Expr* on = ParseExpr(Base);
-                *wt = new LeftJoin(right, left, on);
+                *wt = new OuterSelectScan(new ProductScan(left, right), on, false, true);
                 return Status();
             }
             case TokenType::Full: {
@@ -282,7 +282,7 @@ Status Parser::ParseBinaryScan(Scan** wt) {
                 Scan* right = ParseScan(ParsePrimaryScan);
                 EatToken(TokenType::On, "Parse Error: Expected 'on' keyword and join predicate for full joins");
                 Expr* on = ParseExpr(Base);
-                *wt = new FullJoin(left, right, on);
+                *wt = new OuterSelectScan(new ProductScan(left, right), on, true, true);
                 return Status();
             }
             default:

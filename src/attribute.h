@@ -9,14 +9,14 @@
 namespace wsldb {
 
 struct Attribute {
-    Attribute(): rel_ref(""), name(""), type(DatumType::Null), not_null_constraint(true) {} //placeholders
+    Attribute() {}
     Attribute(const std::string& rel_ref, const std::string& name, DatumType type, bool not_null_constraint):
         rel_ref(rel_ref), name(name), type(type), not_null_constraint(not_null_constraint) {}
 
-    std::string rel_ref;
-    std::string name;
-    DatumType type;
-    bool not_null_constraint;
+    std::string rel_ref         {""};
+    std::string name            {""};
+    DatumType type              {DatumType::Null};
+    bool not_null_constraint    {true};
 
     std::string ToString() const;
     Status CheckConstraints(DatumType type) const;

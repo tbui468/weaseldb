@@ -105,10 +105,10 @@ bool TokenTypeIsAggregateFunction(TokenType type);
 
 class Token {
 public:
-    Token(): lexeme(""), type(TokenType::Null) {}
+    Token() {}
     Token(std::string lexeme, TokenType type): lexeme(std::move(lexeme)), type(type) {}
-    std::string lexeme;
-    TokenType type;
+    std::string lexeme  {""};
+    TokenType type      {TokenType::Null};
 };
 
 bool TokensSubsetOf(const std::vector<Token>& left, const std::vector<Token>& right);

@@ -548,10 +548,6 @@ Status Analyzer::VerifyCast(Cast* expr, DatumType* type) {
 
 Status Analyzer::Verify(Scan* scan, AttributeSet** working_attrs) {
     switch (scan->Type()) {
-        case ScanType::Left:
-            return VerifyLeft((LeftJoin*)scan, working_attrs);
-        case ScanType::Full:
-            return VerifyFull((FullJoin*)scan, working_attrs);
         case ScanType::Constant:
             return VerifyConstant((ConstantTable*)scan, working_attrs);
         case ScanType::Table:
@@ -560,62 +556,11 @@ Status Analyzer::Verify(Scan* scan, AttributeSet** working_attrs) {
             return VerifySelectScan((SelectScan*)scan, working_attrs);
         case ScanType::Product:
             return Verify((ProductScan*)scan, working_attrs);
+        case ScanType::OuterSelect:
+            return Verify((OuterSelectScan*)scan, working_attrs);
         default:
             return Status(false, "Execution Error: Invalid scan type");
     }
-}
-
-Status Analyzer::VerifyLeft(LeftJoin* scan, AttributeSet** working_attrs) {
-    AttributeSet* left_attrs;
-    {
-        Status s = Verify(scan->left_, &left_attrs);
-        if (!s.Ok())
-            return s;
-    }
-
-    AttributeSet* right_attrs;
-    {
-        Status s = Verify(scan->right_, &right_attrs);
-        if (!s.Ok())
-            return s;
-    }
-
-    scan->right_attr_count_ = right_attrs->AttributeCount();
-
-    {
-        bool has_duplicate_tables;
-        *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
-        scan->attrs_ = *working_attrs;
-        if (has_duplicate_tables)
-            return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
-    }
-
-    scopes_.push_back(*working_attrs);
-    {
-        DatumType type;
-        Status s = Verify(scan->condition_, &type);
-        if (!s.Ok())
-            return s;
-
-        if (type != DatumType::Bool) {
-            return Status(false, "Error: Left join condition must evaluate to a boolean type");
-        }
-    }
-    scopes_.pop_back();
-
-    return Status();
-}
-
-Status Analyzer::VerifyFull(FullJoin* scan, AttributeSet** working_attrs) {
-    Status s = Verify(scan->right_join_, working_attrs);
-    scan->attrs_ = *working_attrs;
-
-    if (!s.Ok())
-        return s;
-
-    scan->attr_count_ = (*working_attrs)->AttributeCount();
-
-    return Status();
 }
 
 
@@ -697,6 +642,31 @@ Status Analyzer::Verify(ProductScan* scan, AttributeSet** working_attrs) {
         if (has_duplicate_tables)
             return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
     }
+    return Status();
+}
+
+Status Analyzer::Verify(OuterSelectScan* scan, AttributeSet** working_attrs) {
+    {
+        Status s = Verify(scan->scan_, working_attrs);
+        if (!s.Ok())
+            return s;
+    }
+
+    scopes_.push_back(*working_attrs);
+
+    {
+        DatumType type;
+        Status s = Verify(scan->expr_, &type);
+        if (!s.Ok())
+           return s; 
+
+        if (type != DatumType::Bool) {
+            return Status(false, "Analysis Error: where clause expression must evaluate to true or false");
+        }
+    }
+
+    scopes_.pop_back();
+
     return Status();
 }
 

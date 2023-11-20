@@ -190,12 +190,11 @@ public:
 };
 
 enum class ScanType {
-    Left, //right-join is just a left-join with the input scans swapped
-    Full,
     Constant,
     Table,
     Select,
-    Product
+    Product,
+    OuterSelect
 };
 
 class Scan {
@@ -207,46 +206,6 @@ public:
 public:
     AttributeSet* attrs_ { nullptr };
 };
-
-class LeftJoin: public Scan {
-public:
-    LeftJoin(Scan* left, Scan* right, Expr* condition): left_(left), right_(right), condition_(condition) {}
-    ScanType Type() const override {
-        return ScanType::Left;
-    }
-public:
-    //used to track number of times a given left row is inserted into the final working table
-    //if a row is inserted 0 times, then insert the left row and fill in the right row with nulls
-    int lefts_inserted_;
-    int right_attr_count_;
-    Row* left_row_;
-    Scan* left_;
-    Scan* right_;
-    Expr* condition_;
-};
-
-//Idea: make a left join, run that to get left rows + rows in common
-//Then run the right join, but only include rights with left sides that are nulled out
-class FullJoin: public Scan {
-public:
-    FullJoin(Scan* left, Scan* right, Expr* condition): 
-        left_(left), right_(right), condition_(condition), right_join_(new LeftJoin(right, left, condition)) {}
-    ScanType Type() const override {
-        return ScanType::Full;
-    }
-public:
-    //used to track number of times a given left row is inserted into the final working table
-    //if a row is inserted 0 times, then insert the left row and fill in the right row with nulls
-    int lefts_inserted_;
-    int attr_count_;
-    bool do_right_;
-    Row* left_row_;
-    Scan* left_;
-    Scan* right_;
-    Expr* condition_;
-    LeftJoin* right_join_;
-};
-
 
 class ConstantTable: public Scan {
 public:
@@ -296,6 +255,26 @@ public:
     Scan* left_;
     Scan* right_;
     Row* left_row_;
+};
+
+class OuterSelectScan: public Scan {
+public:
+    OuterSelectScan(ProductScan* scan, Expr* expr, bool include_left, bool include_right): 
+        scan_(scan), expr_(expr), include_left_(include_left), include_right_(include_right), scanning_rows_(true) {}
+
+    ScanType Type() const override {
+        return ScanType::OuterSelect;
+    }
+public:
+    ProductScan* scan_;
+    Expr* expr_;
+    bool include_left_;
+    bool include_right_;
+    std::unordered_map<std::string, bool> left_pass_table_;
+    std::unordered_map<std::string, bool> right_pass_table_;
+    std::unordered_map<std::string, bool>::iterator left_it_;
+    std::unordered_map<std::string, bool>::iterator right_it_;
+    bool scanning_rows_;
 };
 
 }
