@@ -90,28 +90,12 @@ public:
 
 class SelectStmt: public Stmt {
 public:
-    SelectStmt(Scan* target, 
-               std::vector<Expr*> projs,
-               std::vector<OrderCol> order_cols,
-               Expr* limit,
-               bool remove_duplicates):
-                    target_(target),
-                    projs_(std::move(projs)),
-                    order_cols_(std::move(order_cols)),
-                    limit_(limit),
-                    remove_duplicates_(remove_duplicates),
-                    row_description_({}) {}
-
+    SelectStmt(Scan* scan): scan_(scan) {}
     StmtType Type() const override {
         return StmtType::Select;
     }
 public:
-    Scan* target_;
-    std::vector<Expr*> projs_;
-    std::vector<OrderCol> order_cols_;
-    Expr* limit_;
-    bool remove_duplicates_;
-    std::vector<Attribute> row_description_; //TODO: look at notes in Analyzer::SelectVerifier to see what to assign this to
+    Scan* scan_; //TODO: this should be a ProjectScan since Select Stmts will only ever have that type of scan
 };
 
 class InsertStmt: public Stmt {

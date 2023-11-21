@@ -443,10 +443,8 @@ Status Parser::ParseStmt(Stmt** stmt) {
             //if the select statement is a subquery, it will not end with a semicolon
             AdvanceIf(TokenType::SemiColon);
 
-            *stmt = new SelectStmt(target, target_cols, order_cols, limit, remove_duplicates);
-            //TODO: the above line should be replaced with these two lines - SelectStmt will need to be rewritten
-            //Scan* project_scan = new ProjectScan(target, target_cols, order_cols, limit, remove_duplicates);
-            //*stmt = new SelectStmt(project_scan);
+            Scan* project_scan = new ProjectScan(target, target_cols, order_cols, limit, remove_duplicates);
+            *stmt = new SelectStmt(project_scan);
             return Status();
         }
 

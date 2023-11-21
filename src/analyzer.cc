@@ -171,84 +171,16 @@ Status Analyzer::DeleteVerifier(DeleteStmt* stmt) {
     return Status(); 
 }
 
-Status Analyzer::SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types) { 
+Status Analyzer::SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types) {
     AttributeSet* working_attrs;
     {
-        Status s = Verify(stmt->target_, &working_attrs);
-        if (!s.Ok())
-            return s;
+        Status s = Verify(stmt->scan_, &working_attrs);
+        if (!s.Ok()) return s;
     }
 
-    scopes_.push_back(working_attrs);
-
-    //replace wildcards with actual attribute names
-    while (true) { //looping since multiple wildcards may be used
-        int idx = -1;
-        for (size_t i = 0; i < stmt->projs_.size(); i++) {
-            Expr* e = stmt->projs_.at(i);
-            if (e->Type() == ExprType::Literal && ((Literal*)e)->t_.type == TokenType::Star) {
-                idx = i;
-                break; 
-            }
-        }
-
-        if (idx == -1)
-            break;
-
-        stmt->projs_.erase(stmt->projs_.begin() + idx);
-        std::vector<Expr*> attr;
-        for (const Attribute& a: working_attrs->GetAttributes()) {
-            attr.push_back(new ColRef(Token(a.name, TokenType::Identifier), Token(a.rel_ref, TokenType::Identifier)));
-        }
-        stmt->projs_.insert(stmt->projs_.begin() + idx, attr.begin(), attr.end());
+    for (const Attribute& a: working_attrs->GetAttributes()) {
+        types.push_back(a.type);
     }
-
-    //projection
-    for (Expr* e: stmt->projs_) {
-        DatumType type;
-        Status s = Verify(e, &type);
-        if (!s.Ok()) {
-            return s;
-        }
-        types.push_back(type);
-
-        //fill in row description for usage during execution stage
-        //TODO: stmt row_description_ should be replaced with the working_attrs returned by calling Verify on input_scan_
-        stmt->row_description_.emplace_back("?rel_ref?", e->ToString(), type, false);
-    }
-
-    //order cols
-    for (OrderCol oc: stmt->order_cols_) {
-        {
-            DatumType type;
-            Status s = Verify(oc.col, &type);
-            if (!s.Ok())
-                return s;
-        }
-
-        {
-            DatumType type;
-            Status s = Verify(oc.asc, &type);
-            if (!s.Ok()) {
-                return s;
-            }
-        }
-    }
-
-    //limit
-    {
-        DatumType type;
-        Status s = Verify(stmt->limit_, &type);
-        if (!s.Ok()) {
-            return s;
-        }
-
-        if (!Datum::TypeIsInteger(type)) {
-            return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
-        }
-    }
-
-    scopes_.pop_back();
 
     return Status(); 
 }
@@ -494,9 +426,6 @@ Status Analyzer::VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type) {
             return s;
     }
 
-    //TODO: this should be taken from GetQueryState()->attrs
-    //at this point we don't know if the working table is a constant or physical or other table type
-    //so how can we set *evaluated_type for type checking?
     if (types.size() != 1)
         return Status(false, "Error: Scalar subquery must return a single value");
 

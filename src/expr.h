@@ -200,12 +200,12 @@ enum class ScanType {
 
 class Scan {
 public:
-    std::vector<Attribute> GetAttributes() const {
+    std::vector<Attribute> GetAttributes() const { //TODO: check if this is being used anywhere
         return attrs_->GetAttributes();
     }
     virtual ScanType Type() const = 0;
 public:
-    AttributeSet* attrs_ { nullptr };
+    AttributeSet* attrs_ { nullptr }; //TODO: check if this is being used anywhere
 };
 
 class ConstantTable: public Scan {
@@ -292,7 +292,7 @@ public:
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
     bool distinct_;
-    std::vector<Attribute> attrs_;
+    std::vector<Attribute> attrs_; //TODO: rename to output_attrs_
     RowSet* output_;
     size_t cursor_ {0};
 };
