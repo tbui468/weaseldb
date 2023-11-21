@@ -42,8 +42,8 @@ private:
 
     Status Verify(Scan* scan, AttributeSet** working_attrs);
 
-    Status VerifyConstant(ConstantTable* scan, AttributeSet** working_attrs);
-    Status VerifyTable(PrimaryTable* scan, AttributeSet** working_attrs);
+    Status VerifyConstant(ConstantScan* scan, AttributeSet** working_attrs);
+    Status VerifyTable(TableScan* scan, AttributeSet** working_attrs);
     Status VerifySelectScan(SelectScan* scan, AttributeSet** working_attrs);
     Status Verify(ProductScan* scan, AttributeSet** working_attrs);
     Status Verify(OuterSelectScan* scan, AttributeSet** working_attrs);

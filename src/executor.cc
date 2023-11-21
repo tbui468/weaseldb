@@ -557,9 +557,9 @@ Status Executor::EvalCast(Cast* expr, Row* row, Datum* result) {
 Status Executor::BeginScan(Scan* scan) {
     switch (scan->Type()) {
         case ScanType::Constant:
-            return BeginScanConstant((ConstantTable*)scan);
+            return BeginScanConstant((ConstantScan*)scan);
         case ScanType::Table:
-            return BeginScanTable((PrimaryTable*)scan);
+            return BeginScanTable((TableScan*)scan);
         case ScanType::Select:
             return BeginScan((SelectScan*)scan);
         case ScanType::Product:
@@ -573,12 +573,12 @@ Status Executor::BeginScan(Scan* scan) {
     }
 }
 
-Status Executor::BeginScanConstant(ConstantTable* scan) {
+Status Executor::BeginScanConstant(ConstantScan* scan) {
     scan->cur_ = 0;
     return Status();
 }
 
-Status Executor::BeginScanTable(PrimaryTable* scan) {
+Status Executor::BeginScanTable(TableScan* scan) {
     /*
     int scan_idx = 0;
     return scan->table_->BeginScan(storage_, scan_idx);*/
@@ -669,9 +669,6 @@ Status Executor::BeginScan(ProjectScan* scan) {
                 });
     }
 
-    //TODO: temporary to get program running and tests passing
-    //TODO: need to refactor a large chunk of this function (along with NextRow(ProjectScan*, ...))
-
     //projection
     RowSet* proj_rs = new RowSet(scan->attrs_);
 
@@ -758,9 +755,9 @@ Status Executor::BeginScan(ProjectScan* scan) {
 Status Executor::NextRow(Scan* scan, Row** row) {
     switch (scan->Type()) {
         case ScanType::Constant:
-            return NextRowConstant((ConstantTable*)scan, row);
+            return NextRowConstant((ConstantScan*)scan, row);
         case ScanType::Table:
-            return NextRowTable((PrimaryTable*)scan, row);
+            return NextRowTable((TableScan*)scan, row);
         case ScanType::Select:
             return NextRow((SelectScan*)scan, row);
         case ScanType::Product:
@@ -774,7 +771,7 @@ Status Executor::NextRow(Scan* scan, Row** row) {
     }
 }
 
-Status Executor::NextRowConstant(ConstantTable* scan, Row** r) {
+Status Executor::NextRowConstant(ConstantScan* scan, Row** r) {
     if (scan->cur_ > 0)
         return Status(false, "No more rows");
 
@@ -788,7 +785,7 @@ Status Executor::NextRowConstant(ConstantTable* scan, Row** r) {
     return Status();
 }
 
-Status Executor::NextRowTable(PrimaryTable* scan, Row** r) {
+Status Executor::NextRowTable(TableScan* scan, Row** r) {
     if (!scan->it_->Valid()) return Status(false, "no more records");
 
     std::string value = scan->it_->Value();
@@ -979,7 +976,7 @@ Status Executor::NextRow(ProjectScan* scan, Row** r) {
 Status Executor::DeleteRow(Scan* scan, Row* r) {
     switch (scan->Type()) {
         case ScanType::Table:
-            return DeleteRow((PrimaryTable*)scan, r);
+            return DeleteRow((TableScan*)scan, r);
         case ScanType::Select:
             return DeleteRow((SelectScan*)scan, r);
         default:
@@ -991,7 +988,7 @@ Status Executor::DeleteRow(SelectScan* scan, Row* r) {
     return DeleteRow(scan->scan_, r);
 }
 
-Status Executor::DeleteRow(PrimaryTable* scan, Row* r) {
+Status Executor::DeleteRow(TableScan* scan, Row* r) {
     //delete from primary index
     {
         Index* primary_idx = &scan->schema_->idxs_.at(0);
@@ -1012,7 +1009,7 @@ Status Executor::DeleteRow(PrimaryTable* scan, Row* r) {
 Status Executor::UpdateRow(Scan* scan, Row* old_r, Row* new_r) {
     switch (scan->Type()) {
         case ScanType::Table:
-            return UpdateRow((PrimaryTable*)scan, old_r, new_r);
+            return UpdateRow((TableScan*)scan, old_r, new_r);
         case ScanType::Select:
             return UpdateRow((SelectScan*)scan, old_r, new_r);
         default:
@@ -1024,7 +1021,7 @@ Status Executor::UpdateRow(SelectScan* scan, Row* old_r, Row* new_r) {
     return UpdateRow(scan->scan_, old_r, new_r);
 }
 
-Status Executor::UpdateRow(PrimaryTable* scan, Row* old_r, Row* new_r) {
+Status Executor::UpdateRow(TableScan* scan, Row* old_r, Row* new_r) {
     //update primary index
     std::string updated_primary_key;
     {
@@ -1070,13 +1067,13 @@ Status Executor::UpdateRow(PrimaryTable* scan, Row* old_r, Row* new_r) {
 Status Executor::InsertRow(Scan* scan, const std::vector<Expr*>& exprs) {
     switch (scan->Type()) {
         case ScanType::Table:
-            return InsertRow((PrimaryTable*)scan, exprs);
+            return InsertRow((TableScan*)scan, exprs);
         default:
             return Status(false, "Execution Error: Only table scans allow record insertion");
     }
 }
 
-Status Executor::InsertRow(PrimaryTable* scan, const std::vector<Expr*>& exprs) {
+Status Executor::InsertRow(TableScan* scan, const std::vector<Expr*>& exprs) {
     //fill call fields with default null
     std::vector<Datum> nulls;
     for (size_t i = 0; i < scan->schema_->attrs_.size(); i++) {

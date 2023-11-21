@@ -48,8 +48,8 @@ private:
     
     Status BeginScan(Scan* scan);
     //TODO: these function names can be the same 'BeginScan' since the argument will overload it
-    Status BeginScanConstant(ConstantTable* scan);
-    Status BeginScanTable(PrimaryTable* scan);
+    Status BeginScanConstant(ConstantScan* scan);
+    Status BeginScanTable(TableScan* scan);
     Status BeginScan(SelectScan* scan);
     Status BeginScan(ProductScan* scan);
     Status BeginScan(OuterSelectScan* scan);
@@ -57,8 +57,8 @@ private:
     
     //TODO: these function names can be the same 'NextRow' since the argument will overload it
     Status NextRow(Scan* scan, Row** r);
-    Status NextRowConstant(ConstantTable* scan, Row** r);
-    Status NextRowTable(PrimaryTable* scan, Row** r);
+    Status NextRowConstant(ConstantScan* scan, Row** r);
+    Status NextRowTable(TableScan* scan, Row** r);
     Status NextRow(SelectScan* scan, Row** r);
     Status NextRow(ProductScan* scan, Row** r);
     Status NextRow(OuterSelectScan* scan, Row** r);
@@ -66,14 +66,14 @@ private:
 
     Status DeleteRow(Scan* scan, Row* r);
     Status DeleteRow(SelectScan* scan, Row* r);
-    Status DeleteRow(PrimaryTable* scan, Row* r);
+    Status DeleteRow(TableScan* scan, Row* r);
 
     Status UpdateRow(Scan* scan, Row* old_r, Row* new_r);
     Status UpdateRow(SelectScan* scan, Row* old_r, Row* new_r);
-    Status UpdateRow(PrimaryTable* scan, Row* old_r, Row* new_r);
+    Status UpdateRow(TableScan* scan, Row* old_r, Row* new_r);
 
     Status InsertRow(Scan* scan, const std::vector<Expr*>& exprs);
-    Status InsertRow(PrimaryTable* scan, const std::vector<Expr*>& exprs);
+    Status InsertRow(TableScan* scan, const std::vector<Expr*>& exprs);
 
     inline void ResetAggState() {
         is_agg_ = false;

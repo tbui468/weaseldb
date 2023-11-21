@@ -470,9 +470,9 @@ Status Analyzer::VerifyCast(Cast* expr, DatumType* type) {
 Status Analyzer::Verify(Scan* scan, AttributeSet** working_attrs) {
     switch (scan->Type()) {
         case ScanType::Constant:
-            return VerifyConstant((ConstantTable*)scan, working_attrs);
+            return VerifyConstant((ConstantScan*)scan, working_attrs);
         case ScanType::Table:
-            return VerifyTable((PrimaryTable*)scan, working_attrs);
+            return VerifyTable((TableScan*)scan, working_attrs);
         case ScanType::Select:
             return VerifySelectScan((SelectScan*)scan, working_attrs);
         case ScanType::Product:
@@ -487,7 +487,7 @@ Status Analyzer::Verify(Scan* scan, AttributeSet** working_attrs) {
 }
 
 
-Status Analyzer::VerifyConstant(ConstantTable* scan, AttributeSet** working_attrs) {
+Status Analyzer::VerifyConstant(ConstantScan* scan, AttributeSet** working_attrs) {
     std::vector<std::string> names;
     std::vector<DatumType> types;
     std::vector<bool> not_nulls;
@@ -507,7 +507,7 @@ Status Analyzer::VerifyConstant(ConstantTable* scan, AttributeSet** working_attr
     return Status();
 }
 
-Status Analyzer::VerifyTable(PrimaryTable* scan, AttributeSet** working_attrs) {
+Status Analyzer::VerifyTable(TableScan* scan, AttributeSet** working_attrs) {
     bool ok = GetSchema(scan->tab_name_, &scan->schema_).Ok();
 
     if (!ok) {

@@ -208,9 +208,9 @@ public:
     AttributeSet* attrs_ { nullptr }; //TODO: check if this is being used anywhere
 };
 
-class ConstantTable: public Scan {
+class ConstantScan: public Scan {
 public:
-    ConstantTable(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
+    ConstantScan(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
     ScanType Type() const override {
         return ScanType::Constant;
     }
@@ -219,11 +219,11 @@ public:
     int cur_;
 };
 
-class PrimaryTable: public Scan {
+class TableScan: public Scan {
 public:
-    PrimaryTable(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
+    TableScan(Token tab_name, Token ref_name): tab_name_(tab_name.lexeme), ref_name_(ref_name.lexeme) {}
     //if an alias is not provided, the reference name is the same as the physical table name
-    PrimaryTable(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
+    TableScan(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
     ScanType Type() const override {
         return ScanType::Table;
     }
