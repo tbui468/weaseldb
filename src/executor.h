@@ -64,6 +64,17 @@ private:
     Status NextRow(OuterSelectScan* scan, Row** r);
     Status NextRow(ProjectScan* scan, Row** r);
 
+    Status DeleteRow(Scan* scan, Row* r);
+    Status DeleteRow(SelectScan* scan, Row* r);
+    Status DeleteRow(PrimaryTable* scan, Row* r);
+
+    Status UpdateRow(Scan* scan, Row* old_r, Row* new_r);
+    Status UpdateRow(SelectScan* scan, Row* old_r, Row* new_r);
+    Status UpdateRow(PrimaryTable* scan, Row* old_r, Row* new_r);
+
+    Status InsertRow(Scan* scan, const std::vector<Expr*>& exprs);
+    Status InsertRow(PrimaryTable* scan, const std::vector<Expr*>& exprs);
+
     inline void ResetAggState() {
         is_agg_ = false;
         first_ = true;

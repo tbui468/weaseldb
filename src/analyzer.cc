@@ -85,17 +85,20 @@ Status Analyzer::CreateVerifier(CreateStmt* stmt) {
 }
 
 Status Analyzer::InsertVerifier(InsertStmt* stmt) { 
+    AttributeSet* working_attrs;
     {
-        Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
-        if (!s.Ok())
-            return s;
+        Status s = Verify(stmt->scan_, &working_attrs);
+        if (!s.Ok()) return s;
     }
-   
-    AttributeSet* working_attrs = stmt->schema_->MakeAttributeSet(stmt->target_.lexeme);
+
+    std::vector<std::string> tables = working_attrs->TableNames();
+    if (tables.size() != 1) {
+        return Status(false, "Analysis Error: Cannot insert into more than a single table");
+    }
 
     for (Token t: stmt->attrs_) {
-        if (!working_attrs->Contains(stmt->target_.lexeme, t.lexeme)) {
-            return Status(false, ("Error: Table does not have a matching column '" + t.lexeme + "'"));
+        if (!working_attrs->Contains(tables.at(0), t.lexeme)) {
+            return Status(false, "Error: Table does not have a matching column '" + t.lexeme + "'");
         }
     }
 
@@ -128,12 +131,6 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
 
 
 Status Analyzer::UpdateVerifier(UpdateStmt* stmt) { 
-    {
-        Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
-        if (!s.Ok())
-            return s;
-    }
-   
     AttributeSet* working_attrs;
     {
         Status s = Verify(stmt->scan_, &working_attrs);
@@ -155,12 +152,6 @@ Status Analyzer::UpdateVerifier(UpdateStmt* stmt) {
 
 
 Status Analyzer::DeleteVerifier(DeleteStmt* stmt) { 
-    {
-        Status s = GetSchema(stmt->target_.lexeme, &stmt->schema_);
-        if (!s.Ok())
-            return s;
-    }
-
     AttributeSet* working_attrs;
     {
         Status s = Verify(stmt->scan_, &working_attrs);

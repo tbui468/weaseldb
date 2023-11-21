@@ -155,57 +155,8 @@ Status Executor::CreateExecutor(CreateStmt* stmt) {
 
 Status Executor::InsertExecutor(InsertStmt* stmt) { 
     for (std::vector<Expr*> exprs: stmt->col_assigns_) {
-        //fill call fields with default null
-        std::vector<Datum> nulls;
-        for (size_t i = 0; i < stmt->schema_->attrs_.size(); i++) {
-            nulls.push_back(Datum());
-        }
-
-        Row row(nulls);
-
-        for (Expr* e: exprs) {
-            Datum d;
-            Status s = Eval(e, &row, &d); //result d is not used
-            if (!s.Ok()) return s;
-        }
-
-        //insert autoincrementing _rowid
-        {
-            //insertions will leave space at first index for _rowid
-            //TODO: this will NOT work if multiple txns try to use RowId at the same time - lost update problem here
-            //When schema is read, need to use GetForUpdate to prevent lost updates
-            int64_t rowid = stmt->schema_->NextRowId();
-            row.data_.at(0) = Datum(rowid);
-        }
-
-        //insert into primary index
-        std::string primary_key;
-        {
-
-            Index* primary_idx = &stmt->schema_->idxs_.at(0);
-            std::string value = Datum::SerializeData(row.data_);
-            primary_key = primary_idx->GetKeyFromFields(row.data_);
-            std::string test_value;
-            if ((*txn_)->Get(primary_idx->name_, primary_key, &test_value).Ok())
-                return Status(false, "Error: A record with the same primary key already exists");
-
-            (*txn_)->Put(primary_idx->name_, primary_key, value);
-        }
-
-        //insert into secondary indexes
-        {
-            std::string test_value;
-            for (size_t i = 1; i < stmt->schema_->idxs_.size(); i++) {
-                Index* idx = &stmt->schema_->idxs_.at(i);
-                std::string secondary_key = idx->GetKeyFromFields(row.data_);
-                if ((*txn_)->Get(idx->name_, secondary_key, &test_value).Ok())
-                    return Status(false, "Error: A record with the same secondary key already exists");
-
-                (*txn_)->Put(idx->name_, secondary_key, primary_key);
-            }
-
-            (*txn_)->Put(Storage::Catalog(), stmt->target_.lexeme, stmt->schema_->Serialize());
-        }
+        Status s = InsertRow(stmt->scan_, exprs);
+        if (!s.Ok()) return s;
 
     }
 
@@ -217,13 +168,13 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
 
     Row* r;
     int update_count = 0;
-    Datum d;
     while (NextRow(stmt->scan_, &r).Ok()) {
 
         Row updated_row = *r;
 
         for (Expr* e: stmt->assigns_) {
             scopes_.push_back(&updated_row);
+            Datum d;
             Status s = Eval(e, &updated_row, &d); //returned Datum of ColAssign expressions are ignored
             scopes_.pop_back();
 
@@ -231,44 +182,8 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
                 return s;
         }
 
-        //update primary index
-        std::string updated_primary_key;
-        {
-            Index* primary_idx = &stmt->schema_->idxs_.at(0);
-            std::string old_key = primary_idx->GetKeyFromFields(r->data_);
-            updated_primary_key = primary_idx->GetKeyFromFields(updated_row.data_);
-
-            if (old_key.compare(updated_primary_key) != 0) {
-                std::string dummy_value;
-                if ((*txn_)->Get(primary_idx->name_, updated_primary_key, &dummy_value).Ok())
-                    return Status(false, "Error: A record with the same primary key already exists");
-
-                (*txn_)->Delete(primary_idx->name_, old_key);
-            }
-
-            (*txn_)->Put(primary_idx->name_, updated_primary_key, Datum::SerializeData(updated_row.data_));
-        }
-
-        //update secondary indexes
-        {
-            std::string dummy_value;
-            for (size_t i = 1; i < stmt->schema_->idxs_.size(); i++) {
-                Index* secondary_idx = &stmt->schema_->idxs_.at(i);
-                std::string old_key = secondary_idx->GetKeyFromFields(r->data_);
-                std::string updated_key = secondary_idx->GetKeyFromFields(updated_row.data_);
-
-                if (old_key.compare(updated_key) != 0) {
-                    std::string tmp_value;
-                    if ((*txn_)->Get(secondary_idx->name_, updated_key, &dummy_value).Ok())
-                        return Status(false, "Error: A record with the same secondary key already exists");
-
-                    (*txn_)->Delete(secondary_idx->name_, old_key);
-                }
-
-                (*txn_)->Put(secondary_idx->name_, updated_key, updated_primary_key);
-            }
-
-        }
+        Status s = UpdateRow(stmt->scan_, r, &updated_row);
+        if (!s.Ok()) return s;
 
         update_count++;
     }
@@ -281,21 +196,9 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
 
     Row* r;
     int delete_count = 0;
-    Datum d;
     while (NextRow(stmt->scan_, &r).Ok()) {
-        //delete from primary index
-        {
-            Index* primary_idx = &stmt->schema_->idxs_.at(0);
-            (*txn_)->Delete(primary_idx->name_, primary_idx->GetKeyFromFields(r->data_));
-        }
-
-        //delete key/value in all secondary indexes 
-        {
-            for (size_t i = 1; i < stmt->schema_->idxs_.size(); i++) {
-                Index* secondary_idx = &stmt->schema_->idxs_.at(i);
-                (*txn_)->Delete(secondary_idx->name_, secondary_idx->GetKeyFromFields(r->data_));
-            }
-        }
+        Status s = DeleteRow(stmt->scan_, r);
+        if (!s.Ok()) return s;
         delete_count++;
     }
     return Status(); 
@@ -1070,6 +973,163 @@ Status Executor::NextRow(ProjectScan* scan, Row** r) {
     }
 
     return Status(false, "No more records");
+}
+
+
+Status Executor::DeleteRow(Scan* scan, Row* r) {
+    switch (scan->Type()) {
+        case ScanType::Table:
+            return DeleteRow((PrimaryTable*)scan, r);
+        case ScanType::Select:
+            return DeleteRow((SelectScan*)scan, r);
+        default:
+            return Status(false, "Execution Error: Only table scans and select scans allow record deletion");
+    }
+}
+
+Status Executor::DeleteRow(SelectScan* scan, Row* r) {
+    return DeleteRow(scan->scan_, r);
+}
+
+Status Executor::DeleteRow(PrimaryTable* scan, Row* r) {
+    //delete from primary index
+    {
+        Index* primary_idx = &scan->schema_->idxs_.at(0);
+        (*txn_)->Delete(primary_idx->name_, primary_idx->GetKeyFromFields(r->data_));
+    }
+
+    //delete key/value in all secondary indexes 
+    {
+        for (size_t i = 1; i < scan->schema_->idxs_.size(); i++) {
+            Index* secondary_idx = &scan->schema_->idxs_.at(i);
+            (*txn_)->Delete(secondary_idx->name_, secondary_idx->GetKeyFromFields(r->data_));
+        }
+    }
+
+    return Status();
+}
+
+Status Executor::UpdateRow(Scan* scan, Row* old_r, Row* new_r) {
+    switch (scan->Type()) {
+        case ScanType::Table:
+            return UpdateRow((PrimaryTable*)scan, old_r, new_r);
+        case ScanType::Select:
+            return UpdateRow((SelectScan*)scan, old_r, new_r);
+        default:
+            return Status(false, "Execution Error: Only table scans and select scans allow record updates");
+    }
+}
+
+Status Executor::UpdateRow(SelectScan* scan, Row* old_r, Row* new_r) {
+    return UpdateRow(scan->scan_, old_r, new_r);
+}
+
+Status Executor::UpdateRow(PrimaryTable* scan, Row* old_r, Row* new_r) {
+    //update primary index
+    std::string updated_primary_key;
+    {
+        Index* primary_idx = &scan->schema_->idxs_.at(0);
+        std::string old_key = primary_idx->GetKeyFromFields(old_r->data_);
+        updated_primary_key = primary_idx->GetKeyFromFields(new_r->data_);
+
+        if (old_key.compare(updated_primary_key) != 0) {
+            std::string dummy_value;
+            if ((*txn_)->Get(primary_idx->name_, updated_primary_key, &dummy_value).Ok())
+                return Status(false, "Error: A record with the same primary key already exists");
+
+            (*txn_)->Delete(primary_idx->name_, old_key);
+        }
+
+        (*txn_)->Put(primary_idx->name_, updated_primary_key, Datum::SerializeData(new_r->data_));
+    }
+
+    //update secondary indexes
+    {
+        std::string dummy_value;
+        for (size_t i = 1; i < scan->schema_->idxs_.size(); i++) {
+            Index* secondary_idx = &scan->schema_->idxs_.at(i);
+            std::string old_key = secondary_idx->GetKeyFromFields(old_r->data_);
+            std::string updated_key = secondary_idx->GetKeyFromFields(new_r->data_);
+
+            if (old_key.compare(updated_key) != 0) {
+                std::string tmp_value;
+                if ((*txn_)->Get(secondary_idx->name_, updated_key, &dummy_value).Ok())
+                    return Status(false, "Error: A record with the same secondary key already exists");
+
+                (*txn_)->Delete(secondary_idx->name_, old_key);
+            }
+
+            (*txn_)->Put(secondary_idx->name_, updated_key, updated_primary_key);
+        }
+
+    }
+
+    return Status();
+}
+
+Status Executor::InsertRow(Scan* scan, const std::vector<Expr*>& exprs) {
+    switch (scan->Type()) {
+        case ScanType::Table:
+            return InsertRow((PrimaryTable*)scan, exprs);
+        default:
+            return Status(false, "Execution Error: Only table scans allow record insertion");
+    }
+}
+
+Status Executor::InsertRow(PrimaryTable* scan, const std::vector<Expr*>& exprs) {
+    //fill call fields with default null
+    std::vector<Datum> nulls;
+    for (size_t i = 0; i < scan->schema_->attrs_.size(); i++) {
+        nulls.push_back(Datum());
+    }
+
+    Row r(nulls);
+
+    for (Expr* e: exprs) {
+        Datum d;
+        Status s = Eval(e, &r, &d); //result d is not used
+        if (!s.Ok()) return s;
+    }
+
+    //insert autoincrementing _rowid
+    {
+        //insertions will leave space at first index for _rowid
+        //TODO: this will NOT work if multiple txns try to use RowId at the same time - lost update problem here
+        //When schema is read, need to use GetForUpdate to prevent lost updates
+        int64_t rowid = scan->schema_->NextRowId();
+        r.data_.at(0) = Datum(rowid);
+    }
+
+    //insert into primary index
+    std::string primary_key;
+    {
+
+        Index* primary_idx = &scan->schema_->idxs_.at(0);
+        std::string value = Datum::SerializeData(r.data_);
+        primary_key = primary_idx->GetKeyFromFields(r.data_);
+        std::string test_value;
+        if ((*txn_)->Get(primary_idx->name_, primary_key, &test_value).Ok())
+            return Status(false, "Error: A record with the same primary key already exists");
+
+        (*txn_)->Put(primary_idx->name_, primary_key, value);
+    }
+
+    //insert into secondary indexes
+    {
+        std::string test_value;
+        for (size_t i = 1; i < scan->schema_->idxs_.size(); i++) {
+            Index* idx = &scan->schema_->idxs_.at(i);
+            std::string secondary_key = idx->GetKeyFromFields(r.data_);
+            if ((*txn_)->Get(idx->name_, secondary_key, &test_value).Ok())
+                return Status(false, "Error: A record with the same secondary key already exists");
+
+            (*txn_)->Put(idx->name_, secondary_key, primary_key);
+        }
+
+        (*txn_)->Put(Storage::Catalog(), scan->schema_->table_name_, scan->schema_->Serialize());
+    }
+
+    return Status();
 }
 
 }

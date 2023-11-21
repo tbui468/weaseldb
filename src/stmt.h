@@ -100,14 +100,13 @@ public:
 
 class InsertStmt: public Stmt {
 public:
-    InsertStmt(Token target, std::vector<Token> attrs, std::vector<std::vector<Expr*>> values):
-        target_(target), attrs_(std::move(attrs)), values_(std::move(values)), col_assigns_({}) {}
+    InsertStmt(Scan* scan, std::vector<Token> attrs, std::vector<std::vector<Expr*>> values):
+        scan_(scan), attrs_(std::move(attrs)), values_(std::move(values)), col_assigns_({}) {}
     StmtType Type() const override {
         return StmtType::Insert;
     }
 public:
-    Token target_;
-    Schema* schema_;
+    Scan* scan_;
     std::vector<Token> attrs_;
     std::vector<std::vector<Expr*>> values_;
     std::vector<std::vector<Expr*>> col_assigns_;
@@ -115,27 +114,22 @@ public:
 
 class UpdateStmt: public Stmt {
 public:
-    UpdateStmt(Token target, std::vector<Expr*> assigns, Scan* scan):
-        target_(target), assigns_(std::move(assigns)), scan_(scan) {}
+    UpdateStmt(std::vector<Expr*> assigns, Scan* scan): assigns_(std::move(assigns)), scan_(scan) {}
     StmtType Type() const override {
         return StmtType::Update;
     }
 public:
-    Token target_;
     std::vector<Expr*> assigns_;
     Scan* scan_;
-    Schema* schema_;
 };
 
 class DeleteStmt: public Stmt {
 public:
-    DeleteStmt(Token target, Scan* scan): target_(target), scan_(scan) {}
+    DeleteStmt(Scan* scan): scan_(scan) {}
     StmtType Type() const override {
         return StmtType::Delete;
     }
 public:
-    Token target_;
-    Schema* schema_;
     Scan* scan_;
 };
 

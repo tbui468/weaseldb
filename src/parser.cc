@@ -406,7 +406,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
                 AdvanceIf(TokenType::Comma);
             }
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of insert statement");
-            *stmt = new InsertStmt(target, cols, values);
+            *stmt = new InsertStmt(new PrimaryTable(target), cols, values);
             return Status();
         }
         case TokenType::Select: {
@@ -465,9 +465,9 @@ Status Parser::ParseStmt(Stmt** stmt) {
             Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : nullptr;
 
             if (where_clause) {
-                *stmt = new UpdateStmt(target, assigns, new SelectScan(new PrimaryTable(target), where_clause));
+                *stmt = new UpdateStmt(assigns, new SelectScan(new PrimaryTable(target), where_clause));
             } else {
-                *stmt = new UpdateStmt(target, assigns, new PrimaryTable(target));
+                *stmt = new UpdateStmt(assigns, new PrimaryTable(target));
             }
 
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of update statement");
@@ -481,9 +481,9 @@ Status Parser::ParseStmt(Stmt** stmt) {
             Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : nullptr;
 
             if (where_clause) {
-                *stmt = new DeleteStmt(target, new SelectScan(new PrimaryTable(target), where_clause));
+                *stmt = new DeleteStmt(new SelectScan(new PrimaryTable(target), where_clause));
             } else {
-                *stmt = new DeleteStmt(target, new PrimaryTable(target));
+                *stmt = new DeleteStmt(new PrimaryTable(target));
             }
 
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of delete statement");
