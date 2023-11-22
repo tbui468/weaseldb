@@ -315,14 +315,11 @@ Status Executor::DropModelExecutor(DropModelStmt* stmt) {
  */
 
 Status Executor::EvalLiteral(Literal* expr, Datum* result) {
-    is_agg_ = false;
     *result = Datum(LiteralTokenToDatumType(expr->t_.type), expr->t_.lexeme);
     return Status();
 }
 
 Status Executor::EvalBinary(Binary* expr, Row* row, Datum* result) { 
-    is_agg_ = false;
-
     Datum l;
     {
         Status s = Eval(expr->left_, row, &l);
@@ -360,8 +357,6 @@ Status Executor::EvalBinary(Binary* expr, Row* row, Datum* result) {
 }
 
 Status Executor::EvalUnary(Unary* expr, Row* row, Datum* result) {
-    is_agg_ = false;
-
     Datum right;
     Status s = Eval(expr->right_, row, &right);
     if (!s.Ok()) return s;
@@ -386,14 +381,11 @@ Status Executor::EvalUnary(Unary* expr, Row* row, Datum* result) {
 }
 
 Status Executor::EvalColRef(ColRef* expr, Datum* result) {
-    is_agg_ = false;
     *result = scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_);
     return Status();
 }
 
 Status Executor::EvalColAssign(ColAssign* expr, Row* row, Datum* result) {
-    is_agg_ = false;
-
     Datum right;
     {
         Status s = Eval(expr->right_, row, &right);
@@ -415,6 +407,7 @@ Status Executor::EvalColAssign(ColAssign* expr, Row* row, Datum* result) {
 }
 
 Status Executor::EvalCall(Call* expr, Row* row, Datum* result) {
+    is_agg_ = true;
     Datum arg;
     Status s = Eval(expr->arg_, row, &arg);
     if (!s.Ok())
@@ -422,47 +415,43 @@ Status Executor::EvalCall(Call* expr, Row* row, Datum* result) {
 
     switch (expr->fcn_.type) {
         case TokenType::Avg:
-            sum_ += arg;
-            count_ += Datum(static_cast<int64_t>(1));
-            *result = sum_ / count_;
+            expr->sum_ += arg;
+            expr->count_ += Datum(static_cast<int64_t>(1));
+            *result = expr->sum_ / expr->count_;
             break;
         case TokenType::Count: {
-                                   count_ += Datum(static_cast<int64_t>(1));
-                                   *result = count_;
-                                   break;
-                               }
+            expr->count_ += Datum(static_cast<int64_t>(1));
+            *result = expr->count_;
+            break;
+        }
         case TokenType::Max:
-                               if (first_ || arg > max_) {
-                                   max_ = arg;
-                                   first_ = false;
-                               }
-                               *result = max_;
-                               break;
+            if (expr->first_ || arg > expr->max_) {
+                expr->max_ = arg;
+                expr->first_ = false;
+            }
+            *result = expr->max_;
+            break;
         case TokenType::Min:
-                               if (first_ || arg < min_) {
-                                   min_ = arg;
-                                   first_ = false;
-                               }
-                               *result = min_;
-                               break;
+            if (expr->first_ || arg < expr->min_) {
+                expr->min_ = arg;
+                expr->first_ = false;
+            }
+            *result = expr->min_;
+            break;
         case TokenType::Sum:
-                               sum_ += arg;
-                               *result = sum_;
-                               break;
+            expr->sum_ += arg;
+            *result = expr->sum_;
+            break;
         default:
-                               return Status(false, "Error: Invalid function name");
-                               break;
+            return Status(false, "Error: Invalid function name");
     }
 
     //Calling Eval on argument may set qs.is_agg to false, so need to set it after evaluating argument
-    is_agg_ = true;
 
     return Status();
 }
 
 Status Executor::EvalIsNull(IsNull* expr, Row* row, Datum* result) {
-    is_agg_ = false;
-
     Datum d;
     Status s = Eval(expr->left_, row, &d);
     if (!s.Ok())
@@ -478,9 +467,10 @@ Status Executor::EvalIsNull(IsNull* expr, Row* row, Datum* result) {
 }
 
 Status Executor::EvalScalarSubquery(ScalarSubquery* expr, Datum* result) {
-    is_agg_ = false;
-
+    bool old_is_agg = is_agg_;
     Status s = Execute(expr->stmt_);
+    is_agg_ = old_is_agg;
+
     if (!s.Ok())
         return s;
 
@@ -500,8 +490,6 @@ Status Executor::EvalScalarSubquery(ScalarSubquery* expr, Datum* result) {
 }
 
 Status Executor::EvalPredict(Predict* expr, Row* row, Datum* result) {
-    is_agg_ = false;
-
     Datum d;
     {
         Status s = Eval(expr->arg_, row, &d);
@@ -534,8 +522,6 @@ Status Executor::EvalPredict(Predict* expr, Row* row, Datum* result) {
 }
 
 Status Executor::EvalCast(Cast* expr, Row* row, Datum* result) {
-    is_agg_ = false;
-
     Datum d;
     {
         Status s = Eval(expr->value_, row, &d);
@@ -643,86 +629,88 @@ Status Executor::BeginScan(ProjectScan* scan) {
                 //do scope rows need to be pushed/popped of query state stack here???
                 [order_cols, this](Row* t1, Row* t2) -> bool { 
                 for (OrderCol oc: order_cols) {
-                Datum d1;
-                this->scopes_.push_back(t1);
-                this->Eval(oc.col, t1, &d1);
-                this->scopes_.pop_back();
+                    Datum d1;
+                    this->scopes_.push_back(t1);
+                    this->Eval(oc.col, t1, &d1);
+                    this->scopes_.pop_back();
 
-                Datum d2;
-                this->scopes_.push_back(t2);
-                this->Eval(oc.col, t2, &d2);
-                this->scopes_.pop_back();
+                    Datum d2;
+                    this->scopes_.push_back(t2);
+                    this->Eval(oc.col, t2, &d2);
+                    this->scopes_.pop_back();
 
-                if (d1 == d2)
-                continue;
+                    if (d1 == d2)
+                        continue;
 
-                Row* r = nullptr;
-                Datum d;
-                this->Eval(oc.asc, r, &d);
-                if (d.AsBool()) {
-                    return d1 < d2;
-                }
-                return d1 > d2;
+                    Row* r = nullptr;
+                    Datum d;
+                    this->Eval(oc.asc, r, &d);
+                    if (d.AsBool()) {
+                        return d1 < d2;
+                    }
+                    return d1 > d2;
                 }
 
                 return true;
                 });
     }
 
+    //TODO: rewrite this to compute aggregates row-by-row
+    //Then integrate into the beginning of this function when rows are first read
+    //will need to make phantom rows for sorting
+    //Make sure tests in agg_inside_expression.sql pass (will use that to make sure above refactor doesn't break anything)
+
+
     //projection
     RowSet* proj_rs = new RowSet(scan->attrs_);
 
-    for (size_t i = 0; i < rs->rows_.size(); i++) {
-        proj_rs->rows_.push_back(new Row({}));
-    }
-
-    int idx = 0;
-
+    std::vector<Datum> data;
     for (Expr* e: scan->projs_) {
-        std::vector<Datum> col;
-        Datum result;
+        e->Reset();
+    }
+    bool row_has_agg = false;
 
-        ResetAggState();
+    for (Row* r: rs->rows_) {
+        row_has_agg = false;
+        data.clear();
+        int idx = 0;
 
-        for (Row* r: rs->rows_) {
-            scopes_.push_back(r);
-            Status s = Eval(e, r, &result);
-            scopes_.pop_back();
+        scopes_.push_back(r);
+        for (Expr* e: scan->projs_) {
+            is_agg_ = false;
+            Datum d;
+            Status s = Eval(e, r, &d);
 
-            if (!s.Ok())
-                return s;
+            if (!s.Ok()) return s;
 
-            if (!is_agg_)
-                col.push_back(result);
+            if (is_agg_) {
+                Attribute a = scan->attrs_.at(idx);
+                scan->attrs_.at(idx) = Attribute(a.rel_ref, a.name, d.Type(), a.not_null_constraint);
+            }
+
+            data.push_back(d);
+            idx++;
+
+            if (is_agg_)
+                row_has_agg = true;
         }
+        scopes_.pop_back();
 
-        if (is_agg_) {
-            //put the result of the aggregate function onto column
-            col.push_back(result);
-
-            //if aggregate function, determine the DatumType here (DatumType::Null is used as placeholder in Analyze)
-            Attribute a = scan->attrs_.at(idx);
-            scan->attrs_.at(idx) = Attribute(a.rel_ref, a.name, result.Type(), a.not_null_constraint);
-
-            //TODO: Used to reset aggregate state here
+        if (!row_has_agg) {
+            proj_rs->rows_.push_back(new Row(data));
         }
-
-        if (col.size() < proj_rs->rows_.size()) {
-            proj_rs->rows_.resize(col.size());
-        } else if (col.size() > proj_rs->rows_.size()) {
-            return Status(false, "Error: Mixing column references with and without aggregation functions causes mismatched column sizes!");
-        }
-
-        for (size_t i = 0; i < col.size(); i++) {
-            proj_rs->rows_.at(i)->data_.push_back(col.at(i));
-        }
-
-        idx++;
     }
 
-    scan->output_ = new RowSet(scan->attrs_);
+    if (row_has_agg) {
+        proj_rs->rows_.push_back(new Row(data));
+    }
+
+
+
 
     //remove duplicates
+    scan->output_ = new RowSet(scan->attrs_);
+
     if (scan->distinct_) {
         std::unordered_map<std::string, bool> map;
         for (Row* r: proj_rs->rows_) {

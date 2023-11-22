@@ -75,7 +75,8 @@ static std::vector<Keyword> keywords[] = {
         {"delete", TokenType::Delete},
         {"exists", TokenType::Exists},
         {"unique", TokenType::Unique},
-        {"commit", TokenType::Commit}
+        {"commit", TokenType::Commit},
+        {"having", TokenType::Having}
     },
     {   //7
         {"primary", TokenType::Primary},

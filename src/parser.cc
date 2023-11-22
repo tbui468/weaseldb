@@ -426,6 +426,17 @@ Status Parser::ParseStmt(Stmt** stmt) {
                 target = new SelectScan(target, where_clause);
             }
 
+            std::vector<Expr*> group_cols;
+            if (AdvanceIf(TokenType::Group)) {
+                EatToken(TokenType::By, "Parse Error: Expected keyword 'by' after keyword 'group'");
+                do {
+                    Expr* col = ParseExpr(Base);
+                    group_cols.push_back(col);
+                } while (AdvanceIf(TokenType::Comma));
+            }
+
+            Expr* having_clause = AdvanceIf(TokenType::Having) ? ParseExpr(Base) : nullptr;
+
             std::vector<OrderCol> order_cols;
             if (AdvanceIf(TokenType::Order)) {
                 EatToken(TokenType::By, "Parse Error: Expected keyword 'by' after keyword 'order'");
@@ -443,7 +454,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
             //if the select statement is a subquery, it will not end with a semicolon
             AdvanceIf(TokenType::SemiColon);
 
-            Scan* project_scan = new ProjectScan(target, target_cols, order_cols, limit, remove_duplicates);
+            Scan* project_scan = new ProjectScan(target, target_cols, group_cols, having_clause, order_cols, limit, remove_duplicates);
             *stmt = new SelectStmt(project_scan);
             return Status();
         }

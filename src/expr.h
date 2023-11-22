@@ -31,6 +31,7 @@ class Expr {
 public:
     virtual std::string ToString() = 0;
     virtual ExprType Type() const = 0;
+    virtual void Reset() = 0;
 };
 
 class Literal: public Expr {
@@ -43,6 +44,8 @@ public:
     }
     ExprType Type() const override {
         return ExprType::Literal;
+    }
+    void Reset() override {
     }
 public:
     Token t_;
@@ -57,6 +60,10 @@ public:
     }
     ExprType Type() const override {
         return ExprType::Binary;
+    }
+    void Reset() override {
+        left_->Reset();
+        right_->Reset();
     }
 public:
     Token op_;
@@ -73,6 +80,9 @@ public:
     ExprType Type() const override {
         return ExprType::Unary;
     }
+    void Reset() override {
+        right_->Reset();
+    }
 public:
     Token op_;
     Expr* right_;
@@ -88,6 +98,8 @@ public:
     }
     ExprType Type() const override {
         return ExprType::ColRef;
+    }
+    void Reset() override {
     }
 public:
     Token t_;
@@ -107,6 +119,9 @@ public:
     }
     ExprType Type() const override {
         return ExprType::ColAssign;
+    }
+    void Reset() override {
+        right_->Reset();
     }
 public:
     Token col_;
@@ -130,9 +145,23 @@ public:
     ExprType Type() const override {
         return ExprType::Call;
     }
+    void Reset() override {
+        arg_->Reset();
+        min_ = Datum();
+        max_ = Datum();
+        sum_ = Datum(0);
+        count_ = Datum(0);
+        first_ = true;
+    }
 public:
     Token fcn_;
     Expr* arg_;
+
+    Datum min_ {Datum()};
+    Datum max_ {Datum()};
+    Datum sum_ {Datum(0)};
+    Datum count_ {Datum(0)};
+    bool first_ {true};
 };
 
 class IsNull: public Expr {
@@ -143,6 +172,9 @@ public:
     }
     ExprType Type() const override {
         return ExprType::IsNull;
+    }
+    void Reset() override {
+        left_->Reset();
     }
 public:
     Expr* left_;
@@ -157,6 +189,8 @@ public:
     ExprType Type() const override {
         return ExprType::ScalarSubquery;
     }
+    void Reset() override {
+    }
 public:
     Stmt* stmt_;
 };
@@ -169,6 +203,9 @@ public:
     }
     ExprType Type() const override {
         return ExprType::Predict;
+    }
+    void Reset() override {
+        arg_->Reset();
     }
 public:
     Token model_name_;
@@ -183,6 +220,9 @@ public:
     }
     ExprType Type() const override {
         return ExprType::Cast;
+    }
+    void Reset() override {
+        value_->Reset();
     }
 public:
     Expr* value_;
@@ -281,14 +321,29 @@ public:
 
 class ProjectScan: public Scan {
 public:
-    ProjectScan(Scan* input, std::vector<Expr*> projs, std::vector<OrderCol> order_cols, Expr* limit, bool distinct):
-        input_(input), projs_(std::move(projs)), order_cols_(std::move(order_cols)), limit_(limit), distinct_(distinct), attrs_({}) {}
+    ProjectScan(Scan* input, 
+                std::vector<Expr*> projs, 
+                std::vector<Expr*> group_cols, 
+                Expr* having_clause,
+                std::vector<OrderCol> order_cols, 
+                Expr* limit, 
+                bool distinct):
+                    input_(input), 
+                    projs_(std::move(projs)), 
+                    group_cols_(std::move(group_cols)), 
+                    having_clause_(having_clause), 
+                    order_cols_(std::move(order_cols)), 
+                    limit_(limit), 
+                    distinct_(distinct), 
+                    attrs_({}) {}
     ScanType Type() const override {
         return ScanType::Project;
     }
 public:
     Scan* input_;
     std::vector<Expr*> projs_;
+    std::vector<Expr*> group_cols_;
+    Expr* having_clause_;
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
     bool distinct_;

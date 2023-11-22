@@ -12,7 +12,7 @@ namespace wsldb {
 class Executor {
 public:
     Executor(Storage* storage, Inference* inference, Txn** txn): storage_(storage), inference_(inference), txn_(txn) {
-        ResetAggState();
+        //ResetAggState();
     }
     std::vector<Status> ExecuteQuery(const std::string& query);
 private:
@@ -75,27 +75,14 @@ private:
     Status InsertRow(Scan* scan, const std::vector<Expr*>& exprs);
     Status InsertRow(TableScan* scan, const std::vector<Expr*>& exprs);
 
-    inline void ResetAggState() {
-        is_agg_ = false;
-        first_ = true;
-        sum_ = Datum(0);
-        count_ = Datum(0);
-    }
-
 private:
     Storage* storage_;
     Inference* inference_;
     Txn** txn_;
     std::vector<Row*> scopes_;
 
-
     //state for aggregate functions
-    bool is_agg_;
-    Datum min_;
-    Datum max_;
-    Datum sum_;
-    Datum count_;
-    bool first_;
+    bool is_agg_ {false};
 };
 
 }
