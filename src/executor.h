@@ -31,17 +31,18 @@ private:
 
     //expressions
     Status Eval(Expr* expr, Row* row, Datum* result);
+    Status Eval(Expr* expr, Datum* result);
 
-    Status EvalLiteral(Literal* expr, Datum* result);
-    Status EvalBinary(Binary* expr, Row* row, Datum* result);
-    Status EvalUnary(Unary* expr, Row* row, Datum* result);
-    Status EvalColRef(ColRef* expr, Datum* result);
-    Status EvalColAssign(ColAssign* expr, Row* row, Datum* result);
-    Status EvalCall(Call* expr, Row* row, Datum* result);
-    Status EvalIsNull(IsNull* expr, Row* row, Datum* result);
-    Status EvalScalarSubquery(ScalarSubquery* expr, Datum* result);
-    Status EvalPredict(Predict* expr, Row* row, Datum* result);
-    Status EvalCast(Cast* expr, Row* row, Datum* result);
+    Status Eval(Literal* expr, Datum* result);
+    Status Eval(Binary* expr, Datum* result);
+    Status Eval(Unary* expr, Datum* result);
+    Status Eval(ColRef* expr, Datum* result);
+    Status Eval(ColAssign* expr, Datum* result);
+    Status Eval(Call* expr, Datum* result);
+    Status Eval(IsNull* expr, Datum* result);
+    Status Eval(ScalarSubquery* expr, Datum* result);
+    Status Eval(Predict* expr, Datum* result);
+    Status Eval(Cast* expr, Datum* result);
 
     //TODO: make this Scan wrapper - this it the function SelectStmt should call rather than calling BeginScan/NextRow directly
 //    Status Scan(WorkTable* scan, RowSet* result);

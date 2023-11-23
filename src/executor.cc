@@ -118,43 +118,38 @@ Status Executor::Execute(Stmt* stmt) {
     return s;
 }
 
-Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
-    Status s;
+Status Executor::Eval(Expr* expr, Datum* result) {
     switch (expr->Type()) {
         case ExprType::Literal:
-            s = EvalLiteral((Literal*)expr, result);
-            break;
+            return Eval((Literal*)expr, result);
         case ExprType::Binary:
-            s = EvalBinary((Binary*)expr, row, result);
-            break;
+            return Eval((Binary*)expr, result);
         case ExprType::Unary:
-            s = EvalUnary((Unary*)expr, row, result);
-            break;
+            return Eval((Unary*)expr, result);
         case ExprType::ColRef:
-            s = EvalColRef((ColRef*)expr, result);
-            break;
+            return Eval((ColRef*)expr, result);
         case ExprType::ColAssign:
-            s = EvalColAssign((ColAssign*)expr, row, result);
-            break;
+            return Eval((ColAssign*)expr, result);
         case ExprType::Call:
-            s = EvalCall((Call*)expr, row, result);
-            break;
+            return Eval((Call*)expr, result);
         case ExprType::IsNull:
-            s = EvalIsNull((IsNull*)expr, row, result);
-            break;
+            return Eval((IsNull*)expr, result);
         case ExprType::ScalarSubquery:
-            s = EvalScalarSubquery((ScalarSubquery*)expr, result);
-            break;
+            return Eval((ScalarSubquery*)expr, result);
         case ExprType::Predict:
-            s = EvalPredict((Predict*)expr, row, result);
-            break;
+            return Eval((Predict*)expr, result);
         case ExprType::Cast:
-            s = EvalCast((Cast*)expr, row, result);
-            break;
+            return Eval((Cast*)expr, result);
         default:
-            s = Status(false, "Execution Error: Invalid expression type");
-            break;
+            return Status(false, "Execution Error: Invalid expression type");
     }
+}
+
+Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
+    scopes_.push_back(row);
+    Status s = Eval(expr, result);
+    scopes_.pop_back();
+
     return s;
 }
 
@@ -186,10 +181,8 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
         Row updated_row = *r;
 
         for (Expr* e: stmt->assigns_) {
-            scopes_.push_back(&updated_row);
             Datum d;
             Status s = Eval(e, &updated_row, &d); //returned Datum of ColAssign expressions are ignored
-            scopes_.pop_back();
 
             if (!s.Ok()) 
                 return s;
@@ -327,21 +320,21 @@ Status Executor::DropModelExecutor(DropModelStmt* stmt) {
  * Expression Evaluators
  */
 
-Status Executor::EvalLiteral(Literal* expr, Datum* result) {
+Status Executor::Eval(Literal* expr, Datum* result) {
     *result = Datum(LiteralTokenToDatumType(expr->t_.type), expr->t_.lexeme);
     return Status();
 }
 
-Status Executor::EvalBinary(Binary* expr, Row* row, Datum* result) { 
+Status Executor::Eval(Binary* expr, Datum* result) { 
     Datum l;
     {
-        Status s = Eval(expr->left_, row, &l);
+        Status s = Eval(expr->left_, &l);
         if (!s.Ok()) return s;
     }
 
     Datum r;
     {
-        Status s = Eval(expr->right_, row, &r);
+        Status s = Eval(expr->right_, &r);
         if (!s.Ok()) return s;
     }
 
@@ -369,9 +362,9 @@ Status Executor::EvalBinary(Binary* expr, Row* row, Datum* result) {
     return Status();
 }
 
-Status Executor::EvalUnary(Unary* expr, Row* row, Datum* result) {
+Status Executor::Eval(Unary* expr, Datum* result) {
     Datum right;
-    Status s = Eval(expr->right_, row, &right);
+    Status s = Eval(expr->right_, &right);
     if (!s.Ok()) return s;
 
     switch (expr->op_.type) {
@@ -393,15 +386,15 @@ Status Executor::EvalUnary(Unary* expr, Row* row, Datum* result) {
     return Status();
 }
 
-Status Executor::EvalColRef(ColRef* expr, Datum* result) {
+Status Executor::Eval(ColRef* expr, Datum* result) {
     *result = scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_);
     return Status();
 }
 
-Status Executor::EvalColAssign(ColAssign* expr, Row* row, Datum* result) {
+Status Executor::Eval(ColAssign* expr, Datum* result) {
     Datum right;
     {
-        Status s = Eval(expr->right_, row, &right);
+        Status s = Eval(expr->right_, &right);
         if (!s.Ok()) return s;
     }
 
@@ -419,10 +412,10 @@ Status Executor::EvalColAssign(ColAssign* expr, Row* row, Datum* result) {
     return Status();
 }
 
-Status Executor::EvalCall(Call* expr, Row* row, Datum* result) {
+Status Executor::Eval(Call* expr, Datum* result) {
     is_agg_ = true;
     Datum arg;
-    Status s = Eval(expr->arg_, row, &arg);
+    Status s = Eval(expr->arg_, &arg);
     if (!s.Ok())
         return s;
 
@@ -464,9 +457,9 @@ Status Executor::EvalCall(Call* expr, Row* row, Datum* result) {
     return Status();
 }
 
-Status Executor::EvalIsNull(IsNull* expr, Row* row, Datum* result) {
+Status Executor::Eval(IsNull* expr, Datum* result) {
     Datum d;
-    Status s = Eval(expr->left_, row, &d);
+    Status s = Eval(expr->left_, &d);
     if (!s.Ok())
         return s;
 
@@ -479,7 +472,7 @@ Status Executor::EvalIsNull(IsNull* expr, Row* row, Datum* result) {
     return Status();
 }
 
-Status Executor::EvalScalarSubquery(ScalarSubquery* expr, Datum* result) {
+Status Executor::Eval(ScalarSubquery* expr, Datum* result) {
     bool old_is_agg = is_agg_;
     Status s = Execute(expr->stmt_);
     is_agg_ = old_is_agg;
@@ -502,10 +495,10 @@ Status Executor::EvalScalarSubquery(ScalarSubquery* expr, Datum* result) {
     return Status();
 }
 
-Status Executor::EvalPredict(Predict* expr, Row* row, Datum* result) {
+Status Executor::Eval(Predict* expr, Datum* result) {
     Datum d;
     {
-        Status s = Eval(expr->arg_, row, &d);
+        Status s = Eval(expr->arg_, &d);
         if (!s.Ok())
             return s;
     }
@@ -534,10 +527,10 @@ Status Executor::EvalPredict(Predict* expr, Row* row, Datum* result) {
     return Status();
 }
 
-Status Executor::EvalCast(Cast* expr, Row* row, Datum* result) {
+Status Executor::Eval(Cast* expr, Datum* result) {
     Datum d;
     {
-        Status s = Eval(expr->value_, row, &d);
+        Status s = Eval(expr->value_, &d);
         if (!s.Ok())
             return s;
     }
@@ -643,14 +636,10 @@ Status Executor::BeginScan(ProjectScan* scan) {
                 [order_cols, this](Row* t1, Row* t2) -> bool { 
                 for (OrderCol oc: order_cols) {
                     Datum d1;
-                    this->scopes_.push_back(t1);
                     this->Eval(oc.col, t1, &d1);
-                    this->scopes_.pop_back();
 
                     Datum d2;
-                    this->scopes_.push_back(t2);
                     this->Eval(oc.col, t2, &d2);
-                    this->scopes_.pop_back();
 
                     if (d1 == d2)
                         continue;
@@ -688,7 +677,6 @@ Status Executor::BeginScan(ProjectScan* scan) {
         data.clear();
         int idx = 0;
 
-        scopes_.push_back(r);
         for (Expr* e: scan->projs_) {
             is_agg_ = false;
             Datum d;
@@ -707,7 +695,6 @@ Status Executor::BeginScan(ProjectScan* scan) {
             if (is_agg_)
                 row_has_agg = true;
         }
-        scopes_.pop_back();
 
         if (!row_has_agg) {
             proj_rs->rows_.push_back(new Row(data));
@@ -818,9 +805,7 @@ Status Executor::NextRow(SelectScan* scan, Row** r) {
 
         Datum result;
         {
-            scopes_.push_back(*r);
             Status s = Eval(scan->expr_, *r, &result);
-            scopes_.pop_back();
 
             if (!s.Ok())
                 return s;
@@ -895,9 +880,7 @@ Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
 
         Datum result;
         {
-            scopes_.push_back(*r);
             Status s = Eval(scan->expr_, *r, &result);
-            scopes_.pop_back();
 
             if (!s.Ok())
                 return s;
@@ -1085,9 +1068,7 @@ Status Executor::InsertRow(TableScan* scan, const std::vector<Expr*>& exprs) {
 
     for (Expr* e: exprs) {
         Datum d;
-        scopes_.push_back(&r);
         Status s = Eval(e, &r, &d); //result d is not used
-        scopes_.pop_back();
         if (!s.Ok()) return s;
     }
 
