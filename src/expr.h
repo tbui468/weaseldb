@@ -112,8 +112,7 @@ public:
 //Used for both InsertStmt and UpdateStmt
 class ColAssign: public Expr {
 public:
-    ColAssign(Token col, Expr* right): 
-        col_(col), right_(right), scope_(-1), idx_(-1) {}
+    ColAssign(Token col, Expr* right): col_(col), right_(right) {}
     std::string ToString() override {
         return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
     }
@@ -126,8 +125,6 @@ public:
 public:
     Token col_;
     Expr* right_;
-    int scope_;
-    int idx_;
     DatumType field_type_ {DatumType::Null};
 };
 
@@ -240,12 +237,9 @@ enum class ScanType {
 
 class Scan {
 public:
-    std::vector<Attribute> GetAttributes() const { //TODO: check if this is being used anywhere
-        return attrs_->GetAttributes();
-    }
     virtual ScanType Type() const = 0;
 public:
-    AttributeSet* attrs_ { nullptr }; //TODO: check if this is being used anywhere
+    AttributeSet* attrs_ { nullptr };
 };
 
 class ConstantScan: public Scan {

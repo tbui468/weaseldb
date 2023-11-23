@@ -30,7 +30,7 @@ private:
     Status DropModelExecutor(DropModelStmt* stmt);
 
     //expressions
-    Status Eval(Expr* expr, Row* row, Datum* result);
+    Status PushEvalPop(Expr* expr, Row* row, Datum* result);
     Status Eval(Expr* expr, Datum* result);
 
     Status Eval(Literal* expr, Datum* result);
@@ -81,6 +81,7 @@ private:
     Inference* inference_;
     Txn** txn_;
     std::vector<Row*> scopes_;
+    std::vector<AttributeSet*> attrs_;
 
     //state for aggregate functions
     bool is_agg_ {false};

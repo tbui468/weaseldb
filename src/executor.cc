@@ -145,10 +145,14 @@ Status Executor::Eval(Expr* expr, Datum* result) {
     }
 }
 
-Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
+Status Executor::PushEvalPop(Expr* expr, Row* row, Datum* result) {
     scopes_.push_back(row);
+    //attrs_.push_back(attrs);
+
     Status s = Eval(expr, result);
+
     scopes_.pop_back();
+    //attrs_.pop_back();
 
     return s;
 }
@@ -182,7 +186,9 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
 
         for (Expr* e: stmt->assigns_) {
             Datum d;
-            Status s = Eval(e, &updated_row, &d); //returned Datum of ColAssign expressions are ignored
+            attrs_.push_back(stmt->scan_->attrs_);
+            Status s = PushEvalPop(e, &updated_row, &d); //returned Datum of ColAssign expressions are ignored
+            attrs_.pop_back();
 
             if (!s.Ok()) 
                 return s;
@@ -398,14 +404,34 @@ Status Executor::Eval(ColAssign* expr, Datum* result) {
         if (!s.Ok()) return s;
     }
 
+    size_t i;
+    int data_idx;
+    {
+        std::string table_ref = "";
+        for (i = 0; i < scopes_.size(); i++) {
+            AttributeSet* as = attrs_.rbegin()[i];
+            Attribute a;
+            Status s = as->GetAttribute(table_ref, expr->col_.lexeme, &a);
+            if (!s.Ok())
+                continue;
+
+            data_idx = as->GetAttributeIdx(a.rel_ref, expr->col_.lexeme);
+            break;
+        }
+
+        if (i >= scopes_.size()) {
+            return Status(false, "Error: Column '" + table_ref + "." + expr->col_.lexeme + "' does not exist");
+        }
+    }
+
     if (right.Type() != DatumType::Null && expr->field_type_ != right.Type()) {
         Datum casted_datum;
         if (!Datum::Cast(right, expr->field_type_, &casted_datum))
             return Status(false, "Execution Error: Invalid cast");
 
-        scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_) = casted_datum;
+        scopes_.rbegin()[i]->data_.at(data_idx) = casted_datum;
     } else {
-        scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_) = right;
+        scopes_.rbegin()[i]->data_.at(data_idx) = right;
     }
 
     *result = right; //result not used
@@ -636,17 +662,17 @@ Status Executor::BeginScan(ProjectScan* scan) {
                 [order_cols, this](Row* t1, Row* t2) -> bool { 
                 for (OrderCol oc: order_cols) {
                     Datum d1;
-                    this->Eval(oc.col, t1, &d1);
+                    this->PushEvalPop(oc.col, t1, &d1);
 
                     Datum d2;
-                    this->Eval(oc.col, t2, &d2);
+                    this->PushEvalPop(oc.col, t2, &d2);
 
                     if (d1 == d2)
                         continue;
 
                     Row* r = nullptr;
                     Datum d;
-                    this->Eval(oc.asc, r, &d);
+                    this->PushEvalPop(oc.asc, r, &d);
                     if (d.AsBool()) {
                         return d1 < d2;
                     }
@@ -680,7 +706,7 @@ Status Executor::BeginScan(ProjectScan* scan) {
         for (Expr* e: scan->projs_) {
             is_agg_ = false;
             Datum d;
-            Status s = Eval(e, r, &d);
+            Status s = PushEvalPop(e, r, &d);
 
             if (!s.Ok()) return s;
 
@@ -729,7 +755,7 @@ Status Executor::BeginScan(ProjectScan* scan) {
     Datum d;
     //do rows need to be pushed/popped on query state row stack here?
     //should scalar subqueries be allowed in the limit clause?
-    Status s = Eval(scan->limit_, &dummy_row, &d);
+    Status s = PushEvalPop(scan->limit_, &dummy_row, &d);
     if (!s.Ok()) return s;
 
     size_t limit = d == -1 ? std::numeric_limits<size_t>::max() : d.AsInt8();
@@ -805,7 +831,7 @@ Status Executor::NextRow(SelectScan* scan, Row** r) {
 
         Datum result;
         {
-            Status s = Eval(scan->expr_, *r, &result);
+            Status s = PushEvalPop(scan->expr_, *r, &result);
 
             if (!s.Ok())
                 return s;
@@ -880,7 +906,7 @@ Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
 
         Datum result;
         {
-            Status s = Eval(scan->expr_, *r, &result);
+            Status s = PushEvalPop(scan->expr_, *r, &result);
 
             if (!s.Ok())
                 return s;
@@ -1068,7 +1094,9 @@ Status Executor::InsertRow(TableScan* scan, const std::vector<Expr*>& exprs) {
 
     for (Expr* e: exprs) {
         Datum d;
-        Status s = Eval(e, &r, &d); //result d is not used
+        attrs_.push_back(scan->attrs_);
+        Status s = PushEvalPop(e, &r, &d); //result d is not used
+        attrs_.pop_back();
         if (!s.Ok()) return s;
     }
 

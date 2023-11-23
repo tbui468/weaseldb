@@ -28,6 +28,22 @@ public:
     AttributeSet(AttributeSet* left, AttributeSet* right, bool* has_duplicate_tables);
     bool Contains(const std::string& table, const std::string& col) const;
     Attribute GetAttribute(const std::string& table, const std::string& col) const;
+    Status GetAttribute(const std::string& rel, const std::string& col, Attribute* result) {
+        std::vector<Attribute> results;
+        for (const Attribute& a: attrs_) {
+            if ((a.rel_ref.compare(rel) == 0 || rel == "") && a.name.compare(col) == 0)
+                results.push_back(a);
+        }
+
+        if (results.size() > 1) {
+            return Status(false, "Error: Multiple columns with same name found");
+        } else if (results.size() == 0) {
+            return Status(false, "Error: Column not found");
+        }
+
+        *result = results.at(0);
+        return Status();
+    }
     int GetAttributeIdx(const std::string& table, const std::string& col) const;
     std::vector<std::string> TableNames() const;
     std::vector<Attribute>* TableAttributes(const std::string& table) const;

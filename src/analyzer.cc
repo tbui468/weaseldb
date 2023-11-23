@@ -346,7 +346,12 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
     Attribute a;
     {
         std::string table_ref = "";
-        Status s = GetAttribute(&a, &expr->idx_, &expr->scope_, table_ref, expr->col_.lexeme);
+        Status s;
+        for (AttributeSet* as: scopes_) {
+            s = as->GetAttribute(table_ref, expr->col_.lexeme, &a);
+            if (s.Ok())
+                break;
+        }
         if (!s.Ok())
             return s;
     }
@@ -539,6 +544,7 @@ Status Analyzer::VerifySelectScan(SelectScan* scan, AttributeSet** working_attrs
             return Status(false, "Analysis Error: where clause expression must evaluate to true or false");
         }
     }
+    scan->attrs_ = *working_attrs;
 
     scopes_.pop_back();
 
