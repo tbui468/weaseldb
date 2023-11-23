@@ -119,30 +119,43 @@ Status Executor::Execute(Stmt* stmt) {
 }
 
 Status Executor::Eval(Expr* expr, Row* row, Datum* result) {
+    Status s;
     switch (expr->Type()) {
         case ExprType::Literal:
-            return EvalLiteral((Literal*)expr, result);
+            s = EvalLiteral((Literal*)expr, result);
+            break;
         case ExprType::Binary:
-            return EvalBinary((Binary*)expr, row, result);
+            s = EvalBinary((Binary*)expr, row, result);
+            break;
         case ExprType::Unary:
-            return EvalUnary((Unary*)expr, row, result);
+            s = EvalUnary((Unary*)expr, row, result);
+            break;
         case ExprType::ColRef:
-            return EvalColRef((ColRef*)expr, result);
+            s = EvalColRef((ColRef*)expr, result);
+            break;
         case ExprType::ColAssign:
-            return EvalColAssign((ColAssign*)expr, row, result);
+            s = EvalColAssign((ColAssign*)expr, row, result);
+            break;
         case ExprType::Call:
-            return EvalCall((Call*)expr, row, result);
+            s = EvalCall((Call*)expr, row, result);
+            break;
         case ExprType::IsNull:
-            return EvalIsNull((IsNull*)expr, row, result);
+            s = EvalIsNull((IsNull*)expr, row, result);
+            break;
         case ExprType::ScalarSubquery:
-            return EvalScalarSubquery((ScalarSubquery*)expr, result);
+            s = EvalScalarSubquery((ScalarSubquery*)expr, result);
+            break;
         case ExprType::Predict:
-            return EvalPredict((Predict*)expr, row, result);
+            s = EvalPredict((Predict*)expr, row, result);
+            break;
         case ExprType::Cast:
-            return EvalCast((Cast*)expr, row, result);
+            s = EvalCast((Cast*)expr, row, result);
+            break;
         default:
-            return Status(false, "Execution Error: Invalid expression type");
+            s = Status(false, "Execution Error: Invalid expression type");
+            break;
     }
+    return s;
 }
 
 Status Executor::CreateExecutor(CreateStmt* stmt) { 
@@ -397,9 +410,9 @@ Status Executor::EvalColAssign(ColAssign* expr, Row* row, Datum* result) {
         if (!Datum::Cast(right, expr->field_type_, &casted_datum))
             return Status(false, "Execution Error: Invalid cast");
 
-        row->data_.at(expr->idx_) = casted_datum;
+        scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_) = casted_datum;
     } else {
-        row->data_.at(expr->idx_) = right;
+        scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_) = right;
     }
 
     *result = right; //result not used
@@ -1072,7 +1085,9 @@ Status Executor::InsertRow(TableScan* scan, const std::vector<Expr*>& exprs) {
 
     for (Expr* e: exprs) {
         Datum d;
+        scopes_.push_back(&r);
         Status s = Eval(e, &r, &d); //result d is not used
+        scopes_.pop_back();
         if (!s.Ok()) return s;
     }
 
