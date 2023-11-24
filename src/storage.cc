@@ -52,7 +52,7 @@ void Storage::LoadColFamDescriptors() {
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string table_name = it->key().ToString();
         std::string serialized_schema = it->value().ToString();
-        Schema schema(table_name, serialized_schema);
+        Table schema(table_name, serialized_schema);
         for (const Index& idx: schema.idxs_) {
             col_fam_descriptors_.emplace_back(idx.name_, rocksdb::ColumnFamilyOptions());
         }
@@ -82,7 +82,7 @@ std::string Storage::Models() {
     return "models";
 }
 
-Status Storage::CreateTable(Schema* schema, Txn* txn) {
+Status Storage::CreateTable(Table* schema, Txn* txn) {
     //TODO: obtain exclusive lock on db_;
 
     txn->Put(Catalog(), schema->table_name_, schema->Serialize());
@@ -102,7 +102,7 @@ Status Storage::CreateTable(Schema* schema, Txn* txn) {
     return Status();
 }
 
-Status Storage::DropTable(Schema* schema, Txn* txn) {
+Status Storage::DropTable(Table* schema, Txn* txn) {
     //TODO: obtain exclusive lock on db_;
 
 
@@ -165,16 +165,5 @@ rocksdb::ColumnFamilyHandle* Storage::GetColFamHandle(const std::string& col_fam
     std::cout << "GetColFamHandle - Invalid column family name: " + col_fam + "\n";
     std::exit(1);
 }
-
-/*
-Status Storage::GetSchema(const std::string& tab_name, std::string* serialized_schema) {
-    rocksdb::ReadOptions read_options;
-    rocksdb::Status s = db_->Get(read_options, tab_name, serialized_schema);
-    if (!s.ok()) {
-        return Status(false, "Table not found");
-    }
-
-    return Status();
-}*/
 
 }

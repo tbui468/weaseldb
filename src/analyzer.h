@@ -49,7 +49,7 @@ private:
     Status Verify(OuterSelectScan* scan, AttributeSet** working_attrs);
     Status Verify(ProjectScan* scan, AttributeSet** working_attrs);
 
-    Status GetSchema(const std::string& table_name, Schema** schema) {
+    Status GetSchema(const std::string& table_name, Table** schema) {
         *schema = nullptr;
 
         std::string serialized_schema;
@@ -58,7 +58,7 @@ private:
         if (!ok)
             return Status(false, "Analysis Error: Table with name '" + table_name + "' doesn't exist");
 
-        *schema = new Schema(table_name, serialized_schema);
+        *schema = new Table(table_name, serialized_schema);
 
         return Status();
     }

@@ -1,5 +1,5 @@
 #include "analyzer.h"
-#include "schema.h"
+#include "table.h"
 
 namespace wsldb {
 
@@ -58,7 +58,7 @@ Status Analyzer::Verify(Expr* expr, DatumType* type) {
 }
 
 Status Analyzer::CreateVerifier(CreateStmt* stmt) { 
-    Schema* schema;
+    Table* schema;
     Status s = GetSchema(stmt->target_.lexeme, &schema);
     if (s.Ok()) {
         return Status(false, "Error: Table '" + stmt->target_.lexeme + "' already exists");

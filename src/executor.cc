@@ -3,7 +3,7 @@
 #include <iostream> //TODO: remove this later
 
 #include "executor.h"
-#include "schema.h"
+#include "table.h"
 #include "tokenizer.h"
 #include "parser.h"
 #include "analyzer.h"
@@ -158,7 +158,7 @@ Status Executor::PushEvalPop(Expr* expr, Row* row, AttributeSet* attrs, Datum* r
 }
 
 Status Executor::CreateExecutor(CreateStmt* stmt) { 
-    Schema schema(stmt->target_.lexeme, stmt->names_, stmt->types_, stmt->not_null_constraints_, stmt->uniques_);
+    Table schema(stmt->target_.lexeme, stmt->names_, stmt->types_, stmt->not_null_constraints_, stmt->uniques_);
     storage_->CreateTable(&schema, *txn_); //TODO: should use a txn to serialize schema here rather than using specialized function in Storage class
 
     return Status(); 

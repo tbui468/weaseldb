@@ -11,15 +11,15 @@
 
 namespace wsldb {
 
-class Schema {
+class Table {
 public:
-    Schema(std::string table_name,
+    Table(std::string table_name,
            std::vector<Token> names,
            std::vector<Token> types,
            std::vector<bool> not_null_constraints, 
            std::vector<std::vector<Token>> uniques);
 
-    Schema(std::string table_name, const std::string& buf);
+    Table(std::string table_name, const std::string& buf);
 
     std::string Serialize() const;
     std::vector<Datum> DeserializeData(const std::string& value) const;

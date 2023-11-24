@@ -7,7 +7,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/transaction_db.h"
 #include "status.h"
-#include "schema.h"
+#include "table.h"
 #include "iterator.h"
 #include "txn.h"
 
@@ -23,13 +23,12 @@ public:
     static void DropDatabase(const std::string& path);
     static std::string Catalog();
     static std::string Models();
-    Status CreateTable(Schema* schema, Txn* txn);
-    Status DropTable(Schema* schema, Txn* txn);
+    Status CreateTable(Table* schema, Txn* txn);
+    Status DropTable(Table* schema, Txn* txn);
     Txn* BeginTxn();
     Iterator* NewIterator(const std::string& col_fam);
     int GetColFamIdx(const std::string& col_fam);
     rocksdb::ColumnFamilyHandle* GetColFamHandle(const std::string& col_fam);
-//    Status GetSchema(const std::string& tab_name, std::string* serialized_schema); //TODO: replace with txn Get
 private:
     std::string path_;
     rocksdb::TransactionDB* db_;

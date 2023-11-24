@@ -2,7 +2,7 @@
 
 #include "expr.h"
 #include "token.h"
-#include "schema.h"
+#include "table.h"
 #include "status.h"
 
 namespace wsldb {
@@ -143,7 +143,7 @@ public:
 public:
     Token target_relation_;
     bool has_if_exists_;
-    Schema* schema_;
+    Table* schema_;
 };
 
 class DescribeTableStmt: public Stmt {
@@ -154,7 +154,7 @@ public:
     }
 public:
     Token target_relation_;
-    Schema* schema_;
+    Table* schema_;
 };
 
 class TxnControlStmt: public Stmt {

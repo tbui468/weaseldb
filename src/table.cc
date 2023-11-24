@@ -1,8 +1,8 @@
-#include "schema.h"
+#include "table.h"
 
 namespace wsldb {
 
-Schema::Schema(std::string table_name,
+Table::Table(std::string table_name,
                std::vector<Token> names,
                std::vector<Token> types,
                std::vector<bool> not_null_constraints, 
@@ -27,7 +27,7 @@ Schema::Schema(std::string table_name,
     }
 }
 
-Schema::Schema(std::string table_name, const std::string& buf) {
+Table::Table(std::string table_name, const std::string& buf) {
     table_name_ = table_name;
 
     int off = 0; 
@@ -62,7 +62,7 @@ Schema::Schema(std::string table_name, const std::string& buf) {
     }
 }
 
-std::string Schema::Serialize() const {
+std::string Table::Serialize() const {
     std::string buf;
 
     buf.append((char*)&rowid_counter_, sizeof(int64_t));
@@ -90,7 +90,7 @@ std::string Schema::Serialize() const {
 }
 
 
-std::vector<Datum> Schema::DeserializeData(const std::string& value) const {
+std::vector<Datum> Table::DeserializeData(const std::string& value) const {
     std::vector<Datum> data = std::vector<Datum>();
     int off = 0;
     for (const Attribute& a: attrs_) {
@@ -100,7 +100,7 @@ std::vector<Datum> Schema::DeserializeData(const std::string& value) const {
     return data;
 }
 
-AttributeSet* Schema::MakeAttributeSet(const std::string& ref_name) const {
+AttributeSet* Table::MakeAttributeSet(const std::string& ref_name) const {
     std::vector<std::string> names;
     std::vector<DatumType> types;
     std::vector<bool> not_nulls;
@@ -115,7 +115,7 @@ AttributeSet* Schema::MakeAttributeSet(const std::string& ref_name) const {
 }
 
 
-std::string Schema::IdxName(const std::string& prefix, const std::vector<int>& idxs) const {
+std::string Table::IdxName(const std::string& prefix, const std::vector<int>& idxs) const {
     std::string result = prefix;
 
     for (int i: idxs) {
@@ -125,7 +125,7 @@ std::string Schema::IdxName(const std::string& prefix, const std::vector<int>& i
     return result;
 }
 
-int Schema::GetAttrIdx(const std::string& name) const {
+int Table::GetAttrIdx(const std::string& name) const {
     for (size_t i = 0; i < attrs_.size(); i++) {
         if (name.compare(attrs_.at(i).name) == 0) {
             return i;

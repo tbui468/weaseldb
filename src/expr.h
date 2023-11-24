@@ -5,7 +5,7 @@
 #include "token.h"
 #include "datum.h"
 #include "row.h"
-#include "schema.h"
+#include "table.h"
 #include "status.h"
 #include "iterator.h"
 
@@ -271,7 +271,7 @@ public:
     std::string ref_name_;
     Iterator* it_;
     int scan_idx_; //index to scan (default is 0, which is the primary index)
-    Schema* schema_;
+    Table* schema_;
 };
 
 class SelectScan: public Scan {
