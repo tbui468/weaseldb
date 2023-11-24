@@ -30,7 +30,7 @@ private:
     Status DropModelExecutor(DropModelStmt* stmt);
 
     //expressions
-    Status PushEvalPop(Expr* expr, Row* row, Datum* result);
+    Status PushEvalPop(Expr* expr, Row* row, AttributeSet* attrs, Datum* result);
     Status Eval(Expr* expr, Datum* result);
 
     Status Eval(Literal* expr, Datum* result);

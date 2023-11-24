@@ -145,14 +145,14 @@ Status Executor::Eval(Expr* expr, Datum* result) {
     }
 }
 
-Status Executor::PushEvalPop(Expr* expr, Row* row, Datum* result) {
+Status Executor::PushEvalPop(Expr* expr, Row* row, AttributeSet* attrs, Datum* result) {
     scopes_.push_back(row);
-    //attrs_.push_back(attrs);
+    attrs_.push_back(attrs);
 
     Status s = Eval(expr, result);
 
     scopes_.pop_back();
-    //attrs_.pop_back();
+    attrs_.pop_back();
 
     return s;
 }
@@ -186,9 +186,7 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
 
         for (Expr* e: stmt->assigns_) {
             Datum d;
-            attrs_.push_back(stmt->scan_->attrs_);
-            Status s = PushEvalPop(e, &updated_row, &d); //returned Datum of ColAssign expressions are ignored
-            attrs_.pop_back();
+            Status s = PushEvalPop(e, &updated_row, stmt->scan_->attrs_, &d); //returned Datum of ColAssign expressions are ignored
 
             if (!s.Ok()) 
                 return s;
@@ -218,7 +216,7 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
 
 Status Executor::SelectExecutor(SelectStmt* stmt) {
     Status s = BeginScan(stmt->scan_);
-    RowSet* final_rs = new RowSet(((ProjectScan*)(stmt->scan_))->attrs_);
+    RowSet* final_rs = new RowSet(((ProjectScan*)(stmt->scan_))->output_attrs_);
     Row* r;
     while (NextRow(stmt->scan_, &r).Ok()) {
         final_rs->rows_.push_back(r);
@@ -393,8 +391,29 @@ Status Executor::Eval(Unary* expr, Datum* result) {
 }
 
 Status Executor::Eval(ColRef* expr, Datum* result) {
-    *result = scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_);
+    size_t i;
+    int data_idx;
+    {
+        std::string table_ref = expr->table_ref_;
+        for (i = 0; i < scopes_.size(); i++) {
+            AttributeSet* as = attrs_.rbegin()[i];
+            Attribute a;
+            Status s = as->GetAttribute(table_ref, expr->t_.lexeme, &a, &data_idx);
+            if (s.Ok())
+                break;
+        }
+
+        if (i >= scopes_.size()) {
+            return Status(false, "Error: Column '" + table_ref + "." + expr->t_.lexeme + "' does not exist");
+        }
+    }
+    *result = scopes_.rbegin()[i]->data_.at(data_idx);
     return Status();
+
+    //TODO: saving old code just in case th new stuff breaks
+    /*
+    *result = scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_);
+    return Status();*/
 }
 
 Status Executor::Eval(ColAssign* expr, Datum* result) {
@@ -636,7 +655,7 @@ Status Executor::BeginScan(OuterSelectScan* scan) {
 
 Status Executor::BeginScan(ProjectScan* scan) {
     scan->cursor_ = 0;
-    RowSet* rs = new RowSet(scan->attrs_);
+    RowSet* rs = new RowSet(scan->output_attrs_);
     {
         Status s = BeginScan(scan->input_);
         if (!s.Ok()) return s;
@@ -652,24 +671,25 @@ Status Executor::BeginScan(ProjectScan* scan) {
     if (!scan->order_cols_.empty()) {
         //lambdas can only capture non-member variables
         std::vector<OrderCol>& order_cols = scan->order_cols_;
+        AttributeSet* attrs = scan->attrs_;
 
         std::sort(rs->rows_.begin(), rs->rows_.end(), 
                 //No error checking in lambda...
                 //do scope rows need to be pushed/popped of query state stack here???
-                [order_cols, this](Row* t1, Row* t2) -> bool { 
+                [order_cols, this, attrs](Row* t1, Row* t2) -> bool { 
                 for (OrderCol oc: order_cols) {
                     Datum d1;
-                    this->PushEvalPop(oc.col, t1, &d1);
+                    this->PushEvalPop(oc.col, t1, attrs, &d1);
 
                     Datum d2;
-                    this->PushEvalPop(oc.col, t2, &d2);
+                    this->PushEvalPop(oc.col, t2, attrs, &d2);
 
                     if (d1 == d2)
                         continue;
 
                     Row* r = nullptr;
                     Datum d;
-                    this->PushEvalPop(oc.asc, r, &d);
+                    this->PushEvalPop(oc.asc, r, attrs, &d);
                     if (d.AsBool()) {
                         return d1 < d2;
                     }
@@ -687,7 +707,7 @@ Status Executor::BeginScan(ProjectScan* scan) {
 
 
     //projection
-    RowSet* proj_rs = new RowSet(scan->attrs_);
+    RowSet* proj_rs = new RowSet(scan->output_attrs_);
 
     std::vector<Datum> data;
     for (Expr* e: scan->projs_) {
@@ -703,13 +723,13 @@ Status Executor::BeginScan(ProjectScan* scan) {
         for (Expr* e: scan->projs_) {
             is_agg_ = false;
             Datum d;
-            Status s = PushEvalPop(e, r, &d);
+            Status s = PushEvalPop(e, r, scan->attrs_, &d);
 
             if (!s.Ok()) return s;
 
             if (is_agg_) {
-                Attribute a = scan->attrs_.at(idx);
-                scan->attrs_.at(idx) = Attribute(a.rel_ref, a.name, d.Type(), a.not_null_constraint);
+                Attribute a = scan->output_attrs_.at(idx);
+                scan->output_attrs_.at(idx) = Attribute(a.rel_ref, a.name, d.Type(), a.not_null_constraint);
             }
 
             data.push_back(d);
@@ -732,7 +752,7 @@ Status Executor::BeginScan(ProjectScan* scan) {
 
 
     //remove duplicates
-    scan->output_ = new RowSet(scan->attrs_);
+    scan->output_ = new RowSet(scan->output_attrs_);
 
     if (scan->distinct_) {
         std::unordered_map<std::string, bool> map;
@@ -752,7 +772,8 @@ Status Executor::BeginScan(ProjectScan* scan) {
     Datum d;
     //do rows need to be pushed/popped on query state row stack here?
     //should scalar subqueries be allowed in the limit clause?
-    Status s = PushEvalPop(scan->limit_, &dummy_row, &d);
+    //nullptr for AttributeSet* argument since it's not necessary???
+    Status s = PushEvalPop(scan->limit_, &dummy_row, nullptr, &d);
     if (!s.Ok()) return s;
 
     size_t limit = d == -1 ? std::numeric_limits<size_t>::max() : d.AsInt8();
@@ -828,7 +849,7 @@ Status Executor::NextRow(SelectScan* scan, Row** r) {
 
         Datum result;
         {
-            Status s = PushEvalPop(scan->expr_, *r, &result);
+            Status s = PushEvalPop(scan->expr_, *r, scan->attrs_, &result);
 
             if (!s.Ok())
                 return s;
@@ -903,7 +924,7 @@ Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
 
         Datum result;
         {
-            Status s = PushEvalPop(scan->expr_, *r, &result);
+            Status s = PushEvalPop(scan->expr_, *r, scan->attrs_, &result);
 
             if (!s.Ok())
                 return s;
@@ -1091,9 +1112,7 @@ Status Executor::InsertRow(TableScan* scan, const std::vector<Expr*>& exprs) {
 
     for (Expr* e: exprs) {
         Datum d;
-        attrs_.push_back(scan->attrs_);
-        Status s = PushEvalPop(e, &r, &d); //result d is not used
-        attrs_.pop_back();
+        Status s = PushEvalPop(e, &r, scan->attrs_, &d); //result d is not used
         if (!s.Ok()) return s;
     }
 

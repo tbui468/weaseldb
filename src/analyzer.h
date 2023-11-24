@@ -63,44 +63,6 @@ private:
         return Status();
     }
 
-    Status GetAttribute(Attribute* attr, int* idx, int* scope, const std::string& table_ref_param, const std::string& col) const {
-        for (int i = scopes_.size() - 1; i >= 0; i--) {
-            Status s = GetAttributeAtScopeOffset(attr, idx, scope, table_ref_param, col, i);
-            if (s.Ok() || i == 0)
-                return s;
-        }
-
-        return Status(false, "analyzer.h - should never reach this"); //keeping compiler quiet
-    }
-    Status GetAttributeAtScopeOffset(Attribute* attr, int* idx, int* scope, const std::string& table_ref_param, const std::string& col, int i) const {
-        std::string table_ref = table_ref_param;
-        AttributeSet* as = scopes_.at(i);
-        if (table_ref == "") {
-            std::vector<std::string> tables;
-            for (const std::string& name: as->TableNames()) {
-                if (as->Contains(name, col))
-                    tables.push_back(name);
-            }
-
-            if (tables.size() > 1) {
-                return Status(false, "Error: Column '" + col + "' can refer to columns in muliple tables.");
-            } else if (tables.empty()) {
-                return Status(false, "Error: Column '" + col + "' does not exist");
-            } else {
-                table_ref = tables.at(0);
-            }
-        }
-
-        if (!as->Contains(table_ref, col)) {
-            return Status(false, "Error: Column '" + table_ref + "." + col + "' does not exist");
-        }
-
-        *attr = as->GetAttribute(table_ref, col);
-        *idx = as->GetAttributeIdx(table_ref, col);
-        *scope = scopes_.size() - 1 - i;
-        
-        return Status();
-    }
 private:
     Txn** txn_;
     std::vector<AttributeSet*> scopes_;

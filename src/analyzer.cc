@@ -91,18 +91,21 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
         if (!s.Ok()) return s;
     }
 
-    std::vector<std::string> tables = working_attrs->TableNames();
-    if (tables.size() != 1) {
-        return Status(false, "Analysis Error: Cannot insert into more than a single table");
+    if (!stmt->scan_->IsUpdatable()) {
+        return Status(false, "Analysis Error: Cannot scan type is not updatable");
     }
 
-    for (Token t: stmt->attrs_) {
-        if (!working_attrs->Contains(tables.at(0), t.lexeme)) {
-            return Status(false, "Error: Table does not have a matching column '" + t.lexeme + "'");
+    {
+        Attribute a;
+        int i;
+        for (Token t: stmt->attrs_) {
+            if (!working_attrs->GetAttribute("", t.lexeme, &a, &i).Ok()) {
+                return Status(false, "Error: Table does not have a matching column '" + t.lexeme + "'");
+            }
         }
     }
 
-    size_t attr_count = working_attrs->AttributeCount() - 1; //ignore _rowid since caller doesn't explicitly insert that
+    size_t attr_count = working_attrs->AttributeCount() - 1; //ignore _rowid since caller isn't allowed to explicitly insert that
 
     for (const std::vector<Expr*>& tuple: stmt->values_) {
         if (attr_count < tuple.size())
@@ -326,9 +329,17 @@ Status Analyzer::VerifyUnary(Unary* expr, DatumType* type) {
 
 Status Analyzer::VerifyColRef(ColRef* expr, DatumType* type) { 
     Attribute a;
-    Status s = GetAttribute(&a, &expr->idx_, &expr->scope_, expr->table_ref_, expr->t_.lexeme);
-    if (!s.Ok())
-        return s;
+    {
+        Status s;
+        for (AttributeSet* as: scopes_) {
+            int dummy_idx;
+            s = as->GetAttribute(expr->table_ref_, expr->t_.lexeme, &a, &dummy_idx);
+            if (s.Ok())
+                break;
+        }
+        if (!s.Ok())
+            return s;
+    }
 
     *type = a.type;
 
@@ -595,11 +606,16 @@ Status Analyzer::Verify(OuterSelectScan* scan, AttributeSet** working_attrs) {
         }
     }
 
+    scan->attrs_ = *working_attrs;
     scopes_.pop_back();
 
     return Status();
 }
 
+//scan->input_ could be any of the scan types (Constant, Table, Select, Product, OuterSelect)
+//verification of an Expr WILL occur in the Select/OuterSelect scans.
+//the AttributeSet for that will be the input_attrs of ProjectScan
+//input_attrs STILL must be pushed onto stack for projection
 Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
     AttributeSet* input_attrs;
     {
@@ -609,6 +625,7 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
     }
 
     scopes_.push_back(input_attrs);
+    scan->attrs_ = input_attrs;
 
     //replace wildcards with actual attribute names
     while (true) { //looping since multiple wildcards may be used, eg 'select *, * from [table];'
@@ -632,6 +649,24 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
         scan->projs_.insert(scan->projs_.begin() + idx, attr.begin(), attr.end());
     }
 
+    //order cols
+    for (OrderCol oc: scan->order_cols_) {
+        {
+            DatumType type;
+            Status s = Verify(oc.col, &type);
+            if (!s.Ok())
+                return s;
+        }
+
+        {
+            DatumType type;
+            Status s = Verify(oc.asc, &type);
+            if (!s.Ok()) {
+                return s;
+            }
+        }
+    }
+
     //projection
     {
         std::vector<std::string> names;
@@ -650,25 +685,7 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
         }
 
         *working_attrs = new AttributeSet("?rel_ref?", names, types, not_nulls);
-        scan->attrs_ = (*working_attrs)->GetAttributes();
-    }
-
-    //order cols
-    for (OrderCol oc: scan->order_cols_) {
-        {
-            DatumType type;
-            Status s = Verify(oc.col, &type);
-            if (!s.Ok())
-                return s;
-        }
-
-        {
-            DatumType type;
-            Status s = Verify(oc.asc, &type);
-            if (!s.Ok()) {
-                return s;
-            }
-        }
+        scan->output_attrs_ = (*working_attrs)->GetAttributes();
     }
 
     //limit

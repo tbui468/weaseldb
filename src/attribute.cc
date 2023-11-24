@@ -39,53 +39,5 @@ AttributeSet::AttributeSet(AttributeSet* left, AttributeSet* right, bool* has_du
     attrs_.insert(attrs_.end(), right->attrs_.begin(), right->attrs_.end());
 }
 
-bool AttributeSet::Contains(const std::string& table, const std::string& col) const {
-    for (const Attribute& a: attrs_) {
-        if (a.rel_ref.compare(table) == 0 && a.name.compare(col) == 0)
-            return true;
-    }
-
-    return false;
-}
-
-Attribute AttributeSet::GetAttribute(const std::string& table, const std::string& col) const {
-    for (Attribute a: attrs_) {
-        if (a.rel_ref.compare(table) == 0 && a.name.compare(col) == 0)
-            return a;
-    }
-
-    return {}; //keep compiler quiet
-}
-
-int AttributeSet::GetAttributeIdx(const std::string& table, const std::string& col) const {
-    int i = 0;
-    for (Attribute a: attrs_) {
-        if (a.rel_ref.compare(table) == 0 && a.name.compare(col) == 0)
-            return i;
-        i++;
-    }
-
-    return i; //keep compiler quiet
-}
-
-std::vector<std::string> AttributeSet::TableNames() const {
-    std::vector<std::string> result;
-    for (const Attribute& a: attrs_) {
-        if (std::find(result.begin(), result.end(), a.rel_ref) == result.end())
-            result.push_back(a.rel_ref);
-    }
-
-    return result;
-}
-
-std::vector<Attribute>* AttributeSet::TableAttributes(const std::string& table) const {
-    std::vector<Attribute>* result = new std::vector<Attribute>(); //TODO: should return a copy instead of pointer
-    for (const Attribute& a: attrs_) {
-        if (a.rel_ref.compare(table) == 0)
-            result->push_back(a);
-    }
-
-    return result;
-}
 
 }

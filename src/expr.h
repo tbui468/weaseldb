@@ -91,8 +91,8 @@ public:
 
 class ColRef: public Expr {
 public:
-    ColRef(Token t): t_(t), table_ref_(""), idx_(-1), scope_(-1) {}
-    ColRef(Token t, Token table_ref): t_(t), table_ref_(table_ref.lexeme), idx_(-1), scope_(-1) {}
+    ColRef(Token t): t_(t), table_ref_("") {}
+    ColRef(Token t, Token table_ref): t_(t), table_ref_(table_ref.lexeme) {}
     std::string ToString() override {
         return t_.lexeme;
     }
@@ -104,8 +104,6 @@ public:
 public:
     Token t_;
     std::string table_ref_;
-    int idx_;
-    int scope_;
 };
 
 
@@ -238,6 +236,7 @@ enum class ScanType {
 class Scan {
 public:
     virtual ScanType Type() const = 0;
+    virtual bool IsUpdatable() const = 0;
 public:
     AttributeSet* attrs_ { nullptr };
 };
@@ -247,6 +246,9 @@ public:
     ConstantScan(std::vector<Expr*> target_cols): target_cols_(target_cols), cur_(0) {}
     ScanType Type() const override {
         return ScanType::Constant;
+    }
+    bool IsUpdatable() const override {
+        return false;
     }
 public:
     std::vector<Expr*> target_cols_;
@@ -260,6 +262,9 @@ public:
     TableScan(Token tab_name): tab_name_(tab_name.lexeme), ref_name_(tab_name.lexeme) {}
     ScanType Type() const override {
         return ScanType::Table;
+    }
+    bool IsUpdatable() const override {
+        return true;
     }
 public:
     std::string tab_name_;
@@ -275,6 +280,9 @@ public:
     ScanType Type() const override {
         return ScanType::Select;
     }
+    bool IsUpdatable() const override {
+        return scan_->IsUpdatable();
+    }
 public:
     Scan* scan_;
     Expr* expr_;
@@ -285,6 +293,9 @@ public:
     ProductScan(Scan* left, Scan* right): left_(left), right_(right), left_row_(nullptr) {}
     ScanType Type() const override {
         return ScanType::Product;
+    }
+    bool IsUpdatable() const override {
+        return false;
     }
 public:
     Scan* left_;
@@ -299,6 +310,9 @@ public:
 
     ScanType Type() const override {
         return ScanType::OuterSelect;
+    }
+    bool IsUpdatable() const override {
+        return false;
     }
 public:
     ProductScan* scan_;
@@ -329,9 +343,12 @@ public:
                     order_cols_(std::move(order_cols)), 
                     limit_(limit), 
                     distinct_(distinct), 
-                    attrs_({}) {}
+                    output_attrs_({}) {}
     ScanType Type() const override {
         return ScanType::Project;
+    }
+    bool IsUpdatable() const override {
+        return false;
     }
 public:
     Scan* input_;
@@ -341,7 +358,7 @@ public:
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
     bool distinct_;
-    std::vector<Attribute> attrs_; //TODO: rename to output_attrs_
+    std::vector<Attribute> output_attrs_;
     RowSet* output_;
     size_t cursor_ {0};
 };
