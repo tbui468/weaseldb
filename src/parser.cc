@@ -460,15 +460,22 @@ Status Parser::ParseStmt(Stmt** stmt) {
         }
 
         case TokenType::Update: {
-            Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name");
+            Scan* target = ParseScan(ParseBaseScan);
             EatToken(TokenType::Set, "Parse Error: Expected keyword 'set' after table name");
 
             std::vector<Expr*> assigns;
             while (!(PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Where)) {
                 Token col = EatToken(TokenType::Identifier, "Parse Error: Expected column name");
-                EatToken(TokenType::Equal, "Parse Error: Expected '=' after column name");
-                Expr* value = ParseExpr(Base);
-                assigns.push_back(new ColAssign(col, value));
+                if (AdvanceIf(TokenType::Dot)) {
+                    Token actual_col = EatToken(TokenType::Identifier, "Parse Error: Expected column name");
+                    EatToken(TokenType::Equal, "Parse Error: Expected '=' after column name");
+                    Expr* value = ParseExpr(Base);
+                    assigns.push_back(new ColAssign(actual_col, col, value));
+                } else {
+                    EatToken(TokenType::Equal, "Parse Error: Expected '=' after column name");
+                    Expr* value = ParseExpr(Base);
+                    assigns.push_back(new ColAssign(col, value));
+                }
 
                 AdvanceIf(TokenType::Comma);
             }
@@ -476,9 +483,9 @@ Status Parser::ParseStmt(Stmt** stmt) {
             Expr* where_clause = AdvanceIf(TokenType::Where) ? ParseExpr(Base) : nullptr;
 
             if (where_clause) {
-                *stmt = new UpdateStmt(assigns, new SelectScan(new TableScan(target), where_clause));
+                *stmt = new UpdateStmt(assigns, new SelectScan(target, where_clause));
             } else {
-                *stmt = new UpdateStmt(assigns, new TableScan(target));
+                *stmt = new UpdateStmt(assigns, target);
             }
 
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of update statement");

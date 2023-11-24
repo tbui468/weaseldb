@@ -356,11 +356,10 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
 
     Attribute a;
     {
-        std::string table_ref = "";
         Status s;
         for (AttributeSet* as: scopes_) {
             int dummy_idx;
-            s = as->GetAttribute(table_ref, expr->col_.lexeme, &a, &dummy_idx);
+            s = as->GetAttribute(expr->table_ref_, expr->col_.lexeme, &a, &dummy_idx);
             if (s.Ok())
                 break;
         }

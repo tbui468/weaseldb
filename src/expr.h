@@ -110,7 +110,8 @@ public:
 //Used for both InsertStmt and UpdateStmt
 class ColAssign: public Expr {
 public:
-    ColAssign(Token col, Expr* right): col_(col), right_(right) {}
+    ColAssign(Token col, Expr* right): col_(col), table_ref_(""), right_(right) {}
+    ColAssign(Token col, Token table_ref, Expr* right): col_(col), table_ref_(table_ref.lexeme), right_(right) {}
     std::string ToString() override {
         return col_.lexeme + "=" + right_->ToString();
     }
@@ -122,6 +123,7 @@ public:
     }
 public:
     Token col_;
+    std::string table_ref_;
     Expr* right_;
     DatumType field_type_ {DatumType::Null};
 };
