@@ -28,11 +28,15 @@ public:
     AttributeSet(AttributeSet* left, AttributeSet* right, bool* has_duplicate_tables);
     bool Contains(const std::string& table, const std::string& col) const;
     Attribute GetAttribute(const std::string& table, const std::string& col) const;
-    Status GetAttribute(const std::string& rel, const std::string& col, Attribute* result) {
+    Status GetAttribute(const std::string& rel, const std::string& col, Attribute* result, int* idx) {
         std::vector<Attribute> results;
+        int i = 0;
         for (const Attribute& a: attrs_) {
-            if ((a.rel_ref.compare(rel) == 0 || rel == "") && a.name.compare(col) == 0)
+            if ((a.rel_ref.compare(rel) == 0 || rel == "") && a.name.compare(col) == 0) {
                 results.push_back(a);
+                *idx = i;
+            }
+            i++;
         }
 
         if (results.size() > 1) {

@@ -411,12 +411,9 @@ Status Executor::Eval(ColAssign* expr, Datum* result) {
         for (i = 0; i < scopes_.size(); i++) {
             AttributeSet* as = attrs_.rbegin()[i];
             Attribute a;
-            Status s = as->GetAttribute(table_ref, expr->col_.lexeme, &a);
-            if (!s.Ok())
-                continue;
-
-            data_idx = as->GetAttributeIdx(a.rel_ref, expr->col_.lexeme);
-            break;
+            Status s = as->GetAttribute(table_ref, expr->col_.lexeme, &a, &data_idx);
+            if (s.Ok())
+                break;
         }
 
         if (i >= scopes_.size()) {
