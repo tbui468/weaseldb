@@ -270,8 +270,8 @@ public:
     std::string tab_name_;
     std::string ref_name_;
     Iterator* it_;
-    int scan_idx_; //index to scan (default is 0, which is the primary index)
-    Table* schema_;
+    Table* table_;
+    int scan_idx_ {0};
 };
 
 class SelectScan: public Scan {

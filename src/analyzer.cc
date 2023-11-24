@@ -525,13 +525,13 @@ Status Analyzer::VerifyConstant(ConstantScan* scan, AttributeSet** working_attrs
 }
 
 Status Analyzer::VerifyTable(TableScan* scan, AttributeSet** working_attrs) {
-    bool ok = GetSchema(scan->tab_name_, &scan->schema_).Ok();
+    bool ok = GetSchema(scan->tab_name_, &scan->table_).Ok();
 
     if (!ok) {
         return Status(false, "Error: Table '" + scan->tab_name_ + "' does not exist");
     }
 
-    *working_attrs = scan->schema_->MakeAttributeSet(scan->ref_name_);
+    *working_attrs = scan->table_->MakeAttributeSet(scan->ref_name_);
     scan->attrs_ = *working_attrs;
 
     return Status();
