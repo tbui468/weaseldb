@@ -26,6 +26,7 @@ class AttributeSet {
 public:
     AttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<DatumType> types, std::vector<bool> not_nulls);
     AttributeSet(AttributeSet* left, AttributeSet* right, bool* has_duplicate_tables);
+    AttributeSet(std::vector<Attribute> attrs): attrs_(attrs) {}
     Status GetAttribute(const std::string& rel, const std::string& col, Attribute* result, int* idx) {
         std::vector<Attribute> results;
         int i = 0;

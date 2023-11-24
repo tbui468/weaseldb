@@ -216,7 +216,7 @@ Status Executor::DeleteExecutor(DeleteStmt* stmt) {
 
 Status Executor::SelectExecutor(SelectStmt* stmt) {
     Status s = BeginScan(stmt->scan_);
-    RowSet* final_rs = new RowSet(((ProjectScan*)(stmt->scan_))->output_attrs_);
+    RowSet* final_rs = new RowSet(((ProjectScan*)(stmt->scan_))->OutputAttributes());
     Row* r;
     while (NextRow(stmt->scan_, &r).Ok()) {
         final_rs->rows_.push_back(r);
@@ -667,7 +667,6 @@ Status Executor::BeginScan(ProjectScan* scan) {
     }
 
     //sort filtered rows in-place
-    //TODO: should sort while populating output_ rather than sorting after the fact
     if (!scan->order_cols_.empty()) {
         //lambdas can only capture non-member variables
         std::vector<OrderCol>& order_cols = scan->order_cols_;
@@ -699,12 +698,6 @@ Status Executor::BeginScan(ProjectScan* scan) {
                 return true;
                 });
     }
-
-    //TODO: rewrite this to compute aggregates row-by-row
-    //Then integrate into the beginning of this function when rows are first read
-    //will need to make phantom rows for sorting
-    //Make sure tests in agg_inside_expression.sql pass (will use that to make sure above refactor doesn't break anything)
-
 
     //projection
     RowSet* proj_rs = new RowSet(scan->output_attrs_);
@@ -747,9 +740,6 @@ Status Executor::BeginScan(ProjectScan* scan) {
     if (row_has_agg) {
         proj_rs->rows_.push_back(new Row(data));
     }
-
-
-
 
     //remove duplicates
     scan->output_ = new RowSet(scan->output_attrs_);
@@ -993,6 +983,7 @@ Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
 Status Executor::NextRow(ProjectScan* scan, Row** r) {
     if (scan->cursor_ < scan->output_->rows_.size()) {
         *r = scan->output_->rows_.at(scan->cursor_);
+        (*r)->data_.resize((*r)->data_.size() - scan->ghost_column_count_);
         scan->cursor_++;
         return Status();
     }

@@ -56,7 +56,7 @@ public:
     Binary(Token op, Expr* left, Expr* right):
         op_(op), left_(left), right_(right) {}
     std::string ToString() override {
-        return "(" + op_.lexeme + " " + left_->ToString() + " " + right_->ToString() + ")";
+        return left_->ToString() + op_.lexeme + right_->ToString();
     }
     ExprType Type() const override {
         return ExprType::Binary;
@@ -75,7 +75,7 @@ class Unary: public Expr {
 public:
     Unary(Token op, Expr* right): op_(op), right_(right) {}
     std::string ToString() override {
-        return "(" + op_.lexeme + " " + right_->ToString() + ")";
+        return op_.lexeme + right_->ToString();
     }
     ExprType Type() const override {
         return ExprType::Unary;
@@ -94,7 +94,7 @@ public:
     ColRef(Token t): t_(t), table_ref_("") {}
     ColRef(Token t, Token table_ref): t_(t), table_ref_(table_ref.lexeme) {}
     std::string ToString() override {
-        return t_.lexeme;
+        return table_ref_ + "." + t_.lexeme;
     }
     ExprType Type() const override {
         return ExprType::ColRef;
@@ -112,7 +112,7 @@ class ColAssign: public Expr {
 public:
     ColAssign(Token col, Expr* right): col_(col), right_(right) {}
     std::string ToString() override {
-        return "(:= " + col_.lexeme + " " + right_->ToString() + ")";
+        return col_.lexeme + "=" + right_->ToString();
     }
     ExprType Type() const override {
         return ExprType::ColAssign;
@@ -135,7 +135,7 @@ struct Call: public Expr {
 public:
     Call(Token fcn, Expr* arg): fcn_(fcn), arg_(arg) {}
     std::string ToString() override {
-        return fcn_.lexeme + arg_->ToString();
+        return fcn_.lexeme + "(" + arg_->ToString() + ")";
     }
     ExprType Type() const override {
         return ExprType::Call;
@@ -163,7 +163,7 @@ class IsNull: public Expr {
 public:
     IsNull(Expr* left): left_(left) {}
     std::string ToString() override {
-        return "IsNull";
+        return left_->ToString() + " is null";
     }
     ExprType Type() const override {
         return ExprType::IsNull;
@@ -194,7 +194,7 @@ class Predict: public Expr {
 public:
     Predict(Token model_name, Expr* arg): model_name_(model_name), arg_(arg) {}
     std::string ToString() override {
-        return "predict";
+        return model_name_.lexeme + "(" + arg_->ToString() + ")";
     }
     ExprType Type() const override {
         return ExprType::Predict;
@@ -211,7 +211,7 @@ class Cast: public Expr {
 public:
     Cast(Expr* value, Token type): value_(value), type_(type) {}
     std::string ToString() override {
-        return "cast";
+        return "cast(" + value_->ToString() + " as " + type_.lexeme + ")";
     }
     ExprType Type() const override {
         return ExprType::Cast;
@@ -350,6 +350,12 @@ public:
     bool IsUpdatable() const override {
         return false;
     }
+    std::vector<Attribute> OutputAttributes() const {
+        std::vector<Attribute> attrs = output_attrs_;
+        int new_size = output_attrs_.size() - ghost_column_count_;
+        attrs.resize(new_size);
+        return attrs;
+    }
 public:
     Scan* input_;
     std::vector<Expr*> projs_;
@@ -361,6 +367,7 @@ public:
     std::vector<Attribute> output_attrs_;
     RowSet* output_;
     size_t cursor_ {0};
+    int ghost_column_count_ {0};
 };
 
 }

@@ -612,10 +612,6 @@ Status Analyzer::Verify(OuterSelectScan* scan, AttributeSet** working_attrs) {
     return Status();
 }
 
-//scan->input_ could be any of the scan types (Constant, Table, Select, Product, OuterSelect)
-//verification of an Expr WILL occur in the Select/OuterSelect scans.
-//the AttributeSet for that will be the input_attrs of ProjectScan
-//input_attrs STILL must be pushed onto stack for projection
 Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
     AttributeSet* input_attrs;
     {
@@ -647,6 +643,22 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
             attr.push_back(new ColRef(Token(a.name, TokenType::Identifier), Token(a.rel_ref, TokenType::Identifier)));
         }
         scan->projs_.insert(scan->projs_.begin() + idx, attr.begin(), attr.end());
+    }
+
+
+    //add order columns to projection columns if not already included
+    //need this to be able to sort by a column even if that column will not end up in the output
+    std::unordered_map<std::string, bool> included;
+    for (Expr* e: scan->projs_) {
+        included.insert({e->ToString(), true});
+    }
+    scan->ghost_column_count_ = 0;
+    for (OrderCol oc: scan->order_cols_) {
+        if (included.find(oc.col->ToString()) == included.end()) {
+            included.insert({oc.col->ToString(), true});
+            scan->projs_.push_back(oc.col);
+            scan->ghost_column_count_++;
+        }
     }
 
     //order cols
