@@ -13,17 +13,16 @@ namespace wsldb {
 
 class Table {
 public:
-    Table(std::string table_name,
+    Table(std::string name,
            std::vector<Token> names,
            std::vector<Token> types,
            std::vector<bool> not_null_constraints, 
            std::vector<std::vector<Token>> uniques);
 
-    Table(std::string table_name, const std::string& buf);
+    Table(std::string name, const std::string& buf);
 
     std::string Serialize() const;
-    std::vector<Datum> DeserializeData(const std::string& value) const;
-    AttributeSet* MakeAttributeSet(const std::string& ref_name) const;
+    AttributeSet* MakeAttributeSet(const std::string& alias) const;
     std::string IdxName(const std::string& prefix, const std::vector<int>& idxs) const;
     int GetAttrIdx(const std::string& name) const;
 
@@ -33,7 +32,7 @@ public:
 
 
 public:
-    std::string table_name_;
+    std::string name_;
     int64_t rowid_counter_;
     std::vector<Attribute> attrs_;
     std::vector<Index> idxs_;

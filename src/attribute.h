@@ -48,6 +48,16 @@ public:
         return Status();
     }
 
+    std::vector<Datum> DeserializeData(const std::string& value) const {
+        std::vector<Datum> data = std::vector<Datum>();
+        int off = 0;
+        for (const Attribute& a: attrs_) {
+            data.push_back(Datum(value, &off, a.type));
+        }
+
+        return data;
+    }
+
     inline size_t AttributeCount() const {
         return attrs_.size();
     }

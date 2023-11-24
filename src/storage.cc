@@ -82,12 +82,12 @@ std::string Storage::Models() {
     return "models";
 }
 
-Status Storage::CreateTable(Table* schema, Txn* txn) {
+Status Storage::CreateTable(Table* table, Txn* txn) {
     //TODO: obtain exclusive lock on db_;
 
-    txn->Put(Catalog(), schema->table_name_, schema->Serialize());
+    txn->Put(Catalog(), table->name_, table->Serialize());
 
-    for (const Index& idx: schema->idxs_) {
+    for (const Index& idx: table->idxs_) {
         rocksdb::ColumnFamilyHandle* cf;
         rocksdb::Status s = db_->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), idx.name_, &cf);
         if (!s.ok()) {
@@ -102,13 +102,13 @@ Status Storage::CreateTable(Table* schema, Txn* txn) {
     return Status();
 }
 
-Status Storage::DropTable(Table* schema, Txn* txn) {
+Status Storage::DropTable(Table* table, Txn* txn) {
     //TODO: obtain exclusive lock on db_;
 
 
-    txn->Delete(Catalog(), schema->table_name_);
+    txn->Delete(Catalog(), table->name_);
 
-    for (const Index& idx: schema->idxs_) {
+    for (const Index& idx: table->idxs_) {
         int i = GetColFamIdx(idx.name_);
 
         rocksdb::Status s = db_->DropColumnFamily(col_fam_handles_[i]);

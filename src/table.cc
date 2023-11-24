@@ -2,18 +2,18 @@
 
 namespace wsldb {
 
-Table::Table(std::string table_name,
+Table::Table(std::string name,
                std::vector<Token> names,
                std::vector<Token> types,
                std::vector<bool> not_null_constraints, 
                std::vector<std::vector<Token>> uniques) {
 
-    table_name_ = table_name;
+    name_ = name;
     rowid_counter_ = 0;
 
     //NOTE: index creation requires attrs_ to be filled in beforehand
     for (size_t i = 0; i < names.size(); i++) {
-        attrs_.emplace_back(table_name, names.at(i).lexeme, TypeTokenToDatumType(types.at(i).type), not_null_constraints.at(i));
+        attrs_.emplace_back(name_, names.at(i).lexeme, TypeTokenToDatumType(types.at(i).type), not_null_constraints.at(i));
     }
 
     //indexes
@@ -23,12 +23,12 @@ Table::Table(std::string table_name,
             idx_cols.push_back(GetAttrIdx(t.lexeme));
         }
 
-        idxs_.emplace_back(IdxName(table_name, idx_cols), idx_cols);
+        idxs_.emplace_back(IdxName(name_, idx_cols), idx_cols);
     }
 }
 
-Table::Table(std::string table_name, const std::string& buf) {
-    table_name_ = table_name;
+Table::Table(std::string name, const std::string& buf) {
+    name_ = name;
 
     int off = 0; 
 
@@ -45,13 +45,13 @@ Table::Table(std::string table_name, const std::string& buf) {
 
         int str_size = *((int*)(buf.data() + off));
         off += sizeof(int);
-        std::string name = buf.substr(off, str_size);
+        std::string attr_name = buf.substr(off, str_size);
         off += str_size;
 
         bool not_null_constraint = *((bool*)(buf.data() + off));
         off += sizeof(bool);
 
-        attrs_.emplace_back(table_name, name, type, not_null_constraint);
+        attrs_.emplace_back(name_, attr_name, type, not_null_constraint);
     }
 
     //deserialize indexes
@@ -89,18 +89,7 @@ std::string Table::Serialize() const {
     return buf;
 }
 
-
-std::vector<Datum> Table::DeserializeData(const std::string& value) const {
-    std::vector<Datum> data = std::vector<Datum>();
-    int off = 0;
-    for (const Attribute& a: attrs_) {
-        data.push_back(Datum(value, &off, a.type));
-    }
-
-    return data;
-}
-
-AttributeSet* Table::MakeAttributeSet(const std::string& ref_name) const {
+AttributeSet* Table::MakeAttributeSet(const std::string& alias) const {
     std::vector<std::string> names;
     std::vector<DatumType> types;
     std::vector<bool> not_nulls;
@@ -111,7 +100,7 @@ AttributeSet* Table::MakeAttributeSet(const std::string& ref_name) const {
         not_nulls.push_back(a.not_null_constraint);
     }
             
-    return new AttributeSet(ref_name, names, types, not_nulls);
+    return new AttributeSet(alias, names, types, not_nulls);
 }
 
 

@@ -823,7 +823,7 @@ Status Executor::NextRowTable(TableScan* scan, Row** r) {
         (*txn_)->Get(scan->schema_->idxs_.at(0).name_, primary_key, &value);
     }
 
-    *r = new Row(scan->schema_->DeserializeData(value));
+    *r = new Row(scan->attrs_->DeserializeData(value));
     scan->it_->Next();
 
     return Status();
@@ -1142,7 +1142,7 @@ Status Executor::InsertRow(TableScan* scan, const std::vector<Expr*>& exprs) {
             (*txn_)->Put(idx->name_, secondary_key, primary_key);
         }
 
-        (*txn_)->Put(Storage::Catalog(), scan->schema_->table_name_, scan->schema_->Serialize());
+        (*txn_)->Put(Storage::Catalog(), scan->schema_->name_, scan->schema_->Serialize());
     }
 
     return Status();
