@@ -381,7 +381,7 @@ Status Parser::ParseStmt(Stmt** stmt) {
         }
         case TokenType::Insert: {
             EatToken(TokenType::Into, "Parse Error: Expected 'into' keyword after 'insert'");
-            Token target = EatToken(TokenType::Identifier, "Parse Error: Expected table name after 'into' keyword");
+            Scan* target = ParseScan(ParseBaseScan);
 
             std::vector<Token> cols;
             EatToken(TokenType::LParen, "Parse Error: Expected '(' and columns names for insert statements");
@@ -391,22 +391,24 @@ Status Parser::ParseStmt(Stmt** stmt) {
             }
 
             EatToken(TokenType::Values, "Parse Error: Expected 'values' keyword");
-            std::vector<std::vector<Expr*>> values;
+            std::vector<std::vector<Expr*>> assigns;
             while (AdvanceIf(TokenType::LParen)) {
                 std::vector<Expr*> tuple;
 
+                int i = 0;
                 while (!AdvanceIf(TokenType::RParen)) {
                     Expr* value = ParseExpr(Base);
-                    tuple.push_back(value);
+                    tuple.push_back(new ColAssign(cols.at(i), value));
                     AdvanceIf(TokenType::Comma);
+                    i++;
                 }
 
-                values.push_back(tuple);
+                assigns.push_back(tuple);
 
                 AdvanceIf(TokenType::Comma);
             }
             EatToken(TokenType::SemiColon, "Parse Error: Expected ';' at end of insert statement");
-            *stmt = new InsertStmt(new TableScan(target), cols, values);
+            *stmt = new InsertStmt(target, assigns);
             return Status();
         }
         case TokenType::Select: {

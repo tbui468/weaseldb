@@ -100,15 +100,13 @@ public:
 
 class InsertStmt: public Stmt {
 public:
-    InsertStmt(Scan* scan, std::vector<Token> attrs, std::vector<std::vector<Expr*>> values):
-        scan_(scan), attrs_(std::move(attrs)), values_(std::move(values)), col_assigns_({}) {}
+    InsertStmt(Scan* scan, std::vector<std::vector<Expr*>> col_assigns):
+        scan_(scan), col_assigns_(std::move(col_assigns)) {}
     StmtType Type() const override {
         return StmtType::Insert;
     }
 public:
     Scan* scan_;
-    std::vector<Token> attrs_;
-    std::vector<std::vector<Expr*>> values_;
     std::vector<std::vector<Expr*>> col_assigns_;
 };
 

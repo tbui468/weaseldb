@@ -95,29 +95,6 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
         return Status(false, "Analysis Error: Cannot scan type is not updatable");
     }
 
-    {
-        Attribute a;
-        int i;
-        for (Token t: stmt->attrs_) {
-            if (!working_attrs->GetAttribute("", t.lexeme, &a, &i).Ok()) {
-                return Status(false, "Error: Table does not have a matching column '" + t.lexeme + "'");
-            }
-        }
-    }
-
-    size_t attr_count = working_attrs->AttributeCount() - 1; //ignore _rowid since caller isn't allowed to explicitly insert that
-
-    for (const std::vector<Expr*>& tuple: stmt->values_) {
-        if (attr_count < tuple.size())
-            return Status(false, "Error: Value count must match specified attribute name count");
-
-        std::vector<Expr*> col_assign;
-        for (size_t i = 0; i < stmt->attrs_.size(); i++) {
-            col_assign.push_back(new ColAssign(stmt->attrs_.at(i), tuple.at(i)));
-        }
-        stmt->col_assigns_.push_back(col_assign);
-    }
-
     scopes_.push_back(working_attrs);
     for (const std::vector<Expr*>& assigns: stmt->col_assigns_) {
         for (Expr* e: assigns) {
