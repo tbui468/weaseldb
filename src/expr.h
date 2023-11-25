@@ -88,13 +88,19 @@ public:
     Expr* right_;
 };
 
+struct Column {
+    std::string table;
+    std::string name;
+};
+
 
 class ColRef: public Expr {
 public:
-    ColRef(Token t): t_(t), table_ref_("") {}
-    ColRef(Token t, Token table_ref): t_(t), table_ref_(table_ref.lexeme) {}
+    //ColRef(Token t): t_(t), table_ref_("") {}
+    //ColRef(Token t, Token table_ref): t_(t), table_ref_(table_ref.lexeme) {}
+    ColRef(Column col): col_(col) {}
     std::string ToString() override {
-        return table_ref_ + "." + t_.lexeme;
+        return col_.table + "." + col_.name;
     }
     ExprType Type() const override {
         return ExprType::ColRef;
@@ -102,18 +108,20 @@ public:
     void Reset() override {
     }
 public:
-    Token t_;
-    std::string table_ref_;
+    Column col_;
+    //Token t_;
+    //std::string table_ref_;
 };
 
 
 //Used for both InsertStmt and UpdateStmt
 class ColAssign: public Expr {
 public:
-    ColAssign(Token col, Expr* right): col_(col), table_ref_(""), right_(right) {}
-    ColAssign(Token col, Token table_ref, Expr* right): col_(col), table_ref_(table_ref.lexeme), right_(right) {}
+    //ColAssign(Token col, Expr* right): col_(col), table_ref_(""), right_(right) {}
+    //ColAssign(Token col, Token table_ref, Expr* right): col_(col), table_ref_(table_ref.lexeme), right_(right) {}
+    ColAssign(Column col, Expr* right): col_(col), right_(right) {}
     std::string ToString() override {
-        return col_.lexeme + "=" + right_->ToString();
+        return col_.name + "=" + right_->ToString();
     }
     ExprType Type() const override {
         return ExprType::ColAssign;
@@ -122,8 +130,9 @@ public:
         right_->Reset();
     }
 public:
-    Token col_;
-    std::string table_ref_;
+    Column col_;
+    //Token col_;
+    //std::string table_ref_;
     Expr* right_;
     DatumType field_type_ {DatumType::Null};
 };

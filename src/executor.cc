@@ -394,26 +394,20 @@ Status Executor::Eval(ColRef* expr, Datum* result) {
     size_t i;
     int data_idx;
     {
-        std::string table_ref = expr->table_ref_;
         for (i = 0; i < scopes_.size(); i++) {
             AttributeSet* as = attrs_.rbegin()[i];
             Attribute a;
-            Status s = as->GetAttribute(table_ref, expr->t_.lexeme, &a, &data_idx);
+            Status s = as->GetAttribute(expr->col_.table, expr->col_.name, &a, &data_idx);
             if (s.Ok())
                 break;
         }
 
         if (i >= scopes_.size()) {
-            return Status(false, "Error: Column '" + table_ref + "." + expr->t_.lexeme + "' does not exist");
+            return Status(false, "Error: Column '" + expr->col_.table + "." + expr->col_.name + "' does not exist");
         }
     }
     *result = scopes_.rbegin()[i]->data_.at(data_idx);
     return Status();
-
-    //TODO: saving old code just in case th new stuff breaks
-    /*
-    *result = scopes_.rbegin()[expr->scope_]->data_.at(expr->idx_);
-    return Status();*/
 }
 
 Status Executor::Eval(ColAssign* expr, Datum* result) {
@@ -426,17 +420,16 @@ Status Executor::Eval(ColAssign* expr, Datum* result) {
     size_t i;
     int data_idx;
     {
-        std::string table_ref = "";
         for (i = 0; i < scopes_.size(); i++) {
             AttributeSet* as = attrs_.rbegin()[i];
             Attribute a;
-            Status s = as->GetAttribute(table_ref, expr->col_.lexeme, &a, &data_idx);
+            Status s = as->GetAttribute(expr->col_.table, expr->col_.name, &a, &data_idx);
             if (s.Ok())
                 break;
         }
 
         if (i >= scopes_.size()) {
-            return Status(false, "Error: Column '" + table_ref + "." + expr->col_.lexeme + "' does not exist");
+            return Status(false, "Error: Column '" + expr->col_.table + "." + expr->col_.name + "' does not exist");
         }
     }
 

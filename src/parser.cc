@@ -42,6 +42,16 @@ Status Parser::ParseStmts(std::vector<Stmt*>& stmts) {
     return Status();
 }
 
+Column Parser::ParseColumn() {
+    Token ref = NextToken(); //either column name or table
+    if (AdvanceIf(TokenType::Dot)) {
+        Token col = NextToken();
+        return { ref.lexeme, col.lexeme };
+    }
+
+    return { "", ref.lexeme };
+}
+
 Status Parser::Primary(Expr** expr) {
     switch (PeekToken().type) {
         case TokenType::IntLiteral:
@@ -74,11 +84,11 @@ Status Parser::Primary(Expr** expr) {
                 return Status();
             } else { //column reference
                 if (AdvanceIf(TokenType::Dot)) {
-                    Token col = NextToken();
-                    *expr = new ColRef(col, ref);
+                    Token name = NextToken();
+                    *expr = new ColRef({ref.lexeme, name.lexeme});
                     return Status();
                 }
-                *expr = new ColRef(ref);
+                *expr = new ColRef({"", ref.lexeme});
                 return Status();
             }
         }
@@ -383,10 +393,13 @@ Status Parser::ParseStmt(Stmt** stmt) {
             EatToken(TokenType::Into, "Parse Error: Expected 'into' keyword after 'insert'");
             Scan* target = ParseScan(ParseBaseScan);
 
-            std::vector<Token> cols;
+            std::vector<Column> cols;
             EatToken(TokenType::LParen, "Parse Error: Expected '(' and columns names for insert statements");
             while (!AdvanceIf(TokenType::RParen)) {
-                cols.push_back(EatToken(TokenType::Identifier, "Parse Error: Expected column name"));
+                if (PeekToken().type != TokenType::Identifier)
+                    return Status(false, "Parse Error: Expected column name");
+                Column col = ParseColumn();
+                cols.push_back(col);
                 AdvanceIf(TokenType::Comma);
             }
 
@@ -467,17 +480,13 @@ Status Parser::ParseStmt(Stmt** stmt) {
 
             std::vector<Expr*> assigns;
             while (!(PeekToken().type == TokenType::SemiColon || PeekToken().type == TokenType::Where)) {
-                Token col = EatToken(TokenType::Identifier, "Parse Error: Expected column name");
-                if (AdvanceIf(TokenType::Dot)) {
-                    Token actual_col = EatToken(TokenType::Identifier, "Parse Error: Expected column name");
-                    EatToken(TokenType::Equal, "Parse Error: Expected '=' after column name");
-                    Expr* value = ParseExpr(Base);
-                    assigns.push_back(new ColAssign(actual_col, col, value));
-                } else {
-                    EatToken(TokenType::Equal, "Parse Error: Expected '=' after column name");
-                    Expr* value = ParseExpr(Base);
-                    assigns.push_back(new ColAssign(col, value));
-                }
+                if (PeekToken().type != TokenType::Identifier)
+                    return Status(false, "Parse Error: Expected column identifier");
+
+                Column col = ParseColumn();
+                EatToken(TokenType::Equal, "Parse Error: Expected '=' after column name");
+                Expr* value = ParseExpr(Base);
+                assigns.push_back(new ColAssign(col, value));
 
                 AdvanceIf(TokenType::Comma);
             }

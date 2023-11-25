@@ -310,7 +310,7 @@ Status Analyzer::VerifyColRef(ColRef* expr, DatumType* type) {
         Status s;
         for (AttributeSet* as: scopes_) {
             int dummy_idx;
-            s = as->GetAttribute(expr->table_ref_, expr->t_.lexeme, &a, &dummy_idx);
+            s = as->GetAttribute(expr->col_.table, expr->col_.name, &a, &dummy_idx);
             if (s.Ok())
                 break;
         }
@@ -336,7 +336,7 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
         Status s;
         for (AttributeSet* as: scopes_) {
             int dummy_idx;
-            s = as->GetAttribute(expr->table_ref_, expr->col_.lexeme, &a, &dummy_idx);
+            s = as->GetAttribute(expr->col_.table, expr->col_.name, &a, &dummy_idx);
             if (s.Ok())
                 break;
         }
@@ -616,7 +616,7 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
         scan->projs_.erase(scan->projs_.begin() + idx);
         std::vector<Expr*> attr;
         for (const Attribute& a: input_attrs->GetAttributes()) {
-            attr.push_back(new ColRef(Token(a.name, TokenType::Identifier), Token(a.rel_ref, TokenType::Identifier)));
+            attr.push_back(new ColRef({ a.rel_ref, a.name }));
         }
         scan->projs_.insert(scan->projs_.begin() + idx, attr.begin(), attr.end());
     }

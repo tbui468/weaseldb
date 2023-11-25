@@ -13,6 +13,7 @@ public:
 
     Status ParseStmts(std::vector<Stmt*>& stmts);
 private:
+    Column ParseColumn();
     Status Primary(Expr**);
     Status ParseUnary(Expr**); //Expression is named Unary already
     Status Multiplicative(Expr**);
