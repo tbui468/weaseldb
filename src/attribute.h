@@ -39,9 +39,9 @@ public:
         }
 
         if (results.size() > 1) {
-            return Status(false, "Error: Multiple columns with same name found");
+            return Status(false, "Error: Multiple columns with the name '" + col + "' found");
         } else if (results.size() == 0) {
-            return Status(false, "Error: Column not found");
+            return Status(false, "Error: Column '" + col + "' not found");
         }
 
         *result = results.at(0);
