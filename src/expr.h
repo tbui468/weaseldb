@@ -96,8 +96,6 @@ struct Column {
 
 class ColRef: public Expr {
 public:
-    //ColRef(Token t): t_(t), table_ref_("") {}
-    //ColRef(Token t, Token table_ref): t_(t), table_ref_(table_ref.lexeme) {}
     ColRef(Column col): col_(col) {}
     std::string ToString() override {
         return col_.table + "." + col_.name;
@@ -109,19 +107,15 @@ public:
     }
 public:
     Column col_;
-    //Token t_;
-    //std::string table_ref_;
 };
 
 
 //Used for both InsertStmt and UpdateStmt
 class ColAssign: public Expr {
 public:
-    //ColAssign(Token col, Expr* right): col_(col), table_ref_(""), right_(right) {}
-    //ColAssign(Token col, Token table_ref, Expr* right): col_(col), table_ref_(table_ref.lexeme), right_(right) {}
     ColAssign(Column col, Expr* right): col_(col), right_(right) {}
     std::string ToString() override {
-        return col_.name + "=" + right_->ToString();
+        return col_.table + ". " + col_.name + "=" + right_->ToString();
     }
     ExprType Type() const override {
         return ExprType::ColAssign;
@@ -131,8 +125,6 @@ public:
     }
 public:
     Column col_;
-    //Token col_;
-    //std::string table_ref_;
     Expr* right_;
     DatumType field_type_ {DatumType::Null};
 };

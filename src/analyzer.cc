@@ -308,9 +308,13 @@ Status Analyzer::VerifyColRef(ColRef* expr, DatumType* type) {
     Attribute a;
     {
         Status s;
-        for (AttributeSet* as: scopes_) {
-            int dummy_idx;
-            s = as->GetAttribute(expr->col_.table, expr->col_.name, &a, &dummy_idx);
+        int dummy_idx;
+        for (size_t i = 0; i < scopes_.size(); i++) {
+            AttributeSet* as = scopes_.rbegin()[i];
+            s = as->ResolveColumnTable(&expr->col_);
+            if (!s.Ok()) return s;
+
+            s = as->GetAttribute(&expr->col_, &a, &dummy_idx);
             if (s.Ok())
                 break;
         }
@@ -334,9 +338,13 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
     Attribute a;
     {
         Status s;
-        for (AttributeSet* as: scopes_) {
-            int dummy_idx;
-            s = as->GetAttribute(expr->col_.table, expr->col_.name, &a, &dummy_idx);
+        int dummy_idx;
+        for (size_t i = 0; i < scopes_.size(); i++) {
+            AttributeSet* as = scopes_.rbegin()[i];
+            s = as->ResolveColumnTable(&expr->col_);
+            if (!s.Ok()) return s;
+
+            s = as->GetAttribute(&expr->col_, &a, &dummy_idx);
             if (s.Ok())
                 break;
         }

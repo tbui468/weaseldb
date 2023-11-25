@@ -8,6 +8,8 @@
 
 namespace wsldb {
 
+struct Column;
+
 struct Attribute {
     Attribute() {}
     Attribute(const std::string& rel_ref, const std::string& name, DatumType type, bool not_null_constraint):
@@ -27,26 +29,8 @@ public:
     AttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<DatumType> types, std::vector<bool> not_nulls);
     AttributeSet(AttributeSet* left, AttributeSet* right, bool* has_duplicate_tables);
     AttributeSet(std::vector<Attribute> attrs): attrs_(attrs) {}
-    Status GetAttribute(const std::string& rel, const std::string& col, Attribute* result, int* idx) {
-        std::vector<Attribute> results;
-        int i = 0;
-        for (const Attribute& a: attrs_) {
-            if ((a.rel_ref.compare(rel) == 0 || rel == "") && a.name.compare(col) == 0) {
-                results.push_back(a);
-                *idx = i;
-            }
-            i++;
-        }
-
-        if (results.size() > 1) {
-            return Status(false, "Error: Multiple columns with the name '" + col + "' found");
-        } else if (results.size() == 0) {
-            return Status(false, "Error: Column '" + col + "' not found");
-        }
-
-        *result = results.at(0);
-        return Status();
-    }
+    Status ResolveColumnTable(Column* col);
+    Status GetAttribute(Column* col, Attribute* result, int* idx);
 
     std::vector<Datum> DeserializeData(const std::string& value) const {
         std::vector<Datum> data = std::vector<Datum>();

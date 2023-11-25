@@ -397,7 +397,7 @@ Status Executor::Eval(ColRef* expr, Datum* result) {
         for (i = 0; i < scopes_.size(); i++) {
             AttributeSet* as = attrs_.rbegin()[i];
             Attribute a;
-            Status s = as->GetAttribute(expr->col_.table, expr->col_.name, &a, &data_idx);
+            Status s = as->GetAttribute(&expr->col_, &a, &data_idx);
             if (s.Ok())
                 break;
         }
@@ -423,7 +423,7 @@ Status Executor::Eval(ColAssign* expr, Datum* result) {
         for (i = 0; i < scopes_.size(); i++) {
             AttributeSet* as = attrs_.rbegin()[i];
             Attribute a;
-            Status s = as->GetAttribute(expr->col_.table, expr->col_.name, &a, &data_idx);
+            Status s = as->GetAttribute(&expr->col_, &a, &data_idx);
             if (s.Ok())
                 break;
         }
