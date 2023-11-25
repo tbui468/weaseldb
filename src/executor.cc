@@ -186,7 +186,7 @@ Status Executor::UpdateExecutor(UpdateStmt* stmt) {
 
         for (Expr* e: stmt->assigns_) {
             Datum d;
-            Status s = PushEvalPop(e, &updated_row, stmt->scan_->attrs_, &d); //returned Datum of ColAssign expressions are ignored
+            Status s = PushEvalPop(e, &updated_row, stmt->scan_->output_attrs_, &d); //returned Datum of ColAssign expressions are ignored
 
             if (!s.Ok()) 
                 return s;
@@ -645,7 +645,7 @@ Status Executor::BeginScan(OuterSelectScan* scan) {
 
 Status Executor::BeginScan(ProjectScan* scan) {
     scan->cursor_ = 0;
-    RowSet* rs = new RowSet(scan->output_attrs_);
+    RowSet* rs = new RowSet(scan->input_attrs_->GetAttributes());
     {
         Status s = BeginScan(scan->input_);
         if (!s.Ok()) return s;
@@ -660,7 +660,7 @@ Status Executor::BeginScan(ProjectScan* scan) {
     if (!scan->order_cols_.empty()) {
         //lambdas can only capture non-member variables
         std::vector<OrderCol>& order_cols = scan->order_cols_;
-        AttributeSet* attrs = scan->attrs_;
+        AttributeSet* attrs = scan->input_attrs_;
 
         std::sort(rs->rows_.begin(), rs->rows_.end(), 
                 //No error checking in lambda...
@@ -690,7 +690,7 @@ Status Executor::BeginScan(ProjectScan* scan) {
     }
 
     //projection
-    RowSet* proj_rs = new RowSet(scan->output_attrs_);
+    RowSet* proj_rs = new RowSet(scan->output_attrs_->GetAttributes());
 
     std::vector<Datum> data;
     for (Expr* e: scan->projs_) {
@@ -706,13 +706,13 @@ Status Executor::BeginScan(ProjectScan* scan) {
         for (Expr* e: scan->projs_) {
             is_agg_ = false;
             Datum d;
-            Status s = PushEvalPop(e, r, scan->attrs_, &d);
+            Status s = PushEvalPop(e, r, scan->input_attrs_, &d);
 
             if (!s.Ok()) return s;
 
             if (is_agg_) {
-                Attribute a = scan->output_attrs_.at(idx);
-                scan->output_attrs_.at(idx) = Attribute(a.rel_ref, a.name, d.Type(), a.not_null_constraint);
+                Attribute a = scan->input_attrs_->GetAttributes().at(idx);
+                scan->input_attrs_->GetAttributes().at(idx) = Attribute(a.rel_ref, a.name, d.Type(), a.not_null_constraint);
             }
 
             data.push_back(d);
@@ -732,7 +732,7 @@ Status Executor::BeginScan(ProjectScan* scan) {
     }
 
     //remove duplicates
-    scan->output_ = new RowSet(scan->output_attrs_);
+    scan->output_ = new RowSet(scan->output_attrs_->GetAttributes());
 
     if (scan->distinct_) {
         std::unordered_map<std::string, bool> map;
@@ -810,7 +810,7 @@ Status Executor::NextRowTable(TableScan* scan, Row** r) {
         (*txn_)->Get(scan->table_->idxs_.at(0).name_, primary_key, &value);
     }
 
-    *r = new Row(scan->attrs_->DeserializeData(value));
+    *r = new Row(scan->output_attrs_->DeserializeData(value));
     scan->it_->Next();
 
     return Status();
@@ -826,7 +826,7 @@ Status Executor::NextRow(SelectScan* scan, Row** r) {
 
         Datum result;
         {
-            Status s = PushEvalPop(scan->expr_, *r, scan->attrs_, &result);
+            Status s = PushEvalPop(scan->expr_, *r, scan->output_attrs_, &result);
 
             if (!s.Ok())
                 return s;
@@ -884,7 +884,7 @@ Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
         std::string right_key;
         for (size_t i = 0; i < (*r)->data_.size(); i++) {
             Datum& d = (*r)->data_.at(i);
-            if (i < scan->scan_->left_->attrs_->AttributeCount()) {
+            if (i < scan->scan_->left_->output_attrs_->AttributeCount()) {
                 left_key += d.Serialize();
             } else {
                 right_key += d.Serialize();
@@ -901,7 +901,7 @@ Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
 
         Datum result;
         {
-            Status s = PushEvalPop(scan->expr_, *r, scan->attrs_, &result);
+            Status s = PushEvalPop(scan->expr_, *r, scan->output_attrs_, &result);
 
             if (!s.Ok())
                 return s;
@@ -924,12 +924,12 @@ Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
         if (!scan->left_it_->second) {
             int off = 0;
             std::vector<Datum> data;
-            for (const Attribute& a: scan->scan_->left_->attrs_->GetAttributes()) {
+            for (const Attribute& a: scan->scan_->left_->output_attrs_->GetAttributes()) {
                 Datum d(scan->left_it_->first, &off, a.type);
                 data.push_back(d); 
             }
 
-            for (size_t i = 0; i < scan->scan_->right_->attrs_->AttributeCount(); i++) {
+            for (size_t i = 0; i < scan->scan_->right_->output_attrs_->AttributeCount(); i++) {
                 data.emplace_back();
             }
 
@@ -945,12 +945,12 @@ Status Executor::NextRow(OuterSelectScan* scan, Row** r) {
     while (scan->right_it_ != scan->right_pass_table_.end()) {
         if (!scan->right_it_->second) {
             std::vector<Datum> data;
-            for (size_t i = 0; i < scan->scan_->left_->attrs_->AttributeCount(); i++) {
+            for (size_t i = 0; i < scan->scan_->left_->output_attrs_->AttributeCount(); i++) {
                 data.emplace_back();
             }
 
             int off = 0;
-            for (const Attribute& a: scan->scan_->right_->attrs_->GetAttributes()) {
+            for (const Attribute& a: scan->scan_->right_->output_attrs_->GetAttributes()) {
                 Datum d(scan->right_it_->first, &off, a.type);
                 data.push_back(d); 
             }
@@ -1090,7 +1090,7 @@ Status Executor::InsertRow(TableScan* scan, const std::vector<Expr*>& exprs) {
 
     for (Expr* e: exprs) {
         Datum d;
-        Status s = PushEvalPop(e, &r, scan->attrs_, &d); //result d is not used
+        Status s = PushEvalPop(e, &r, scan->output_attrs_, &d); //result d is not used
         if (!s.Ok()) return s;
     }
 

@@ -241,7 +241,7 @@ public:
     virtual ScanType Type() const = 0;
     virtual bool IsUpdatable() const = 0;
 public:
-    AttributeSet* attrs_ { nullptr };
+    AttributeSet* output_attrs_ { nullptr };
 };
 
 class ConstantScan: public Scan {
@@ -345,8 +345,7 @@ public:
                     having_clause_(having_clause), 
                     order_cols_(std::move(order_cols)), 
                     limit_(limit), 
-                    distinct_(distinct), 
-                    output_attrs_({}) {}
+                    distinct_(distinct) {}
     ScanType Type() const override {
         return ScanType::Project;
     }
@@ -354,8 +353,8 @@ public:
         return false;
     }
     std::vector<Attribute> OutputAttributes() const {
-        std::vector<Attribute> attrs = output_attrs_;
-        int new_size = output_attrs_.size() - ghost_column_count_;
+        std::vector<Attribute> attrs = output_attrs_->GetAttributes();
+        int new_size = attrs.size() - ghost_column_count_;
         attrs.resize(new_size);
         return attrs;
     }
@@ -367,7 +366,7 @@ public:
     std::vector<OrderCol> order_cols_;
     Expr* limit_;
     bool distinct_;
-    std::vector<Attribute> output_attrs_;
+    AttributeSet* input_attrs_ {nullptr};
     RowSet* output_;
     size_t cursor_ {0};
     int ghost_column_count_ {0};

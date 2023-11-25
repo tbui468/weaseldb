@@ -503,7 +503,7 @@ Status Analyzer::VerifyConstant(ConstantScan* scan, AttributeSet** working_attrs
     }
 
     *working_attrs = new AttributeSet("?table?", names, types, not_nulls);
-    scan->attrs_ = *working_attrs;
+    scan->output_attrs_ = *working_attrs;
 
     return Status();
 }
@@ -516,7 +516,7 @@ Status Analyzer::VerifyTable(TableScan* scan, AttributeSet** working_attrs) {
     }
 
     *working_attrs = scan->table_->MakeAttributeSet(scan->ref_name_);
-    scan->attrs_ = *working_attrs;
+    scan->output_attrs_ = *working_attrs;
 
     return Status();
 }
@@ -540,7 +540,7 @@ Status Analyzer::VerifySelectScan(SelectScan* scan, AttributeSet** working_attrs
             return Status(false, "Analysis Error: where clause expression must evaluate to true or false");
         }
     }
-    scan->attrs_ = *working_attrs;
+    scan->output_attrs_ = *working_attrs;
 
     scopes_.pop_back();
 
@@ -563,7 +563,7 @@ Status Analyzer::Verify(ProductScan* scan, AttributeSet** working_attrs) {
     {
         bool has_duplicate_tables;
         *working_attrs = new AttributeSet(left_attrs, right_attrs, &has_duplicate_tables);
-        scan->attrs_ = *working_attrs;
+        scan->output_attrs_ = *working_attrs;
         if (has_duplicate_tables)
             return Status(false, "Error: Two tables cannot have the same name.  Use an alias to rename one or both tables");
     }
@@ -590,7 +590,7 @@ Status Analyzer::Verify(OuterSelectScan* scan, AttributeSet** working_attrs) {
         }
     }
 
-    scan->attrs_ = *working_attrs;
+    scan->output_attrs_ = *working_attrs;
     scopes_.pop_back();
 
     return Status();
@@ -605,7 +605,7 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
     }
 
     scopes_.push_back(input_attrs);
-    scan->attrs_ = input_attrs;
+    scan->input_attrs_ = input_attrs;
 
     //replace wildcards with actual attribute names
     while (true) { //looping since multiple wildcards may be used, eg 'select *, * from [table];'
@@ -681,7 +681,7 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
         }
 
         *working_attrs = new AttributeSet("?rel_ref?", names, types, not_nulls);
-        scan->output_attrs_ = (*working_attrs)->GetAttributes();
+        scan->output_attrs_ = *working_attrs;
     }
 
     //limit
