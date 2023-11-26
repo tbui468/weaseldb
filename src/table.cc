@@ -104,7 +104,7 @@ AttributeSet* Table::MakeAttributeSet(const std::string& alias) const {
         types.push_back(a.type);
     }
             
-    return new AttributeSet(alias, names, types);
+    return new AttributeSet(alias, names, types, not_null_constraints_);
 }
 
 

@@ -1,5 +1,5 @@
-Error: Value violates column 'not null' constraint
-Error: Value violates column 'not null' constraint
-Error: Value violates column 'not null' constraint
+Constraint Error: Value of 'planets.system' cannot be null
+Constraint Error: Value of 'planets.name' cannot be null
+Constraint Error: Value of 'planets.system' cannot be null
 Sol,1,
 Sol,5,

@@ -20,16 +20,16 @@ struct Attribute {
     DatumType type              {DatumType::Null};
 
     std::string ToString() const;
-    //Status CheckConstraints(DatumType type) const;
 };
 
 class AttributeSet {
 public:
-    AttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<DatumType> types);
+    AttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<DatumType> types, std::vector<bool> not_nulls);
     AttributeSet(AttributeSet* left, AttributeSet* right, bool* has_duplicate_tables);
-    AttributeSet(std::vector<Attribute> attrs): attrs_(attrs) {}
+    AttributeSet(std::vector<Attribute> attrs, std::vector<bool> not_nulls): attrs_(attrs), not_nulls_(not_nulls) {}
     Status ResolveColumnTable(Column* col);
     Status GetAttribute(Column* col, Attribute* result, int* idx);
+    Status PassesConstraintChecks(Column* col, DatumType type);
 
     std::vector<Datum> DeserializeData(const std::string& value) const {
         std::vector<Datum> data = std::vector<Datum>();
@@ -51,6 +51,7 @@ public:
 
 private:
     std::vector<Attribute> attrs_;
+    std::vector<bool> not_nulls_;
 };
 
 

@@ -100,7 +100,6 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
         for (Expr* e: assigns) {
             DatumType type;
             Status s = Verify(e, &type);
-            //stmt->scan_->CheckConstraint(&a); //TODO: make verify return an Attribute, and then implement CheckConstraint for scans
             if (!s.Ok())
                 return s;
         }
@@ -347,11 +346,16 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
             if (!s.Ok()) return s;
 
             s = as->GetAttribute(&expr->col_, &a, &dummy_idx);
-            if (s.Ok())
+            if (s.Ok()) {
+                s = as->PassesConstraintChecks(&expr->col_, right_type);
+                if (!s.Ok()) return s;
+
                 break;
+            }
         }
         if (!s.Ok())
             return s;
+
     }
 
     /*
@@ -494,6 +498,7 @@ Status Analyzer::Verify(Scan* scan, AttributeSet** working_attrs) {
 Status Analyzer::VerifyConstant(ConstantScan* scan, AttributeSet** working_attrs) {
     std::vector<std::string> names;
     std::vector<DatumType> types;
+    std::vector<bool> dummy_not_nulls;
     for (Expr* e: scan->target_cols_) {
         DatumType type;
         Status s = Verify(e, &type);
@@ -501,9 +506,10 @@ Status Analyzer::VerifyConstant(ConstantScan* scan, AttributeSet** working_attrs
             return s;
         names.push_back("?col?");
         types.push_back(type);
+        dummy_not_nulls.push_back(false);
     }
 
-    *working_attrs = new AttributeSet("?table?", names, types);
+    *working_attrs = new AttributeSet("?table?", names, types, dummy_not_nulls);
     scan->output_attrs_ = *working_attrs;
 
     return Status();
@@ -668,6 +674,7 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
     {
         std::vector<std::string> names;
         std::vector<DatumType> types;
+        std::vector<bool> dummy_not_nulls;
         for (Expr* e: scan->projs_) {
             DatumType type;
             Status s = Verify(e, &type);
@@ -677,9 +684,10 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
 
             names.push_back(e->ToString());
             types.push_back(type);
+            dummy_not_nulls.push_back(false);
         }
 
-        *working_attrs = new AttributeSet("?rel_ref?", names, types);
+        *working_attrs = new AttributeSet("?rel_ref?", names, types, dummy_not_nulls);
         scan->output_attrs_ = *working_attrs;
     }
 

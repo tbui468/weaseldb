@@ -1,3 +1,3 @@
-Error: Value violates column 'not null' constraint
+Constraint Error: Value of 'planets.rings' cannot be null
 Earth,null,false,
 Mars,2,false,

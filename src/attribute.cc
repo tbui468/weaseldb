@@ -26,7 +26,10 @@ Status Attribute::CheckConstraints(DatumType value_type) const {
 }*/
 
 
-AttributeSet::AttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<DatumType> types) {
+AttributeSet::AttributeSet(const std::string& ref_name, 
+                           std::vector<std::string> names, 
+                           std::vector<DatumType> types, 
+                           std::vector<bool> not_nulls): not_nulls_(not_nulls) {
     for (size_t i = 0; i < names.size(); i++) {
         attrs_.emplace_back(ref_name, names.at(i), types.at(i));
     }
@@ -38,6 +41,9 @@ AttributeSet::AttributeSet(AttributeSet* left, AttributeSet* right, bool* has_du
 
     attrs_.insert(attrs_.end(), left->attrs_.begin(), left->attrs_.end());
     attrs_.insert(attrs_.end(), right->attrs_.begin(), right->attrs_.end());
+
+    not_nulls_.insert(not_nulls_.end(), left->not_nulls_.begin(), left->not_nulls_.end());
+    not_nulls_.insert(not_nulls_.end(), right->not_nulls_.begin(), right->not_nulls_.end());
 }
 
 Status AttributeSet::ResolveColumnTable(Column* col) {
@@ -79,6 +85,23 @@ Status AttributeSet::GetAttribute(Column* col, Attribute* result, int* idx) {
     }
 
     *result = results.at(0);
+    return Status();
+}
+
+Status AttributeSet::PassesConstraintChecks(Column* col, DatumType type) {
+    //Only checking not null constraint now
+    if (type != DatumType::Null)
+        return Status();
+
+    int i = 0;
+    for (const Attribute& a: attrs_) {
+        if (a.rel_ref.compare(col->table) == 0 && a.name.compare(col->name) == 0) {
+            if (not_nulls_.at(i)) 
+                return Status(false, "Constraint Error: Value of '" + col->table + "." + col->name + "' cannot be null");
+        }
+        i++;
+    }
+
     return Status();
 }
 
