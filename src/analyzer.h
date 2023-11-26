@@ -12,14 +12,14 @@ namespace wsldb {
 class Analyzer {
 public:
     Analyzer(Txn** txn): txn_(txn) {}
-    Status Verify(Stmt* stmt, std::vector<DatumType>& types);
+    Status Verify(Stmt* stmt, AttributeSet** working_attrs);
 private:
     //statements
     Status CreateVerifier(CreateStmt* stmt);
     Status InsertVerifier(InsertStmt* stmt);
     Status UpdateVerifier(UpdateStmt* stmt);
     Status DeleteVerifier(DeleteStmt* stmt);
-    Status SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types);
+    Status SelectVerifier(SelectStmt* stmt, AttributeSet** working_attrs);
     Status DescribeTableVerifier(DescribeTableStmt* stmt);
     Status DropTableVerifier(DropTableStmt* stmt);
     Status TxnControlVerifier(TxnControlStmt* stmt);

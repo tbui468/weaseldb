@@ -3,7 +3,7 @@
 
 namespace wsldb {
 
-Status Analyzer::Verify(Stmt* stmt, std::vector<DatumType>& types) {
+Status Analyzer::Verify(Stmt* stmt, AttributeSet** working_attrs) {
     switch (stmt->Type()) {
         case StmtType::Create:
             return CreateVerifier((CreateStmt*)stmt); //C-style cast since dynamic_cast requires rtti, but rocksdb not currently compiled with rtti
@@ -14,7 +14,7 @@ Status Analyzer::Verify(Stmt* stmt, std::vector<DatumType>& types) {
         case StmtType::Delete:
             return DeleteVerifier((DeleteStmt*)stmt);
         case StmtType::Select:
-            return SelectVerifier((SelectStmt*)stmt, types);
+            return SelectVerifier((SelectStmt*)stmt, working_attrs);
         case StmtType::DescribeTable:
             return DescribeTableVerifier((DescribeTableStmt*)stmt);
         case StmtType::DropTable:
@@ -143,15 +143,10 @@ Status Analyzer::DeleteVerifier(DeleteStmt* stmt) {
     return Status(); 
 }
 
-Status Analyzer::SelectVerifier(SelectStmt* stmt, std::vector<DatumType>& types) {
-    AttributeSet* working_attrs;
+Status Analyzer::SelectVerifier(SelectStmt* stmt, AttributeSet** working_attrs) {
     {
-        Status s = Verify(stmt->scan_, &working_attrs);
+        Status s = Verify(stmt->scan_, working_attrs);
         if (!s.Ok()) return s;
-    }
-
-    for (const Attribute& a: working_attrs->GetAttributes()) {
-        types.push_back(a.type);
     }
 
     return Status(); 
@@ -418,17 +413,17 @@ Status Analyzer::VerifyIsNull(IsNull* expr, DatumType* type) {
 }
 
 Status Analyzer::VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type) { 
-    std::vector<DatumType> types;
+    AttributeSet* working_attrs;
     {
-        Status s = Verify(expr->stmt_, types);
+        Status s = Verify(expr->stmt_, &working_attrs);
         if (!s.Ok())
             return s;
     }
 
-    if (types.size() != 1)
+    if (working_attrs->AttributeCount() != 1)
         return Status(false, "Error: Scalar subquery must return a single value");
 
-    *type = types.at(0);
+    *type = working_attrs->GetAttributes().at(0).type;
 
     return Status();
 }

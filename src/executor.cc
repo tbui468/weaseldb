@@ -43,8 +43,8 @@ std::vector<Status> Executor::ExecuteQuery(const std::string& query) {
                 *txn_ = storage_->BeginTxn();
                 auto_commit = true;
             }
-            std::vector<DatumType> types;
-            Status s = a.Verify(stmt, types);
+            AttributeSet* working_attrs;
+            Status s = a.Verify(stmt, &working_attrs);
             if (s.Ok())
                 s = Execute(stmt);
 
