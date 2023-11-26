@@ -96,15 +96,13 @@ std::string Table::Serialize() const {
 }
 
 AttributeSet* Table::MakeAttributeSet(const std::string& alias) const {
-    std::vector<std::string> names;
-    std::vector<DatumType> types;
-
+    std::vector<Attribute> attrs;
     for (const Attribute& a: attrs_) {
-        names.push_back(a.name);
-        types.push_back(a.type);
+        Attribute attr(alias, a.name, a.type);
+        attrs.push_back(attr);
     }
-            
-    return new AttributeSet(alias, names, types, not_null_constraints_);
+
+    return new AttributeSet(attrs, not_null_constraints_);
 }
 
 

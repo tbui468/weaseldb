@@ -479,20 +479,18 @@ Status Analyzer::Verify(Scan* scan, AttributeSet** working_attrs) {
 
 
 Status Analyzer::VerifyConstant(ConstantScan* scan, AttributeSet** working_attrs) {
-    std::vector<std::string> names;
-    std::vector<DatumType> types;
+    std::vector<Attribute> attrs;
     std::vector<bool> dummy_not_nulls;
     for (Expr* e: scan->target_cols_) {
         Attribute attr;
         Status s = Verify(e, &attr);
         if (!s.Ok())
             return s;
-        names.push_back("?col?");
-        types.push_back(attr.type);
+        attrs.push_back(attr);
         dummy_not_nulls.push_back(false);
     }
 
-    *working_attrs = new AttributeSet("?table?", names, types, dummy_not_nulls);
+    *working_attrs = new AttributeSet(attrs, dummy_not_nulls);
     scan->output_attrs_ = *working_attrs;
 
     return Status();
@@ -655,8 +653,7 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
 
     //projection
     {
-        std::vector<std::string> names;
-        std::vector<DatumType> types;
+        std::vector<Attribute> attrs;
         std::vector<bool> dummy_not_nulls;
         for (Expr* e: scan->projs_) {
             Attribute attr;
@@ -665,12 +662,11 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
                 return s;
             }
 
-            names.push_back(e->ToString());
-            types.push_back(attr.type);
+            attrs.push_back(attr);
             dummy_not_nulls.push_back(false);
         }
 
-        *working_attrs = new AttributeSet("?rel_ref?", names, types, dummy_not_nulls);
+        *working_attrs = new AttributeSet(attrs, dummy_not_nulls);
         scan->output_attrs_ = *working_attrs;
     }
 
