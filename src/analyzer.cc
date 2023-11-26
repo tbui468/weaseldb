@@ -633,6 +633,14 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
         }
     }
 
+    for (Expr* e: scan->group_cols_) {
+        Attribute attr;
+        Status s = Verify(e, &attr);
+        if (!s.Ok()) {
+            return s;
+        }
+    }
+
     //projection
     {
         std::vector<Attribute> attrs;

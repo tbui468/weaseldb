@@ -651,26 +651,34 @@ Status Executor::BeginScan(ProjectScan* scan) {
     }
 
     {
+        //TODO: should compute has_agg in Verify - we should know by this point whether an aggregate function is used
+        //TODO: should try to implement groups and getting it working without any group by columns
+        //  this is a testing ground to see if ideas work with a single group, and then apply is to multiple groups
+        //std::unordered_map<std::string, std::vector<Expr*>> groups;
+        //  the key is the concatenated values of the groupby columns
+        //  the value is the clones of the projection expressions (need separate ones for aggregate function state stored in function expr)
+        //if group cols is not empty, hash column values to use as key into map
+        //the value of a given key is the 
+        //need to clone aggregate functions that maintain state (or we could actually clone all of them, one for each unique group)
+
         std::vector<Datum> data;
         for (Expr* e: scan->projs_) {
             e->Reset();
         }
         bool row_has_agg = false;
 
-
         Row* r;
         while (NextRow(scan->input_, &r).Ok()) {
-            row_has_agg = false;
             data.clear();
             int idx = 0;
 
             for (Expr* e: scan->projs_) {
-                is_agg_ = false;
                 Datum d;
                 Status s = PushEvalPop(e, r, scan->input_attrs_, &d);
 
                 if (!s.Ok()) return s;
 
+                //need to set attribute type if an aggregate function (analyze stage sets the type to Null?)
                 if (is_agg_) {
                     Attribute a = scan->input_attrs_->GetAttributes().at(idx);
                     scan->input_attrs_->GetAttributes().at(idx) = Attribute(a.rel_ref, a.name, d.Type());
