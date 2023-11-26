@@ -12,21 +12,20 @@ struct Column;
 
 struct Attribute {
     Attribute() {}
-    Attribute(const std::string& rel_ref, const std::string& name, DatumType type, bool not_null_constraint):
-        rel_ref(rel_ref), name(name), type(type), not_null_constraint(not_null_constraint) {}
+    Attribute(const std::string& rel_ref, const std::string& name, DatumType type):
+        rel_ref(rel_ref), name(name), type(type) {}
 
     std::string rel_ref         {""};
     std::string name            {""};
     DatumType type              {DatumType::Null};
-    bool not_null_constraint    {true};
 
     std::string ToString() const;
-    Status CheckConstraints(DatumType type) const;
+    //Status CheckConstraints(DatumType type) const;
 };
 
 class AttributeSet {
 public:
-    AttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<DatumType> types, std::vector<bool> not_nulls);
+    AttributeSet(const std::string& ref_name, std::vector<std::string> names, std::vector<DatumType> types);
     AttributeSet(AttributeSet* left, AttributeSet* right, bool* has_duplicate_tables);
     AttributeSet(std::vector<Attribute> attrs): attrs_(attrs) {}
     Status ResolveColumnTable(Column* col);

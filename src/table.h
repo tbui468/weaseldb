@@ -35,6 +35,7 @@ public:
     std::string name_;
     int64_t rowid_counter_;
     std::vector<Attribute> attrs_;
+    std::vector<bool> not_null_constraints_;
     std::vector<Index> idxs_;
 };
 

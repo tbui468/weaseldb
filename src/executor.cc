@@ -227,20 +227,18 @@ Status Executor::SelectExecutor(SelectStmt* stmt) {
 
 Status Executor::DescribeTableExecutor(DescribeTableStmt* stmt) { 
     //column information
-    std::vector<Attribute> row_description = { Attribute("rel_ref", "name", DatumType::Text, true), 
-                                               Attribute("rel_ref", "type", DatumType::Text, true), 
-                                               Attribute("rel_ref", "not null", DatumType::Bool, true) };
+    std::vector<Attribute> row_description = { Attribute("rel_ref", "name", DatumType::Text), 
+                                               Attribute("rel_ref", "type", DatumType::Text) };
     RowSet* rowset = new RowSet(row_description);
 
     for (const Attribute& a: stmt->schema_->attrs_) {
         std::vector<Datum> data = { Datum(a.name), Datum(Datum::TypeToString(a.type)) };
-        data.emplace_back(a.not_null_constraint);
         rowset->rows_.push_back(new Row(data));
     }
 
     //index information
-    std::vector<Attribute> idx_row_description = { Attribute("rel_ref", "type", DatumType::Text, true),
-                                                   Attribute("rel_ref", "name", DatumType::Text, true) };
+    std::vector<Attribute> idx_row_description = { Attribute("rel_ref", "type", DatumType::Text),
+                                                   Attribute("rel_ref", "name", DatumType::Text) };
 
     RowSet* idx_rowset = new RowSet(idx_row_description);
 
@@ -712,7 +710,7 @@ Status Executor::BeginScan(ProjectScan* scan) {
 
             if (is_agg_) {
                 Attribute a = scan->input_attrs_->GetAttributes().at(idx);
-                scan->input_attrs_->GetAttributes().at(idx) = Attribute(a.rel_ref, a.name, d.Type(), a.not_null_constraint);
+                scan->input_attrs_->GetAttributes().at(idx) = Attribute(a.rel_ref, a.name, d.Type());
             }
 
             data.push_back(d);

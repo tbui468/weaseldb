@@ -10,10 +10,11 @@ Table::Table(std::string name,
 
     name_ = name;
     rowid_counter_ = 0;
+    not_null_constraints_ = not_null_constraints;
 
     //NOTE: index creation requires attrs_ to be filled in beforehand
     for (size_t i = 0; i < names.size(); i++) {
-        attrs_.emplace_back(name_, names.at(i).lexeme, TypeTokenToDatumType(types.at(i).type), not_null_constraints.at(i));
+        attrs_.emplace_back(name_, names.at(i).lexeme, TypeTokenToDatumType(types.at(i).type));
     }
 
     //indexes
@@ -51,7 +52,8 @@ Table::Table(std::string name, const std::string& buf) {
         bool not_null_constraint = *((bool*)(buf.data() + off));
         off += sizeof(bool);
 
-        attrs_.emplace_back(name_, attr_name, type, not_null_constraint);
+        attrs_.emplace_back(name_, attr_name, type);
+        not_null_constraints_.push_back(not_null_constraint);
     }
 
     //deserialize indexes
@@ -71,12 +73,16 @@ std::string Table::Serialize() const {
     int count = attrs_.size();
     buf.append((char*)&count, sizeof(count));
 
+    int j = 0;
+
     for (const Attribute& a: attrs_) {
         buf.append((char*)&a.type, sizeof(DatumType));
         int str_size = a.name.length();
         buf.append((char*)&str_size, sizeof(int));
         buf += a.name;
-        buf.append((char*)&a.not_null_constraint, sizeof(bool));
+        bool not_null = not_null_constraints_.at(j);
+        buf.append((char*)&not_null, sizeof(bool));
+        j++;
     }
 
     //serialize indexes
@@ -92,15 +98,13 @@ std::string Table::Serialize() const {
 AttributeSet* Table::MakeAttributeSet(const std::string& alias) const {
     std::vector<std::string> names;
     std::vector<DatumType> types;
-    std::vector<bool> not_nulls;
 
     for (const Attribute& a: attrs_) {
         names.push_back(a.name);
         types.push_back(a.type);
-        not_nulls.push_back(a.not_null_constraint);
     }
             
-    return new AttributeSet(alias, names, types, not_nulls);
+    return new AttributeSet(alias, names, types);
 }
 
 
