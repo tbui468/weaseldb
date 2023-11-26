@@ -643,14 +643,53 @@ Status Executor::BeginScan(OuterSelectScan* scan) {
 
 Status Executor::BeginScan(ProjectScan* scan) {
     scan->cursor_ = 0;
-    RowSet* rs = new RowSet(scan->input_attrs_->GetAttributes());
+    RowSet* rs = new RowSet(scan->output_attrs_->GetAttributes());
     {
         Status s = BeginScan(scan->input_);
         if (!s.Ok()) return s;
 
+    }
+
+    {
+        std::vector<Datum> data;
+        for (Expr* e: scan->projs_) {
+            e->Reset();
+        }
+        bool row_has_agg = false;
+
+
         Row* r;
         while (NextRow(scan->input_, &r).Ok()) {
-            rs->rows_.push_back(r);
+            row_has_agg = false;
+            data.clear();
+            int idx = 0;
+
+            for (Expr* e: scan->projs_) {
+                is_agg_ = false;
+                Datum d;
+                Status s = PushEvalPop(e, r, scan->input_attrs_, &d);
+
+                if (!s.Ok()) return s;
+
+                if (is_agg_) {
+                    Attribute a = scan->input_attrs_->GetAttributes().at(idx);
+                    scan->input_attrs_->GetAttributes().at(idx) = Attribute(a.rel_ref, a.name, d.Type());
+                }
+
+                data.push_back(d);
+                idx++;
+
+                if (is_agg_)
+                    row_has_agg = true;
+            }
+
+            if (!row_has_agg) {
+                rs->rows_.push_back(new Row(data));
+            }
+        }
+
+        if (row_has_agg) {
+            rs->rows_.push_back(new Row(data));
         }
     }
 
@@ -658,7 +697,7 @@ Status Executor::BeginScan(ProjectScan* scan) {
     if (!scan->order_cols_.empty()) {
         //lambdas can only capture non-member variables
         std::vector<OrderCol>& order_cols = scan->order_cols_;
-        AttributeSet* attrs = scan->input_attrs_;
+        AttributeSet* attrs = scan->output_attrs_;
 
         std::sort(rs->rows_.begin(), rs->rows_.end(), 
                 //No error checking in lambda...
@@ -687,54 +726,13 @@ Status Executor::BeginScan(ProjectScan* scan) {
                 });
     }
 
-    //projection
-    RowSet* proj_rs = new RowSet(scan->output_attrs_->GetAttributes());
-
-    std::vector<Datum> data;
-    for (Expr* e: scan->projs_) {
-        e->Reset();
-    }
-    bool row_has_agg = false;
-
-    for (Row* r: rs->rows_) {
-        row_has_agg = false;
-        data.clear();
-        int idx = 0;
-
-        for (Expr* e: scan->projs_) {
-            is_agg_ = false;
-            Datum d;
-            Status s = PushEvalPop(e, r, scan->input_attrs_, &d);
-
-            if (!s.Ok()) return s;
-
-            if (is_agg_) {
-                Attribute a = scan->input_attrs_->GetAttributes().at(idx);
-                scan->input_attrs_->GetAttributes().at(idx) = Attribute(a.rel_ref, a.name, d.Type());
-            }
-
-            data.push_back(d);
-            idx++;
-
-            if (is_agg_)
-                row_has_agg = true;
-        }
-
-        if (!row_has_agg) {
-            proj_rs->rows_.push_back(new Row(data));
-        }
-    }
-
-    if (row_has_agg) {
-        proj_rs->rows_.push_back(new Row(data));
-    }
 
     //remove duplicates
     scan->output_ = new RowSet(scan->output_attrs_->GetAttributes());
 
     if (scan->distinct_) {
         std::unordered_map<std::string, bool> map;
-        for (Row* r: proj_rs->rows_) {
+        for (Row* r: rs->rows_) {
             std::string key = Datum::SerializeData(r->data_);
             if (map.find(key) == map.end()) {
                 map.insert({key, true});
@@ -742,7 +740,7 @@ Status Executor::BeginScan(ProjectScan* scan) {
             }
         }
     } else {
-        scan->output_->rows_ = proj_rs->rows_;
+        scan->output_->rows_ = rs->rows_;
     }
 
     //limit in-place

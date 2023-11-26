@@ -633,24 +633,6 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
         }
     }
 
-    //order cols
-    for (OrderCol oc: scan->order_cols_) {
-        {
-            Attribute attr;
-            Status s = Verify(oc.col, &attr);
-            if (!s.Ok())
-                return s;
-        }
-
-        {
-            Attribute attr;
-            Status s = Verify(oc.asc, &attr);
-            if (!s.Ok()) {
-                return s;
-            }
-        }
-    }
-
     //projection
     {
         std::vector<Attribute> attrs;
@@ -668,6 +650,27 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
 
         *working_attrs = new AttributeSet(attrs, dummy_not_nulls);
         scan->output_attrs_ = *working_attrs;
+    }
+
+    scopes_.pop_back();
+    scopes_.push_back(scan->output_attrs_);
+
+    //order cols
+    for (OrderCol oc: scan->order_cols_) {
+        {
+            Attribute attr;
+            Status s = Verify(oc.col, &attr);
+            if (!s.Ok())
+                return s;
+        }
+
+        {
+            Attribute attr;
+            Status s = Verify(oc.asc, &attr);
+            if (!s.Ok()) {
+                return s;
+            }
+        }
     }
 
     //limit
