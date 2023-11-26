@@ -27,18 +27,18 @@ private:
     Status DropModelVerifier(DropModelStmt* stmt);
 
     //expressions
-    Status Verify(Expr* expr, DatumType* type);
+    Status Verify(Expr* expr, Attribute* attr);
 
-    Status VerifyLiteral(Literal* expr, DatumType* type);
-    Status VerifyBinary(Binary* expr, DatumType* type);
-    Status VerifyUnary(Unary* expr, DatumType* type);
-    Status VerifyColRef(ColRef* expr, DatumType* type);
-    Status VerifyColAssign(ColAssign* expr, DatumType* type);
-    Status VerifyCall(Call* expr, DatumType* type);
-    Status VerifyIsNull(IsNull* expr, DatumType* type);
-    Status VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type);
-    Status VerifyPredict(Predict* expr, DatumType* type);
-    Status VerifyCast(Cast* expr, DatumType* type);
+    Status VerifyLiteral(Literal* expr, Attribute* attr);
+    Status VerifyBinary(Binary* expr, Attribute* attr);
+    Status VerifyUnary(Unary* expr, Attribute* attr);
+    Status VerifyColRef(ColRef* expr, Attribute* attr);
+    Status VerifyColAssign(ColAssign* expr, Attribute* attr);
+    Status VerifyCall(Call* expr, Attribute* attr);
+    Status VerifyIsNull(IsNull* expr, Attribute* attr);
+    Status VerifyScalarSubquery(ScalarSubquery* expr, Attribute* attr);
+    Status VerifyPredict(Predict* expr, Attribute* attr);
+    Status VerifyCast(Cast* expr, Attribute* attr);
 
     Status Verify(Scan* scan, AttributeSet** working_attrs);
 

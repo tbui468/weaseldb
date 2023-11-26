@@ -30,33 +30,6 @@ Status Analyzer::Verify(Stmt* stmt, AttributeSet** working_attrs) {
     }
 }
 
-Status Analyzer::Verify(Expr* expr, DatumType* type) {
-    switch (expr->Type()) {
-        case ExprType::Literal:
-            return VerifyLiteral((Literal*)expr, type);
-        case ExprType::Binary:
-            return VerifyBinary((Binary*)expr, type);
-        case ExprType::Unary:
-            return VerifyUnary((Unary*)expr, type);
-        case ExprType::ColRef:
-            return VerifyColRef((ColRef*)expr, type);
-        case ExprType::ColAssign:
-            return VerifyColAssign((ColAssign*)expr, type);
-        case ExprType::Call:
-            return VerifyCall((Call*)expr, type);
-        case ExprType::IsNull:
-            return VerifyIsNull((IsNull*)expr, type);
-        case ExprType::ScalarSubquery:
-            return VerifyScalarSubquery((ScalarSubquery*)expr, type);
-        case ExprType::Predict:
-            return VerifyPredict((Predict*)expr, type);
-        case ExprType::Cast:
-            return VerifyCast((Cast*)expr, type);
-        default:
-            return Status(false, "Execution Error: Invalid expression type");
-    }
-}
-
 Status Analyzer::CreateVerifier(CreateStmt* stmt) { 
     Table* schema;
     Status s = GetSchema(stmt->target_.lexeme, &schema);
@@ -98,8 +71,8 @@ Status Analyzer::InsertVerifier(InsertStmt* stmt) {
     scopes_.push_back(working_attrs);
     for (const std::vector<Expr*>& assigns: stmt->col_assigns_) {
         for (Expr* e: assigns) {
-            DatumType type;
-            Status s = Verify(e, &type);
+            Attribute attr;
+            Status s = Verify(e, &attr);
             if (!s.Ok())
                 return s;
         }
@@ -120,9 +93,8 @@ Status Analyzer::UpdateVerifier(UpdateStmt* stmt) {
 
     scopes_.push_back(working_attrs);
     for (Expr* e: stmt->assigns_) {
-        DatumType type;
-        Status s = Verify(e, &type);
-        //stmt->scan_->CheckConstraint(&a); //TODO: make verify return an Attribute, and then implement CheckConstraint for scans
+        Attribute attr;
+        Status s = Verify(e, &attr);
         if (!s.Ok())
             return s;
     }
@@ -212,27 +184,54 @@ Status Analyzer::DropModelVerifier(DropModelStmt* stmt) {
  * Expression Verifiers
  */
 
-Status Analyzer::VerifyLiteral(Literal* expr, DatumType* type) { 
-    *type = LiteralTokenToDatumType(expr->t_.type);
+Status Analyzer::Verify(Expr* expr, Attribute* attr) {
+    switch (expr->Type()) {
+        case ExprType::Literal:
+            return VerifyLiteral((Literal*)expr, attr);
+        case ExprType::Binary:
+            return VerifyBinary((Binary*)expr, attr);
+        case ExprType::Unary:
+            return VerifyUnary((Unary*)expr, attr);
+        case ExprType::ColRef:
+            return VerifyColRef((ColRef*)expr, attr);
+        case ExprType::ColAssign:
+            return VerifyColAssign((ColAssign*)expr, attr);
+        case ExprType::Call:
+            return VerifyCall((Call*)expr, attr);
+        case ExprType::IsNull:
+            return VerifyIsNull((IsNull*)expr, attr);
+        case ExprType::ScalarSubquery:
+            return VerifyScalarSubquery((ScalarSubquery*)expr, attr);
+        case ExprType::Predict:
+            return VerifyPredict((Predict*)expr, attr);
+        case ExprType::Cast:
+            return VerifyCast((Cast*)expr, attr);
+        default:
+            return Status(false, "Execution Error: Invalid expression type");
+    }
+}
+
+Status Analyzer::VerifyLiteral(Literal* expr, Attribute* attr) { 
+    *attr = Attribute("", "", LiteralTokenToDatumType(expr->t_.type));
     return Status(); 
 }
 
-Status Analyzer::VerifyBinary(Binary* expr, DatumType* type) { 
-    DatumType left_type;
+Status Analyzer::VerifyBinary(Binary* expr, Attribute* attr) { 
+    Attribute left_attr;
     {
-        Status s = Verify(expr->left_, &left_type);
+        Status s = Verify(expr->left_, &left_attr);
         if (!s.Ok())
             return s;
     }
-    DatumType right_type;
+    Attribute right_attr;
     {
-        Status s = Verify(expr->right_, &right_type);
+        Status s = Verify(expr->right_, &right_attr);
         if (!s.Ok())
             return s;
     }
 
-    if (left_type == DatumType::Null || right_type == DatumType::Null) {
-        *type = DatumType::Null;
+    if (left_attr.type == DatumType::Null || right_attr.type == DatumType::Null) {
+        *attr = Attribute("", expr->ToString(), DatumType::Null);
         return Status();
     }
 
@@ -243,26 +242,26 @@ Status Analyzer::VerifyBinary(Binary* expr, DatumType* type) {
         case TokenType::LessEqual:
         case TokenType::Greater:
         case TokenType::GreaterEqual:
-            if (!(Datum::TypeIsNumeric(left_type) && Datum::TypeIsNumeric(right_type)) && left_type != right_type) {
+            if (!(Datum::TypeIsNumeric(left_attr.type) && Datum::TypeIsNumeric(right_attr.type)) && left_attr.type != right_attr.type) {
                     return Status(false, "Error: Equality and relational operands must be same data types");
             }
-            *type = DatumType::Bool;
+            *attr = Attribute("", expr->ToString(), DatumType::Bool);
             break;
         case TokenType::Or:
         case TokenType::And:
-            if (!(left_type == DatumType::Bool && right_type == DatumType::Bool)) {
+            if (!(left_attr.type == DatumType::Bool && right_attr.type == DatumType::Bool)) {
                 return Status(false, "Error: Logical operator operands must be boolean types");
             }
-            *type = DatumType::Bool;
+            *attr = Attribute("", expr->ToString(), DatumType::Bool);
             break;
         case TokenType::Plus:
         case TokenType::Minus:
         case TokenType::Star:
         case TokenType::Slash:
-            if (!(Datum::TypeIsNumeric(left_type) && Datum::TypeIsNumeric(right_type))) {
+            if (!(Datum::TypeIsNumeric(left_attr.type) && Datum::TypeIsNumeric(right_attr.type))) {
                 return Status(false, "Error: The '" + expr->op_.lexeme + "' operator operands must both be a numeric type");
             } 
-            *type = left_type;
+            *attr = Attribute("", expr->ToString(), left_attr.type);
             break;
         default:
             return Status(false, "Implementation Error: op type not implemented in Binary expr!");
@@ -272,25 +271,26 @@ Status Analyzer::VerifyBinary(Binary* expr, DatumType* type) {
     return Status(); 
 }
 
-Status Analyzer::VerifyUnary(Unary* expr, DatumType* type) { 
-    DatumType right_type;
+Status Analyzer::VerifyUnary(Unary* expr, Attribute* attr) { 
+    Attribute right_attr;
     {
-        Status s = Verify(expr->right_, &right_type);
+        Status s = Verify(expr->right_, &right_attr);
         if (!s.Ok())
             return s;
     }
+
     switch (expr->op_.type) {
         case TokenType::Not:
-            if (right_type != DatumType::Bool) {
+            if (right_attr.type != DatumType::Bool) {
                 return Status(false, "Error: 'not' operand must be a boolean type.");
             }
-            *type = DatumType::Bool;
+            *attr = Attribute("", expr->ToString(), DatumType::Bool);
             break;
         case TokenType::Minus:
-            if (!Datum::TypeIsNumeric(right_type)) {
+            if (!Datum::TypeIsNumeric(right_attr.type)) {
                 return Status(false, "Error: '-' operator operand must be numeric type");
             }
-            *type = right_type;
+            *attr = Attribute("", expr->ToString(), right_attr.type);
             break;
         default:
             return Status(false, "Implementation Error: op type not implemented in Binary expr!");
@@ -300,8 +300,7 @@ Status Analyzer::VerifyUnary(Unary* expr, DatumType* type) {
     return Status(); 
 }
 
-Status Analyzer::VerifyColRef(ColRef* expr, DatumType* type) { 
-    Attribute a;
+Status Analyzer::VerifyColRef(ColRef* expr, Attribute* attr) { 
     {
         Status s;
         int dummy_idx;
@@ -310,7 +309,7 @@ Status Analyzer::VerifyColRef(ColRef* expr, DatumType* type) {
             s = as->ResolveColumnTable(&expr->col_);
             if (!s.Ok()) return s;
 
-            s = as->GetAttribute(&expr->col_, &a, &dummy_idx);
+            s = as->GetAttribute(&expr->col_, attr, &dummy_idx);
             if (s.Ok())
                 break;
         }
@@ -318,20 +317,17 @@ Status Analyzer::VerifyColRef(ColRef* expr, DatumType* type) {
             return s;
     }
 
-    *type = a.type;
-
     return Status(); 
 }
 
-Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) { 
-    DatumType right_type;
+Status Analyzer::VerifyColAssign(ColAssign* expr, Attribute* attr) { 
+    Attribute right_attr;
     {
-        Status s = Verify(expr->right_, &right_type);
+        Status s = Verify(expr->right_, &right_attr);
         if (!s.Ok())
             return s;
     }
 
-    Attribute a;
     {
         Status s;
         int dummy_idx;
@@ -340,9 +336,9 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
             s = as->ResolveColumnTable(&expr->col_);
             if (!s.Ok()) return s;
 
-            s = as->GetAttribute(&expr->col_, &a, &dummy_idx);
+            s = as->GetAttribute(&expr->col_, attr, &dummy_idx);
             if (s.Ok()) {
-                s = as->PassesConstraintChecks(&expr->col_, right_type);
+                s = as->PassesConstraintChecks(&expr->col_, right_attr.type);
                 if (!s.Ok()) return s;
 
                 break;
@@ -353,23 +349,15 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, DatumType* type) {
 
     }
 
-    /*
-    {
-        Status s = a.CheckConstraints(right_type);
-        if (!s.Ok())
-            return s;
-    }*/
-
-    *type = a.type;
-    expr->field_type_ = a.type;
+    expr->field_type_ = attr->type;
 
     return Status(); 
 }
 
-Status Analyzer::VerifyCall(Call* expr, DatumType* type) { 
-    DatumType arg_type;
+Status Analyzer::VerifyCall(Call* expr, Attribute* attr) { 
+    Attribute arg_attr;
     {
-        Status s = Verify(expr->arg_, &arg_type);
+        Status s = Verify(expr->arg_, &arg_attr);
         if (!s.Ok()) {
             return s;
         }
@@ -379,15 +367,15 @@ Status Analyzer::VerifyCall(Call* expr, DatumType* type) {
         case TokenType::Avg:
             //TODO: need to think about how we want to deal with integer division
             //using floor division now if argument is integer type - what does postgres do?
-            *type = arg_type;
+            *attr = Attribute("", expr->ToString(), arg_attr.type);
             break;
         case TokenType::Count:
-            *type = DatumType::Int8;
+            *attr = Attribute("", expr->ToString(), DatumType::Int8);
             break;
         case TokenType::Max:
         case TokenType::Min:
         case TokenType::Sum:
-            *type = arg_type;
+            *attr = Attribute("", expr->ToString(), arg_attr.type);
             break;
         default:
             return Status(false, "Error: Invalid function name");
@@ -401,18 +389,18 @@ Status Analyzer::VerifyCall(Call* expr, DatumType* type) {
     return Status(); 
 }
 
-Status Analyzer::VerifyIsNull(IsNull* expr, DatumType* type) { 
-    *type = DatumType::Bool;
+Status Analyzer::VerifyIsNull(IsNull* expr, Attribute* attr) { 
+    *attr = Attribute("", expr->ToString(), DatumType::Bool);
 
-    DatumType left_type;
-    Status s = Verify(expr->left_, &left_type);
+    Attribute left_attr;
+    Status s = Verify(expr->left_, &left_attr);
     if (!s.Ok())
         return s;
 
     return Status(); 
 }
 
-Status Analyzer::VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type) { 
+Status Analyzer::VerifyScalarSubquery(ScalarSubquery* expr, Attribute* attr) { 
     AttributeSet* working_attrs;
     {
         Status s = Verify(expr->stmt_, &working_attrs);
@@ -423,19 +411,19 @@ Status Analyzer::VerifyScalarSubquery(ScalarSubquery* expr, DatumType* type) {
     if (working_attrs->AttributeCount() != 1)
         return Status(false, "Error: Scalar subquery must return a single value");
 
-    *type = working_attrs->GetAttributes().at(0).type;
+    *attr = working_attrs->GetAttributes().at(0);
 
     return Status();
 }
 
-Status Analyzer::VerifyPredict(Predict* expr, DatumType* type) {
+Status Analyzer::VerifyPredict(Predict* expr, Attribute* attr) {
     {
-        DatumType arg_type;
-        Status s = Verify(expr->arg_, &arg_type);
+        Attribute arg_attr;
+        Status s = Verify(expr->arg_, &arg_attr);
         if (!s.Ok())
             return s;
 
-        *type = DatumType::Int8; //TODO: temp to test mnist
+        *attr = Attribute("", expr->ToString(), DatumType::Int8); //temp to test mnist
     }
 
     {
@@ -448,18 +436,18 @@ Status Analyzer::VerifyPredict(Predict* expr, DatumType* type) {
     return Status();
 }
 
-Status Analyzer::VerifyCast(Cast* expr, DatumType* type) {
-    DatumType value_type;
+Status Analyzer::VerifyCast(Cast* expr, Attribute* attr) {
+    Attribute value_attr;
     {
-        Status s = Verify(expr->value_, &value_type);
+        Status s = Verify(expr->value_, &value_attr);
         if (!s.Ok())
             return s;
     }
 
     DatumType target_type = TypeTokenToDatumType(expr->type_.type);
 
-    if (Datum::CanCast(value_type, target_type)) {
-        *type = target_type;
+    if (Datum::CanCast(value_attr.type, target_type)) {
+        *attr = Attribute("", expr->ToString(), target_type);
         return Status();
     }
 
@@ -495,12 +483,12 @@ Status Analyzer::VerifyConstant(ConstantScan* scan, AttributeSet** working_attrs
     std::vector<DatumType> types;
     std::vector<bool> dummy_not_nulls;
     for (Expr* e: scan->target_cols_) {
-        DatumType type;
-        Status s = Verify(e, &type);
+        Attribute attr;
+        Status s = Verify(e, &attr);
         if (!s.Ok())
             return s;
         names.push_back("?col?");
-        types.push_back(type);
+        types.push_back(attr.type);
         dummy_not_nulls.push_back(false);
     }
 
@@ -533,12 +521,12 @@ Status Analyzer::VerifySelectScan(SelectScan* scan, AttributeSet** working_attrs
     scopes_.push_back(*working_attrs);
 
     {
-        DatumType type;
-        Status s = Verify(scan->expr_, &type);
+        Attribute attr;
+        Status s = Verify(scan->expr_, &attr);
         if (!s.Ok())
            return s; 
 
-        if (type != DatumType::Bool) {
+        if (attr.type != DatumType::Bool) {
             return Status(false, "Analysis Error: where clause expression must evaluate to true or false");
         }
     }
@@ -582,12 +570,12 @@ Status Analyzer::Verify(OuterSelectScan* scan, AttributeSet** working_attrs) {
     scopes_.push_back(*working_attrs);
 
     {
-        DatumType type;
-        Status s = Verify(scan->expr_, &type);
+        Attribute attr;
+        Status s = Verify(scan->expr_, &attr);
         if (!s.Ok())
            return s; 
 
-        if (type != DatumType::Bool) {
+        if (attr.type != DatumType::Bool) {
             return Status(false, "Analysis Error: where clause expression must evaluate to true or false");
         }
     }
@@ -650,15 +638,15 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
     //order cols
     for (OrderCol oc: scan->order_cols_) {
         {
-            DatumType type;
-            Status s = Verify(oc.col, &type);
+            Attribute attr;
+            Status s = Verify(oc.col, &attr);
             if (!s.Ok())
                 return s;
         }
 
         {
-            DatumType type;
-            Status s = Verify(oc.asc, &type);
+            Attribute attr;
+            Status s = Verify(oc.asc, &attr);
             if (!s.Ok()) {
                 return s;
             }
@@ -671,14 +659,14 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
         std::vector<DatumType> types;
         std::vector<bool> dummy_not_nulls;
         for (Expr* e: scan->projs_) {
-            DatumType type;
-            Status s = Verify(e, &type);
+            Attribute attr;
+            Status s = Verify(e, &attr);
             if (!s.Ok()) {
                 return s;
             }
 
             names.push_back(e->ToString());
-            types.push_back(type);
+            types.push_back(attr.type);
             dummy_not_nulls.push_back(false);
         }
 
@@ -688,13 +676,13 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
 
     //limit
     {
-        DatumType type;
-        Status s = Verify(scan->limit_, &type);
+        Attribute attr;
+        Status s = Verify(scan->limit_, &attr);
         if (!s.Ok()) {
             return s;
         }
 
-        if (!Datum::TypeIsInteger(type)) {
+        if (!Datum::TypeIsInteger(attr.type)) {
             return Status(false, "Error: 'Limit' must be followed by an expression that evaluates to an integer");
         }
     }
