@@ -355,6 +355,8 @@ Status Analyzer::VerifyColAssign(ColAssign* expr, Attribute* attr) {
 }
 
 Status Analyzer::VerifyCall(Call* expr, Attribute* attr) { 
+    has_agg_ = true;
+
     Attribute arg_attr;
     {
         Status s = Verify(expr->arg_, &arg_attr);
@@ -643,6 +645,7 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
 
     //projection
     {
+        bool old_has_agg = has_agg_;
         std::vector<Attribute> attrs;
         std::vector<bool> dummy_not_nulls;
         for (Expr* e: scan->projs_) {
@@ -654,7 +657,11 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
 
             attrs.push_back(attr);
             dummy_not_nulls.push_back(false);
+            if (has_agg_) {
+                scan->has_agg_ = true;
+            }
         }
+        has_agg_ = old_has_agg;
 
         *working_attrs = new AttributeSet(attrs, dummy_not_nulls);
         scan->output_attrs_ = *working_attrs;

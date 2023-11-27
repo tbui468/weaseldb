@@ -66,6 +66,7 @@ private:
 private:
     Txn** txn_;
     std::vector<AttributeSet*> scopes_;
+    bool has_agg_ {false};
 };
 
 }

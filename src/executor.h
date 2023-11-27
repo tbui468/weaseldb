@@ -82,9 +82,6 @@ private:
     Txn** txn_;
     std::vector<Row*> scopes_;
     std::vector<AttributeSet*> attrs_;
-
-    //state for aggregate functions
-    bool is_agg_ {false};
 };
 
 }

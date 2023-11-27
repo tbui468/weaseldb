@@ -370,6 +370,7 @@ public:
     RowSet* output_;
     size_t cursor_ {0};
     int ghost_column_count_ {0};
+    bool has_agg_ {false};
 };
 
 }

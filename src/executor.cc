@@ -446,7 +446,6 @@ Status Executor::Eval(ColAssign* expr, Datum* result) {
 }
 
 Status Executor::Eval(Call* expr, Datum* result) {
-    is_agg_ = true;
     Datum arg;
     Status s = Eval(expr->arg_, &arg);
     if (!s.Ok())
@@ -485,8 +484,6 @@ Status Executor::Eval(Call* expr, Datum* result) {
             return Status(false, "Error: Invalid function name");
     }
 
-    //Calling Eval on argument may set qs.is_agg to false, so need to set it after evaluating argument
-
     return Status();
 }
 
@@ -506,9 +503,7 @@ Status Executor::Eval(IsNull* expr, Datum* result) {
 }
 
 Status Executor::Eval(ScalarSubquery* expr, Datum* result) {
-    bool old_is_agg = is_agg_;
     Status s = Execute(expr->stmt_);
-    is_agg_ = old_is_agg;
 
     if (!s.Ok())
         return s;
@@ -665,7 +660,6 @@ Status Executor::BeginScan(ProjectScan* scan) {
         for (Expr* e: scan->projs_) {
             e->Reset();
         }
-        bool row_has_agg = false;
 
         Row* r;
         while (NextRow(scan->input_, &r).Ok()) {
@@ -678,25 +672,17 @@ Status Executor::BeginScan(ProjectScan* scan) {
 
                 if (!s.Ok()) return s;
 
-                //need to set attribute type if an aggregate function (analyze stage sets the type to Null?)
-                if (is_agg_) {
-                    Attribute a = scan->input_attrs_->GetAttributes().at(idx);
-                    scan->input_attrs_->GetAttributes().at(idx) = Attribute(a.rel_ref, a.name, d.Type());
-                }
-
                 data.push_back(d);
                 idx++;
 
-                if (is_agg_)
-                    row_has_agg = true;
             }
 
-            if (!row_has_agg) {
+            if (!scan->has_agg_) {
                 rs->rows_.push_back(new Row(data));
             }
         }
 
-        if (row_has_agg) {
+        if (scan->has_agg_) {
             rs->rows_.push_back(new Row(data));
         }
     }
