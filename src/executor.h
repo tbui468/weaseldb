@@ -9,6 +9,20 @@
 namespace wsldb {
 
 
+class Group {
+public:
+    Group(AttributeSet* attrs, const std::vector<Expr*>& projs): attrs_(attrs) {
+        for (Expr* e: projs) {
+            projs_.push_back(e->Clone());
+        }
+    }
+public:
+    AttributeSet* attrs_;
+    std::vector<Expr*> projs_;
+    std::vector<Datum> data_;
+};
+
+
 class Executor {
 public:
     Executor(Storage* storage, Inference* inference, Txn** txn): storage_(storage), inference_(inference), txn_(txn) {

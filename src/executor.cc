@@ -646,45 +646,56 @@ Status Executor::BeginScan(ProjectScan* scan) {
     }
 
     {
-        //TODO: should compute has_agg in Verify - we should know by this point whether an aggregate function is used
-        //TODO: should try to implement groups and getting it working without any group by columns
-        //  this is a testing ground to see if ideas work with a single group, and then apply is to multiple groups
-        //std::unordered_map<std::string, std::vector<Expr*>> groups;
-        //  the key is the concatenated values of the groupby columns
-        //  the value is the clones of the projection expressions (need separate ones for aggregate function state stored in function expr)
-        //if group cols is not empty, hash column values to use as key into map
-        //the value of a given key is the 
-        //need to clone aggregate functions that maintain state (or we could actually clone all of them, one for each unique group)
-
-        std::vector<Datum> data;
-        for (Expr* e: scan->projs_) {
-            e->Reset();
-        }
-
         Row* r;
+        Group* default_group = new Group(scan->input_attrs_, scan->projs_);
+        std::unordered_map<std::string, Group*> group_map;
+
         while (NextRow(scan->input_, &r).Ok()) {
-            data.clear();
-            int idx = 0;
+            if (scan->group_cols_.size() > 0) {
+                std::string serialized_data;
+                for (Expr* e: scan->group_cols_) {
+                    Datum d;
+                    Status s = PushEvalPop(e, r, scan->input_attrs_, &d);
+                    if (!s.Ok()) return s;
+                    serialized_data += d.Serialize();
+                }
 
-            for (Expr* e: scan->projs_) {
-                Datum d;
-                Status s = PushEvalPop(e, r, scan->input_attrs_, &d);
+                if (group_map.find(serialized_data) == group_map.end()) {
+                    group_map.insert({ serialized_data, new Group(scan->input_attrs_, scan->projs_) });
+                }
 
-                if (!s.Ok()) return s;
+                Group* group = group_map.at(serialized_data);
 
-                data.push_back(d);
-                idx++;
+                group->data_.clear();
+                for (Expr* e: group->projs_) {
+                    Datum d;
+                    Status s = PushEvalPop(e, r, group->attrs_, &d);
+                    if (!s.Ok()) return s;
+                    group->data_.push_back(d);
+                }
+            } else {
+                default_group->data_.clear();
+                for (Expr* e: default_group->projs_) {
+                    Datum d;
+                    Status s = PushEvalPop(e, r, default_group->attrs_, &d);
+                    if (!s.Ok()) return s;
+                    default_group->data_.push_back(d);
+                }
 
-            }
-
-            if (!scan->has_agg_) {
-                rs->rows_.push_back(new Row(data));
+                if (!scan->has_agg_) {
+                    rs->rows_.push_back(new Row(default_group->data_));
+                }
             }
         }
 
-        if (scan->has_agg_) {
-            rs->rows_.push_back(new Row(data));
+        if (scan->has_agg_ && scan->group_cols_.size() == 0) {
+            rs->rows_.push_back(new Row(default_group->data_));
         }
+
+        for (std::unordered_map<std::string, Group*>::iterator it = group_map.begin(); it != group_map.end(); it++) {
+            rs->rows_.push_back(new Row(it->second->data_));
+        }
+
     }
 
     //sort filtered rows in-place

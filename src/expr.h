@@ -31,7 +31,7 @@ class Expr {
 public:
     virtual std::string ToString() = 0;
     virtual ExprType Type() const = 0;
-    virtual void Reset() = 0;
+    virtual Expr* Clone() const = 0;
 };
 
 class Literal: public Expr {
@@ -45,7 +45,8 @@ public:
     ExprType Type() const override {
         return ExprType::Literal;
     }
-    void Reset() override {
+    Expr* Clone() const override {
+        return new Literal(t_);
     }
 public:
     Token t_;
@@ -61,9 +62,8 @@ public:
     ExprType Type() const override {
         return ExprType::Binary;
     }
-    void Reset() override {
-        left_->Reset();
-        right_->Reset();
+    Expr* Clone() const override {
+        return new Binary(op_, left_->Clone(), right_->Clone());
     }
 public:
     Token op_;
@@ -80,8 +80,8 @@ public:
     ExprType Type() const override {
         return ExprType::Unary;
     }
-    void Reset() override {
-        right_->Reset();
+    Expr* Clone() const override {
+        return new Unary(op_, right_->Clone());
     }
 public:
     Token op_;
@@ -103,7 +103,8 @@ public:
     ExprType Type() const override {
         return ExprType::ColRef;
     }
-    void Reset() override {
+    Expr* Clone() const override {
+        return new ColRef(col_);
     }
 public:
     Column col_;
@@ -120,8 +121,10 @@ public:
     ExprType Type() const override {
         return ExprType::ColAssign;
     }
-    void Reset() override {
-        right_->Reset();
+    Expr* Clone() const override {
+        ColAssign* ca = new ColAssign(col_, right_->Clone());
+        ca->field_type_ = field_type_;
+        return ca;
     }
 public:
     Column col_;
@@ -143,13 +146,8 @@ public:
     ExprType Type() const override {
         return ExprType::Call;
     }
-    void Reset() override {
-        arg_->Reset();
-        min_ = Datum();
-        max_ = Datum();
-        sum_ = Datum(0);
-        count_ = Datum(0);
-        first_ = true;
+    Expr* Clone() const override {
+        return new Call(fcn_, arg_->Clone());
     }
 public:
     Token fcn_;
@@ -171,8 +169,8 @@ public:
     ExprType Type() const override {
         return ExprType::IsNull;
     }
-    void Reset() override {
-        left_->Reset();
+    Expr* Clone() const override {
+        return new IsNull(left_->Clone());
     }
 public:
     Expr* left_;
@@ -187,7 +185,8 @@ public:
     ExprType Type() const override {
         return ExprType::ScalarSubquery;
     }
-    void Reset() override {
+    Expr* Clone() const override {
+        return new ScalarSubquery(stmt_); //TODO: does a simple clone of the pointer work here???
     }
 public:
     Stmt* stmt_;
@@ -202,8 +201,8 @@ public:
     ExprType Type() const override {
         return ExprType::Predict;
     }
-    void Reset() override {
-        arg_->Reset();
+    Expr* Clone() const override {
+        return new Predict(model_name_, arg_->Clone());
     }
 public:
     Token model_name_;
@@ -219,8 +218,8 @@ public:
     ExprType Type() const override {
         return ExprType::Cast;
     }
-    void Reset() override {
-        value_->Reset();
+    Expr* Clone() const override {
+        return new Cast(value_->Clone(), type_);
     }
 public:
     Expr* value_;
