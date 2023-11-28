@@ -698,6 +698,15 @@ Status Executor::BeginScan(ProjectScan* scan) {
 
     }
 
+    //'having' clause is pushed on as last ghost projection column (after any 'order' ghost columns)
+    if (scan->having_clause_) {
+        rs->rows_.erase(std::remove_if(rs->rows_.begin(), rs->rows_.end(),
+                        [](Row* r) -> bool {
+                            return !(r->data_.back().AsBool());
+                        }), 
+                        rs->rows_.end());
+    }
+
     //sort filtered rows in-place
     if (!scan->order_cols_.empty()) {
         //lambdas can only capture non-member variables

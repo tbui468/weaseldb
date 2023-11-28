@@ -620,7 +620,7 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
     }
 
 
-    //add order columns to projection columns if not already included
+    //add ghost order columns to projection columns if not already included
     //need this to be able to sort by a column even if that column will not end up in the output
     std::unordered_map<std::string, bool> included;
     for (Expr* e: scan->projs_) {
@@ -633,6 +633,12 @@ Status Analyzer::Verify(ProjectScan* scan, AttributeSet** working_attrs) {
             scan->projs_.push_back(oc.col);
             scan->ghost_column_count_++;
         }
+    }
+
+    //add ghost column for 'having' clause
+    if (scan->having_clause_) {
+        scan->projs_.push_back(scan->having_clause_);
+        scan->ghost_column_count_++;
     }
 
     for (Expr* e: scan->group_cols_) {
