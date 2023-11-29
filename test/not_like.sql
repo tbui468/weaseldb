@@ -1,0 +1,10 @@
+create table planets (name text, primary key(name));
+insert into planets (name) values ('Earth'), ('Mars'), ('Mercury'), ('Venus');
+select name from planets where name not like '%ar%';
+select '----';
+select name from planets where name not like '%s';
+select '----';
+select name from planets where name not like 'M%';
+select '----';
+select name from planets where name not like '%r____';
+drop table planets;

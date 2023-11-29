@@ -175,7 +175,8 @@ Status Parser::Equality(Expr** expr) {
     while (PeekToken().type == TokenType::Equal ||
            PeekToken().type == TokenType::NotEqual ||
            PeekToken().type == TokenType::Is ||
-           PeekToken().type == TokenType::Like) {
+           PeekToken().type == TokenType::Like ||
+           (PeekToken().type == TokenType::Not && PeekTwo().type == TokenType::Like)) {
 
         Token op = NextToken();
         if (op.type == TokenType::Is) {
@@ -187,6 +188,10 @@ Status Parser::Equality(Expr** expr) {
                 EatToken(TokenType::Null, "Parse Error: Keyword 'is' must be followed by 'null' or 'not null'");
                 left = new Unary(t, new IsNull(left));
             } 
+        } else if (op.type == TokenType::Not) {
+            Token like = EatToken(TokenType::Like, "Parse Error: Expected 'like' keyword after 'not'");
+            Expr* right = ParseExpr(Relational);
+            left = new Unary(op, new Binary(like, left, right));
         } else {
             Expr* right = ParseExpr(Relational);
             left = new Binary(op, left, right);

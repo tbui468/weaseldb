@@ -31,6 +31,9 @@ private:
     inline Token PeekToken() {
         return tokens_.at(idx_);
     }
+    inline Token PeekTwo() {
+        return tokens_.at(idx_ + 1);
+    }
 
     inline Token NextToken() {
         return tokens_.at(idx_++);
