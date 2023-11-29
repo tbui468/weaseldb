@@ -47,7 +47,8 @@ static std::vector<Keyword> keywords[] = {
         {"left", TokenType::Left},
         {"full", TokenType::Full},
         {"int8", TokenType::Int8},
-        {"cast", TokenType::Cast}
+        {"cast", TokenType::Cast},
+        {"like", TokenType::Like}
     },
     {   //5
         {"table", TokenType::Table},

@@ -66,6 +66,7 @@ enum class TokenType {
     Timestamp,
     Cast,
     Having,
+    Like,
 
     /* user-defined identifier */
     Identifier,

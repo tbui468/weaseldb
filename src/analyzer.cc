@@ -263,6 +263,12 @@ Status Analyzer::VerifyBinary(Binary* expr, Attribute* attr) {
             } 
             *attr = Attribute("", expr->ToString(), left_attr.type);
             break;
+        case TokenType::Like:
+            if (!(left_attr.type == DatumType::Text && right_attr.type == DatumType::Text)) {
+                return Status(false, "Analysis Error: Operands of 'like' operator must be text");
+            }
+            *attr = Attribute("", expr->ToString(), DatumType::Bool);
+            break;
         default:
             return Status(false, "Implementation Error: op type not implemented in Binary expr!");
             break;

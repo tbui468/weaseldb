@@ -174,7 +174,8 @@ Status Parser::Equality(Expr** expr) {
 
     while (PeekToken().type == TokenType::Equal ||
            PeekToken().type == TokenType::NotEqual ||
-           PeekToken().type == TokenType::Is) {
+           PeekToken().type == TokenType::Is ||
+           PeekToken().type == TokenType::Like) {
 
         Token op = NextToken();
         if (op.type == TokenType::Is) {

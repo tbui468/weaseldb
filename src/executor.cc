@@ -7,6 +7,7 @@
 #include "tokenizer.h"
 #include "parser.h"
 #include "analyzer.h"
+#include "matcher.h"
 
 namespace wsldb {
 
@@ -358,6 +359,12 @@ Status Executor::Eval(Binary* expr, Datum* result) {
         case TokenType::Slash:          *result = Datum(l / r); break;
         case TokenType::Or:             *result = Datum(l || r); break;
         case TokenType::And:            *result = Datum(l && r);break;
+        case TokenType::Like: {
+            Matcher m(r.AsText());
+            bool b = m.Match(l.AsText());
+            *result = Datum(b);
+            break;                
+        }
         default:                        return Status(false, "Error: Invalid binary operator");
     }
 
