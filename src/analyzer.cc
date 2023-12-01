@@ -263,9 +263,10 @@ Status Analyzer::VerifyBinary(Binary* expr, Attribute* attr) {
             } 
             *attr = Attribute("", expr->ToString(), left_attr.type);
             break;
+        case TokenType::Similar:
         case TokenType::Like:
             if (!(left_attr.type == DatumType::Text && right_attr.type == DatumType::Text)) {
-                return Status(false, "Analysis Error: Operands of 'like' operator must be text");
+                return Status(false, "Analysis Error: Operands of 'like' and 'similar to' operator must be text");
             }
             *attr = Attribute("", expr->ToString(), DatumType::Bool);
             break;

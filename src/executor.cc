@@ -359,8 +359,12 @@ Status Executor::Eval(Binary* expr, Datum* result) {
         case TokenType::Slash:          *result = Datum(l / r); break;
         case TokenType::Or:             *result = Datum(l || r); break;
         case TokenType::And:            *result = Datum(l && r);break;
+        case TokenType::Similar:
         case TokenType::Like: {
-            Matcher m(r.AsText());
+            bool s;
+            Matcher m(expr->op_.type == TokenType::Like ? Matcher::Type::Like : Matcher::Type::Similar, r.AsText(), &s);
+            if (!s)
+                return Status(false, "Execution Error: Invalid string matching pattern '" + r.AsText() + "'");
             bool b = m.Match(l.AsText());
             *result = Datum(b);
             break;                

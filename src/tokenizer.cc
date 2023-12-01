@@ -21,7 +21,8 @@ static std::vector<Keyword> keywords[] = {
         {"by", TokenType::By},
         {"as", TokenType::As},
         {"is", TokenType::Is},
-        {"on", TokenType::On}
+        {"on", TokenType::On},
+        {"to", TokenType::To}
     },
     {   //3
         {"key", TokenType::Key},
@@ -32,7 +33,7 @@ static std::vector<Keyword> keywords[] = {
         {"avg", TokenType::Avg},
         {"sum", TokenType::Sum},
         {"max", TokenType::Max},
-        {"min", TokenType::Min},
+        {"min", TokenType::Min}
     },
     {   //4
         {"text", TokenType::Text},
@@ -81,7 +82,8 @@ static std::vector<Keyword> keywords[] = {
     },
     {   //7
         {"primary", TokenType::Primary},
-        {"foreign", TokenType::Foreign}
+        {"foreign", TokenType::Foreign},
+        {"similar", TokenType::Similar}
     },
     {   //8
         {"describe", TokenType::Describe},

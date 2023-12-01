@@ -176,7 +176,8 @@ Status Parser::Equality(Expr** expr) {
            PeekToken().type == TokenType::NotEqual ||
            PeekToken().type == TokenType::Is ||
            PeekToken().type == TokenType::Like ||
-           (PeekToken().type == TokenType::Not && PeekTwo().type == TokenType::Like)) {
+           PeekToken().type == TokenType::Similar ||
+           (PeekToken().type == TokenType::Not && (PeekTwo().type == TokenType::Like || PeekTwo().type == TokenType::Similar))) {
 
         Token op = NextToken();
         if (op.type == TokenType::Is) {
@@ -189,10 +190,17 @@ Status Parser::Equality(Expr** expr) {
                 left = new Unary(t, new IsNull(left));
             } 
         } else if (op.type == TokenType::Not) {
-            Token like = EatToken(TokenType::Like, "Parse Error: Expected 'like' keyword after 'not'");
+            Token like_or_similar = EatTokenIn(std::vector<TokenType>({TokenType::Like, TokenType::Similar}), 
+                                               "Parse Error: Expected 'like' or 'similar' keyword after 'not'");
+            if (like_or_similar.type == TokenType::Similar) {
+                EatToken(TokenType::To, "Parse Error: Expect keyword 'to' after 'similar'");
+            }
             Expr* right = ParseExpr(Relational);
-            left = new Unary(op, new Binary(like, left, right));
+            left = new Unary(op, new Binary(like_or_similar, left, right));
         } else {
+            if (op.type == TokenType::Similar) {
+                EatToken(TokenType::To, "Parse Error: Expect keyword 'to' after 'similar'");
+            }
             Expr* right = ParseExpr(Relational);
             left = new Binary(op, left, right);
         }

@@ -1,0 +1,16 @@
+create table planets (name text, primary key(name));
+insert into planets (name) values ('ab'), ('abab'), ('abc'), ('ababc'), ('c');
+select name from planets where name similar to 'ab';
+select '----';
+select name from planets where name similar to '(ab)+';
+select '----';
+select name from planets where name similar to '(ab)?';
+select '----';
+select name from planets where name similar to '(ab)*c';
+select '----';
+select name from planets where name similar to '(ab){1,1}';
+select '----';
+select name from planets where name similar to '(ab){2}';
+select '----';
+select name from planets where name similar to '(ab){1,}';
+drop table planets;

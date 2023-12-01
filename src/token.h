@@ -67,6 +67,8 @@ enum class TokenType {
     Cast,
     Having,
     Like,
+    Similar,
+    To,
 
     /* user-defined identifier */
     Identifier,
